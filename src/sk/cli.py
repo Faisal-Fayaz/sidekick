@@ -105,6 +105,8 @@ def _resolve_model(cfg, model_opt: str, task: str = "") -> str:
         if m == "smart":
             return "qwen2.5-coder:7b"
         if m == "auto":
+            if cfg.provider not in ("ollama", "lmstudio", "custom"):
+                return cfg.model  # router knows local models only; honor provider default
             from .router import FAST_MODEL, pick_model
 
             picked, reason = pick_model(task, FAST_MODEL)
@@ -165,7 +167,7 @@ def chat(
         try:
             answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve)
         except Exception as e:
-            console.print(f"[red]Error talking to Ollama ({cfg.base_url} model={cfg.model}): {e}[/red]")
+            console.print(f"[red]Error talking to {cfg.provider} ({cfg.effective_base_url()} model={cfg.model}): {e}[/red]")
             console.print("[dim]Tip: run `sk doctor` and `ollama serve`[/dim]")
             continue
         save_message(session, "assistant", answer)
@@ -213,46 +215,67 @@ def run(
 
 @app.command()
 def models():
-    """List Ollama models."""
+    """List models for the current provider."""
     import httpx
 
+    from .config import PRESETS
+
     cfg = _cfg()
-    base = cfg.base_url.replace("/v1", "")
+    base = cfg.effective_base_url().rstrip("/")
+    headers = {"Authorization": f"Bearer {cfg.effective_api_key()}"} if cfg.effective_api_key() else {}
     try:
-        r = httpx.get(f"{base}/api/tags", timeout=5)
-        r.raise_for_status()
-        data = r.json()
-        names = [m["name"] for m in data.get("models", [])]
+        if cfg.provider in ("ollama", "lmstudio"):
+            r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=8)
+            r.raise_for_status()
+            names = [m["name"] for m in r.json().get("models", [])]
+        else:
+            r = httpx.get(f"{base}/models", headers=headers, timeout=15)
+            r.raise_for_status()
+            names = [m["id"] for m in r.json().get("data", [])]
         if not names:
-            console.print("[yellow]No models found. Try `ollama pull qwen3:4b`[/yellow]")
+            console.print("[yellow]No models listed.[/yellow]")
+            if cfg.provider == "ollama":
+                console.print("[dim]Try `ollama pull qwen3:4b`[/dim]")
             return
-        for n in names:
+        shown = names[:40]
+        for n in shown:
             mark = "← current" if n == cfg.model else ""
             console.print(f"• [cyan]{n}[/cyan] {mark}")
+        if len(names) > len(shown):
+            console.print(f"[dim]...+{len(names) - len(shown)} more[/dim]")
     except Exception as e:
-        console.print(f"[red]Cannot reach Ollama at {base}: {e}[/red]")
+        console.print(f"[red]Cannot reach {cfg.provider} at {base}: {e}[/red]")
 
 
 @app.command()
 def doctor():
-    """Check Ollama + model + config health."""
+    """Check provider + model + config health."""
     cfg = _cfg()
-    console.print(f"config: [cyan]~/.sidekick/config.toml[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.base_url}[/cyan]")
+    console.print(f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan]")
     import httpx
 
-    base = cfg.base_url.replace("/v1", "")
+    base = cfg.effective_base_url().rstrip("/")
     try:
-        r = httpx.get(f"{base}/api/tags", timeout=5)
-        r.raise_for_status()
-        names = [m["name"] for m in r.json().get("models", [])]
-        console.print(f"[green]✓ Ollama reachable[/green] ({len(names)} models)")
-        if cfg.model in names:
-            console.print(f"[green]✓ model '{cfg.model}' installed[/green]")
+        if cfg.provider in ("ollama", "lmstudio"):
+            r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=8)
+            r.raise_for_status()
+            names = [m["name"] for m in r.json().get("models", [])]
+            console.print(f"[green]✓ {cfg.provider} reachable[/green] ({len(names)} models)")
+            if cfg.model in names:
+                console.print(f"[green]✓ model '{cfg.model}' installed[/green]")
+            else:
+                console.print(f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]")
         else:
-            console.print(f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]")
+            if not cfg.effective_api_key():
+                console.print("[yellow]! no API key set. Use `sk config --api-key ...` or SIDEKICK_API_KEY.[/yellow]")
+                return
+            r = httpx.get(f"{base}/models", headers={"Authorization": f"Bearer {cfg.effective_api_key()}"}, timeout=15)
+            r.raise_for_status()
+            console.print(f"[green]✓ {cfg.provider} reachable[/green] (key valid)")
     except Exception as e:
-        console.print(f"[red]✗ Ollama not reachable: {e}[/red]")
-        console.print("[dim]Run `ollama serve` in another terminal.[/dim]")
+        console.print(f"[red]✗ {cfg.provider} not reachable: {e}[/red]")
+        if cfg.provider == "ollama":
+            console.print("[dim]Run `ollama serve` in another terminal.[/dim]")
     # quick tool sanity
     from .tools import tool_exec, tool_list_dir
 
@@ -262,16 +285,45 @@ def doctor():
 @app.command()
 def config(
     model: str = typer.Option("", help="Set model, e.g. --model qwen3:4b"),
-    show: bool = typer.Option(False, "--show", help="Show current config"),
+    provider: str = typer.Option("", help="Set provider: ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom"),
+    api_key: str = typer.Option("", help="Set API key (or use SIDEKICK_API_KEY env)"),
+    base_url: str = typer.Option("", help="Custom base URL (sets provider=custom unless --provider given)"),
+    show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
-    """View/set config."""
+    """View/set config. Keys are chmod-600’d; env vars always win."""
+    from .config import PRESETS
+
     cfg = _cfg()
+    changed = False
+    if provider:
+        p = provider.strip().lower()
+        if p not in PRESETS:
+            console.print(f"[red]unknown provider. Pick: {', '.join(PRESETS)}[/red]")
+            raise typer.Exit(1)
+        cfg.provider = p
+        if not model:
+            cfg.model = PRESETS[p]["model"] or cfg.model
+        if not base_url:
+            cfg.base_url = ""  # drop stale override, use preset default
+        changed = True
+        console.print(f"[green]provider set to {p}[/green]")
+    if base_url:
+        cfg.base_url = base_url.strip()
+        if not provider:
+            cfg.provider = "custom"
+        changed = True
+    if api_key:
+        cfg.api_key = api_key.strip()
+        changed = True
+        console.print("[green]api key saved (file is chmod 600)[/green]")
     if model:
         cfg.model = model
-        cfg.save()
+        changed = True
         console.print(f"[green]model set to {model}[/green]")
-    if show or not model:
-        console.print(f"model={cfg.model}\nbase_url={cfg.base_url}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}")
+    if changed:
+        cfg.save()
+    if show or not changed:
+        console.print(f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}")
 
 
 @app.command()

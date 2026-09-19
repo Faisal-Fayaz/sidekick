@@ -42,7 +42,7 @@ SKILLS (follow these packs when relevant):
 
 
 def get_client(cfg: Config) -> OpenAI:
-    return OpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=300.0)
+    return OpenAI(base_url=cfg.effective_base_url(), api_key=cfg.effective_api_key(), timeout=300.0)
 
 
 def _expand_at_refs(text: str) -> str:

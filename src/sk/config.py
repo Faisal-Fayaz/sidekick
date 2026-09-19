@@ -21,10 +21,24 @@ except ImportError:
 CONFIG_DIR = Path.home() / ".sidekick"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
+# OpenAI-compatible providers. Anything speaking /v1/chat/completions works,
+# including local servers (ollama, LM Studio, llama.cpp --server).
+PRESETS: dict[str, dict[str, str]] = {
+    "ollama": {"base_url": "http://localhost:11434/v1", "key": "ollama", "model": "qwen2.5-coder:7b"},
+    "openai": {"base_url": "https://api.openai.com/v1", "key": "", "model": "gpt-4o-mini"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "key": "", "model": "llama-3.3-70b-versatile"},
+    "together": {"base_url": "https://api.together.xyz/v1", "key": "", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
+    "deepseek": {"base_url": "https://api.deepseek.com/v1", "key": "", "model": "deepseek-chat"},
+    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "key": "", "model": "openai/gpt-4o-mini"},
+    "lmstudio": {"base_url": "http://localhost:1234/v1", "key": "lm-studio", "model": "local-model"},
+    "custom": {"base_url": "", "key": "", "model": ""},
+}
+
 DEFAULTS = {
-    "model": "qwen2.5-coder:7b",
-    "base_url": "http://localhost:11434/v1",
-    "api_key": "ollama",
+    "provider": "ollama",
+    "model": PRESETS["ollama"]["model"],
+    "base_url": "",  # empty = preset default; set = override (or custom's URL)
+    "api_key": "",
     "max_steps": 5,
     "temperature": 0.2,
 }
@@ -32,15 +46,28 @@ DEFAULTS = {
 
 @dataclass
 class Config:
+    provider: str = DEFAULTS["provider"]
     model: str = DEFAULTS["model"]
-    base_url: str = DEFAULTS["base_url"]
+    base_url: str = DEFAULTS["base_url"]  # override; "" = preset default
     api_key: str = DEFAULTS["api_key"]
     max_steps: int = DEFAULTS["max_steps"]
     temperature: float = DEFAULTS["temperature"]
 
+    def effective_base_url(self) -> str:
+        if self.base_url.strip():
+            return self.base_url.strip()
+        preset = PRESETS.get(self.provider, PRESETS["custom"])
+        return preset["base_url"]
+
+    def effective_api_key(self) -> str:
+        if self.api_key.strip():
+            return self.api_key.strip()
+        preset = PRESETS.get(self.provider, PRESETS["custom"])
+        return preset["key"]
+
     @classmethod
     def load(cls) -> "Config":
-        # env overrides win (useful for cloud fallback later)
+        provider = os.getenv("SIDEKICK_PROVIDER", "")
         model = os.getenv("SIDEKICK_MODEL", "")
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
         api_key = os.getenv("SIDEKICK_API_KEY", "")
@@ -53,21 +80,16 @@ class Config:
             except Exception:
                 file_vals = {}
 
-        def pick(key: str) -> str | int | float:
-            if key == "model" and model:
-                return model
-            if key == "base_url" and base_url:
-                return base_url
-            if key == "api_key" and api_key:
-                return api_key
-            return file_vals.get(key, DEFAULTS[key])
-
+        prov = (provider or file_vals.get("provider", DEFAULTS["provider"])).strip().lower()
+        if prov not in PRESETS:
+            prov = "custom"
         return cls(
-            model=str(pick("model")),
-            base_url=str(pick("base_url")),
-            api_key=str(pick("api_key")),
-            max_steps=int(pick("max_steps")),
-            temperature=float(pick("temperature")),
+            provider=prov,
+            model=str(model or file_vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]),
+            base_url=str(base_url or file_vals.get("base_url", "")),
+            api_key=str(api_key or file_vals.get("api_key", "")),
+            max_steps=int(file_vals.get("max_steps", DEFAULTS["max_steps"])),
+            temperature=float(file_vals.get("temperature", DEFAULTS["temperature"])),
         )
 
     def ensure_created(self) -> Path:
@@ -77,8 +99,11 @@ class Config:
         return CONFIG_PATH
 
     def save(self) -> None:
+        import os as _os
+
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         data = {
+            "provider": self.provider,
             "model": self.model,
             "base_url": self.base_url,
             "api_key": self.api_key,
@@ -92,3 +117,15 @@ class Config:
             # minimal manual writer, no dependency needed
             lines = [f'{k} = "{v}"' if isinstance(v, str) else f"{k} = {v}" for k, v in data.items()]
             CONFIG_PATH.write_text("\n".join(lines) + "\n")
+        if self.api_key.strip():
+            try:
+                _os.chmod(CONFIG_PATH, 0o600)
+            except Exception:
+                pass
+
+    @staticmethod
+    def mask(key: str) -> str:
+        key = (key or "").strip()
+        if len(key) <= 8:
+            return "****" if key else "(none)"
+        return f"{key[:3]}…{key[-4:]}"

@@ -17,6 +17,7 @@ class SlashOut:
 HELP_TEXT = """**slash commands**
 - `/help` — this list
 - `/model [fast|smart|name]` — show or switch model
+- `/provider [name]` — show or switch provider (ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom)
 - `/models` — list installed Ollama models
 - `/clear` — fresh session (forgets chat history)
 - `/yolo` — auto-approve file writes
@@ -72,14 +73,36 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if cmd == "models":
         import httpx
 
-        base = cfg.base_url.replace("/v1", "")
+        base = cfg.effective_base_url().rstrip("/")
+        headers = {"Authorization": f"Bearer {cfg.effective_api_key()}"} if cfg.effective_api_key() else {}
         try:
-            r = httpx.get(f"{base}/api/tags", timeout=5)
-            names = [m["name"] for m in r.json().get("models", [])]
+            if cfg.provider in ("ollama", "lmstudio"):
+                r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=8)
+                names = [m["name"] for m in r.json().get("models", [])]
+            else:
+                r = httpx.get(f"{base}/models", headers=headers, timeout=15)
+                names = [m["id"] for m in r.json().get("data", [])]
         except Exception as e:
-            return SlashOut(handled=True, text=f"Ollama unreachable: {e}")
-        lines = [f"- {n}{' ← current' if n == cfg.model else ''}" for n in names]
+            return SlashOut(handled=True, text=f"{cfg.provider} unreachable: {e}")
+        lines = [f"- {n}{' ← current' if n == cfg.model else ''}" for n in names[:40]]
         return SlashOut(handled=True, text="\n".join(lines) or "(no models)")
+
+    if cmd == "provider":
+        from .config import PRESETS
+
+        if not arg.strip():
+            return SlashOut(handled=True, text=f"provider: `{cfg.provider}` — switch: `/provider {'|'.join(PRESETS)}`")
+        p = arg.strip().lower()
+        if p not in PRESETS:
+            return SlashOut(handled=True, text=f"unknown provider. Pick: {', '.join(PRESETS)}")
+        cfg.provider = p
+        cfg.model = PRESETS[p]["model"] or cfg.model
+        cfg.base_url = ""
+        try:
+            cfg.save()
+        except Exception:
+            pass
+        return SlashOut(handled=True, text=f"provider → `{p}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)")
 
     if cmd == "clear":
         from .store import clear_session

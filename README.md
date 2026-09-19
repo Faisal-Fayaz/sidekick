@@ -51,7 +51,19 @@ uv tool install -e .   # global `sk` in ~/.local/bin
 sk doctor               # checks Ollama + model
 ```
 
-Requires Python 3.12+ and Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed).
+Requires Python 3.12+ and Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed) — or any OpenAI-compatible API.
+
+## Providers (BYO key)
+
+```bash
+sk config --provider openai --api-key sk-...          # OpenAI
+sk config --provider groq --api-key gsk-...           # Groq
+sk config --provider openrouter --api-key sk-or-...   # OpenRouter (incl. Claude)
+/provider groq      # same switch inside chat/TUI
+sk doctor           # validates key + reachability
+```
+
+Presets: `ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom`. Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. Your old config keeps working unchanged. Note: true Anthropic-native API isn't wrapped — reach Claude via OpenRouter.
 
 ## Command reference
 
