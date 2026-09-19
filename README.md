@@ -64,11 +64,13 @@ Requires Python 3.12+. Without `[voice]` you get everything except Talk/mic (ins
 ## Providers (BYO key)
 
 ```bash
-sk config --provider openai --api-key sk-...          # OpenAI
-sk config --provider groq --api-key gsk-...           # Groq
-sk config --provider openrouter --api-key sk-or-...   # OpenRouter (incl. Claude)
-/provider groq      # same switch inside chat/TUI
-sk doctor           # validates key + reachability
+sk auth add groq            # hidden prompt, validates live before saving
+sk auth status              # per-provider reachability + key health
+sk auth list                # masked key overview
+sk model                    # guided picker: provider → live model list
+sk setup                    # wizard: provider → key → model → hook → test run
+sk config --provider openai --api-key sk-...   # scriptable alternative
+/provider groq              # same switch inside chat/TUI
 ```
 
 Presets: `ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom`. Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. Your old config keeps working unchanged. Note: true Anthropic-native API isn't wrapped — reach Claude via OpenRouter.

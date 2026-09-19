@@ -347,64 +347,50 @@ def run(
 @app.command()
 def models():
     """List models for the current provider."""
-    import httpx
-
-    from .config import PRESETS
+    from .auth import fetch_models
 
     cfg = _cfg()
-    base = cfg.effective_base_url().rstrip("/")
-    headers = {"Authorization": f"Bearer {cfg.effective_api_key()}"} if cfg.effective_api_key() else {}
     try:
-        if cfg.provider in ("ollama", "lmstudio"):
-            r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=8)
-            r.raise_for_status()
-            names = [m["name"] for m in r.json().get("models", [])]
-        else:
-            r = httpx.get(f"{base}/models", headers=headers, timeout=15)
-            r.raise_for_status()
-            names = [m["id"] for m in r.json().get("data", [])]
-        if not names:
-            console.print("[yellow]No models listed.[/yellow]")
-            if cfg.provider == "ollama":
-                console.print("[dim]Try `ollama pull qwen3:4b`[/dim]")
-            return
-        shown = names[:40]
-        for n in shown:
-            mark = "← current" if n == cfg.model else ""
-            console.print(f"• [cyan]{n}[/cyan] {mark}")
-        if len(names) > len(shown):
-            console.print(f"[dim]...+{len(names) - len(shown)} more[/dim]")
+        names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
     except Exception as e:
-        console.print(f"[red]Cannot reach {cfg.provider} at {base}: {e}[/red]")
+        console.print(f"[red]Cannot reach {cfg.provider}: {e}[/red]")
+        return
+    if not names:
+        console.print("[yellow]No models listed.[/yellow]")
+        if cfg.provider == "ollama":
+            console.print("[dim]Try `ollama pull qwen3:4b`[/dim]")
+        return
+    for n in names[:40]:
+        mark = "← current" if n == cfg.model else ""
+        console.print(f"• [cyan]{n}[/cyan] {mark}")
+    if len(names) > 40:
+        console.print(f"[dim]...+{len(names) - 40} more[/dim]")
 
 
 @app.command()
 def doctor():
     """Check provider + model + config health."""
+    from .auth import provider_status
+
     cfg = _cfg()
     console.print(f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan]")
-    import httpx
+    ok, msg = provider_status(cfg)
+    if ok and cfg.provider in ("ollama", "lmstudio"):
+        from .auth import fetch_models
 
-    base = cfg.effective_base_url().rstrip("/")
-    try:
-        if cfg.provider in ("ollama", "lmstudio"):
-            r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=8)
-            r.raise_for_status()
-            names = [m["name"] for m in r.json().get("models", [])]
+        try:
+            names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
             console.print(f"[green]✓ {cfg.provider} reachable[/green] ({len(names)} models)")
             if cfg.model in names:
                 console.print(f"[green]✓ model '{cfg.model}' installed[/green]")
             else:
                 console.print(f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]")
-        else:
-            if not cfg.effective_api_key():
-                console.print("[yellow]! no API key set. Use `sk config --api-key ...` or SIDEKICK_API_KEY.[/yellow]")
-                return
-            r = httpx.get(f"{base}/models", headers={"Authorization": f"Bearer {cfg.effective_api_key()}"}, timeout=15)
-            r.raise_for_status()
-            console.print(f"[green]✓ {cfg.provider} reachable[/green] (key valid)")
-    except Exception as e:
-        console.print(f"[red]✗ {cfg.provider} not reachable: {e}[/red]")
+        except Exception as e:
+            console.print(f"[red]✗ {cfg.provider} not reachable: {e}[/red]")
+    elif ok:
+        console.print(f"[green]✓ {cfg.provider} reachable[/green] ({msg})")
+    else:
+        console.print(f"[red]✗ {msg}[/red]")
         if cfg.provider == "ollama":
             console.print("[dim]Run `ollama serve` in another terminal.[/dim]")
     # quick tool sanity
@@ -455,6 +441,217 @@ def config(
         cfg.save()
     if show or not changed:
         console.print(f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}")
+
+
+auth_app = typer.Typer(help="Keys: sk auth add/list/status/remove (keys masked, validated live)")
+app.add_typer(auth_app, name="auth")
+
+
+def _pick_provider(default: str = "") -> str:
+    from .config import PRESETS
+
+    names = list(PRESETS)
+    if default and default in names:
+        return default
+    console.print("Provider:")
+    for i, n in enumerate(names, 1):
+        console.print(f"  {i}. {n}")
+    while True:
+        try:
+            raw = console.input("Pick [1-{}] ({}): ".format(len(names), default or "ollama")).strip() or default or "ollama"
+        except (EOFError, KeyboardInterrupt):
+            raise typer.Exit(1)
+        if raw.isdigit() and 1 <= int(raw) <= len(names):
+            return names[int(raw) - 1]
+        if raw.lower() in names:
+            return raw.lower()
+        console.print("[red]not in list, try again[/red]")
+
+
+def _ask_key() -> str:
+    try:
+        return (typer.prompt("API key (hidden)", hide_input=True) or "").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise typer.Exit(1)
+
+
+@auth_app.command("add")
+def auth_add(
+    provider: str = typer.Argument("", help="Provider, omit for picker"),
+    key: str = typer.Option("", help="Key inline (hidden prompt if omitted)"),
+):
+    """Add a key: sk auth add groq (validates live before saving)."""
+    from .auth import validate_key
+    from .config import PRESETS
+
+    cfg = _cfg()
+    p = provider.strip().lower() or _pick_provider(cfg.provider)
+    if p not in PRESETS:
+        console.print(f"[red]unknown provider. Pick: {', '.join(PRESETS)}[/red]")
+        raise typer.Exit(1)
+    base = PRESETS[p]["base_url"] if p != cfg.provider or not cfg.base_url else cfg.effective_base_url()
+    k = key.strip() or _ask_key()
+    if p in ("ollama", "lmstudio"):
+        cfg.provider, cfg.model, cfg.base_url, cfg.api_key = p, PRESETS[p]["model"] or cfg.model, "", ""
+        cfg.save()
+        console.print(f"[green]provider set to {p}, no key needed locally.[/green]")
+        return
+    ok, msg = validate_key(p, base, k)
+    console.print(f"[green]✓ {msg}[/green]" if ok else f"[red]✗ {msg}[/red]")
+    if not ok:
+        raise typer.Exit(1)
+    cfg.provider, cfg.base_url, cfg.api_key = p, "", k
+    if not cfg.model or cfg.model in (PRESETS.get(cfg.provider, {}).get("model", ""),):
+        cfg.model = PRESETS[p]["model"]
+    cfg.save()
+    console.print(f"[green]saved. Model is {cfg.model} — change with `sk model`.[/green]")
+
+
+@auth_app.command("list")
+def auth_list():
+    """Show providers + masked key state."""
+    from .config import PRESETS
+
+    cfg = _cfg()
+    for n in PRESETS:
+        cur = "← current" if n == cfg.provider else ""
+        key = Config.mask(cfg.effective_api_key()) if n == cfg.provider else "—"
+        console.print(f"• [cyan]{n}[/cyan] key={key} {cur}")
+
+
+@auth_app.command("status")
+def auth_status(provider: str = typer.Argument("", help="Provider, omit for current")):
+    """Validate reachability + key for a provider."""
+    from .auth import provider_status
+
+    cfg = _cfg()
+    if provider.strip():
+        from .config import PRESETS
+
+        p = provider.strip().lower()
+        if p not in PRESETS:
+            console.print(f"[red]unknown provider[/red]")
+            raise typer.Exit(1)
+        import copy
+
+        cfg = copy.copy(cfg)
+        cfg.provider = p
+        if p != _cfg().provider:
+            cfg.base_url, cfg.api_key = "", ""
+    ok, msg = provider_status(cfg)
+    console.print(f"[green]✓ {cfg.provider}: {msg}[/green]" if ok else f"[red]✗ {cfg.provider}: {msg}[/red]")
+    if not ok:
+        raise typer.Exit(1)
+
+
+@auth_app.command("remove")
+def auth_remove(provider: str = typer.Argument("", help="Provider, omit for current")):
+    """Forget a key (and reset model default)."""
+    from .config import PRESETS
+
+    cfg = _cfg()
+    p = (provider.strip().lower() or cfg.provider)
+    if p not in PRESETS:
+        console.print("[red]unknown provider[/red]")
+        raise typer.Exit(1)
+    if p == cfg.provider:
+        cfg.api_key, cfg.base_url, cfg.model = "", "", PRESETS[p]["model"]
+        cfg.save()
+    console.print(f"[yellow]forgot {p}.[/yellow]")
+
+
+@app.command()
+def model():
+    """Interactive picker: provider → live model list → default."""
+    from .auth import fetch_models
+    from .config import PRESETS
+
+    cfg = _cfg()
+    p = _pick_provider(cfg.provider)
+    try:
+        names = fetch_models(p, PRESETS[p]["base_url"], cfg.effective_api_key() if p == cfg.provider else "")
+    except Exception as e:
+        console.print(f"[red]cannot list {p}: {e}[/red]")
+        try:
+            manual = console.input("Model id (manual entry): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise typer.Exit(1)
+        if not manual:
+            raise typer.Exit(1)
+        cfg.provider, cfg.model = p, manual
+        cfg.save()
+        console.print(f"[green]model set to {manual} (unvalidated)[/green]")
+        return
+    if not names:
+        console.print("[yellow]empty list.[/yellow]")
+        raise typer.Exit(1)
+    console.print(f"Models on {p}:")
+    for i, n in enumerate(names[:30], 1):
+        console.print(f"  {i}. {n}{' ← current' if n == cfg.model and p == cfg.provider else ''}")
+    while True:
+        try:
+            raw = console.input(f"Pick [1-{min(len(names), 30)}] or id: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise typer.Exit(1)
+        pick = names[int(raw) - 1] if raw.isdigit() and 1 <= int(raw) <= min(len(names), 30) else raw
+        if pick:
+            break
+        console.print("[red]empty, try again[/red]")
+    cfg.provider, cfg.model = p, pick
+    if p != "custom":
+        cfg.base_url = ""
+    cfg.save()
+    console.print(f"[green]default → {p} / {pick}[/green]")
+
+
+@app.command()
+def setup():
+    """Guided setup: provider → key → validate → model → hook → test run."""
+    from .auth import provider_status
+
+    console.print(Panel("[bold]sidekick setup[/] — provider, key, model, hook, test.", expand=False))
+    cfg = _cfg()
+    p = _pick_provider(cfg.provider)
+    from .config import PRESETS
+
+    cfg.provider = p
+    if p in ("ollama", "lmstudio"):
+        cfg.model, cfg.base_url, cfg.api_key = PRESETS[p]["model"] or cfg.model, "", ""
+        cfg.save()
+        console.print(f"[green]local provider {p}, no key needed.[/green]")
+    else:
+        k = _ask_key()
+        ok, msg = provider_status(_cfg_with(cfg, api_key=k))
+        console.print(f"[green]✓ {msg}[/green]" if ok else f"[red]✗ {msg}[/red]")
+        if not ok:
+            raise typer.Exit(1)
+        cfg.api_key, cfg.base_url = k, ""
+        cfg.save()
+        console.print("[green]key saved (chmod 600).[/green]")
+    console.print("[dim]now pick a model...[/dim]")
+    model()
+    cfg = _cfg()
+    try:
+        if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
+            hook_install(shell="", write=True)
+    except (EOFError, KeyboardInterrupt):
+        pass
+    console.print("[dim]test run...[/dim]")
+    try:
+        answer = run_agent("say hi in 5 words", [], _cfg(), approve=_make_approver(True))
+        console.print(Markdown((answer or "")[:500]))
+    except Exception as e:
+        console.print(f"[red]test run failed: {e}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]setup complete. Try `sk tui`.[/green]")
+
+
+def _cfg_with(cfg, api_key: str):
+    import copy
+
+    c = copy.copy(cfg)
+    c.api_key = api_key
+    return c
 
 
 @app.command()

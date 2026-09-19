@@ -16,9 +16,9 @@ class SlashOut:
 
 HELP_TEXT = """**slash commands**
 - `/help` — this list
-- `/model [fast|smart|name]` — show or switch model
-- `/provider [name]` — show or switch provider (ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom)
-- `/models` — list installed Ollama models
+- `/model [fast|smart|name]` — show or switch model (`sk model` for guided picker)
+- `/provider [name]` — show or switch provider (keys via `sk auth add`, never pasted here)
+- `/models` — list models on the current provider
 - `/clear` — fresh session (forgets chat history)
 - `/yolo` — auto-approve file writes
 - `/confirm` — ask before file writes (default in TUI)
@@ -73,17 +73,10 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(handled=True, text=f"model → `{cfg.model}`")
 
     if cmd == "models":
-        import httpx
+        from .auth import fetch_models
 
-        base = cfg.effective_base_url().rstrip("/")
-        headers = {"Authorization": f"Bearer {cfg.effective_api_key()}"} if cfg.effective_api_key() else {}
         try:
-            if cfg.provider in ("ollama", "lmstudio"):
-                r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=8)
-                names = [m["name"] for m in r.json().get("models", [])]
-            else:
-                r = httpx.get(f"{base}/models", headers=headers, timeout=15)
-                names = [m["id"] for m in r.json().get("data", [])]
+            names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
         except Exception as e:
             return SlashOut(handled=True, text=f"{cfg.provider} unreachable: {e}")
         lines = [f"- {n}{' ← current' if n == cfg.model else ''}" for n in names[:40]]
