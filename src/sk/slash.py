@@ -33,8 +33,10 @@ HELP_TEXT = """**slash commands**
 - `/history [n]` — recent shell commands
 - `/oops` — explain last failed shell command
 - `/skills` — list skill packs
+- `/copy [n]` — copy nth-last answer to clipboard (default: last)
 - `/exit` `/quit` — leave
-Anything else is sent to the agent."""
+Anything else is sent to the agent.
+Tip: paste with Ctrl+Shift+V (terminal). Hold Shift to select text with the mouse, bypassing the app."""
 
 
 def _resolve_model_name(cfg, raw: str) -> str:
@@ -176,5 +178,22 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
     if cmd in ("exit", "quit", "q"):
         return SlashOut(handled=True, quit=True)
+
+    if cmd == "copy":
+        from .clip import copy_text
+        from .store import get_history
+
+        try:
+            n = int((arg.strip().split() or ["1"])[0])
+        except ValueError:
+            return SlashOut(handled=True, text="usage: `/copy [n]` — copies nth-last answer")
+        answers = [m["content"] for m in get_history(session) if m["role"] == "assistant"]
+        if not answers or n < 1 or n > len(answers):
+            return SlashOut(handled=True, text="_(no answers to copy yet)_")
+        try:
+            method = copy_text(answers[-n])
+        except Exception as e:
+            return SlashOut(handled=True, text=f"copy failed ({e}) — `sudo apt install xclip`")
+        return SlashOut(handled=True, text=f"_copied answer {-n if n > 1 else 'last'} via {method}_")
 
     return SlashOut(handled=True, text=f"unknown command `/{cmd}` — try `/help`")

@@ -56,7 +56,13 @@ sk chat
 sk tui
 sk tui --model fast
 ```
-Single chat view. Everything via slash: `/help /model /clear /yolo /confirm /remember /recall /memories /forget /todo /brief /history /oops /skills /models /exit`. Same commands work in `sk chat` and `sk tui`. Anything else goes to the agent.
+Single chat view. Everything via slash: `/help /model /clear /yolo /confirm /remember /recall /memories /forget /todo /brief /history /oops /skills /copy /models /exit`. Same commands work in `sk chat` and `sk tui`. Anything else goes to the agent.
+
+## Copy/paste in TUI
+
+- Copy: `/copy [n]` or `ctrl+y` — copies nth-last answer (default last) via native clipboard, else wl-copy/xclip/xsel, else OSC52. Needs `xclip` on plain X11: `sudo apt install xclip`.
+- Paste: Ctrl+Shift+V (terminal handles it; Textual accepts bracketed paste).
+- Mouse select: hold Shift to bypass the app and select natively.
 
 ## Router
 

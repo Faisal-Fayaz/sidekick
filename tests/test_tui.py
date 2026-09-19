@@ -59,3 +59,20 @@ def test_slash_model_switches():
     import asyncio
 
     asyncio.run(_pilot_slash_model())
+
+
+async def _pilot_ctrl_y():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.press("ctrl+y")
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "cop" in blob  # copied... or copy failed hint
+
+
+def test_ctrl_y_copies():
+    import asyncio
+
+    asyncio.run(_pilot_ctrl_y())

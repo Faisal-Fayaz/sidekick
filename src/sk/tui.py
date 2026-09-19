@@ -15,6 +15,7 @@ def _w(log: RichLog, s: str, markup: bool = False) -> None:
 
 class SidekickTUI(App):
     TITLE = "sidekick"
+    BINDINGS = [("ctrl+y", "copy_last", "copy last answer")]
     CSS = """
     RichLog { height: 1fr; border: solid #333; }
     Input { margin: 1 0; }
@@ -33,7 +34,27 @@ class SidekickTUI(App):
 
     def on_mount(self) -> None:
         self._sub()
-        self.query_one("#chat-log", RichLog).write("sidekick online. `/help` for commands, `/model fast` for speed.")
+        self.query_one("#chat-log", RichLog).write("sidekick online. `/help` for commands, `/model fast` for speed, `ctrl+y` copies last answer.")
+
+    def action_copy_last(self) -> None:
+        from .store import get_history
+
+        log = self.query_one("#chat-log", RichLog)
+        answers = [m["content"] for m in get_history("tui") if m["role"] == "assistant"]
+        if not answers:
+            _w(log, "(no answers to copy yet)")
+            return
+        try:
+            self.copy_to_clipboard(answers[-1])  # native OSC52, screen-safe
+            _w(log, "copied last answer (native clipboard)")
+        except Exception as e:
+            from .clip import copy_text
+
+            try:
+                method = copy_text(answers[-1])
+                _w(log, f"copied last answer via {method}")
+            except Exception as e2:
+                _w(log, f"copy failed ({e2}) — `sudo apt install xclip`")
 
     def _sub(self) -> None:
         from .config import Config
