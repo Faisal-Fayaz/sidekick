@@ -143,7 +143,12 @@ def test_auto_search_recency_not_local(monkeypatch):
     import sk.agent as agent
 
     seen = {}
-    monkeypatch.setattr("sk.tools.tool_web_search", lambda q, count=5: seen.setdefault("q", q) or f"hits for {q}")
+
+    def fake_search(q, count=5):
+        seen["q"] = q
+        return f"hits for {q}"
+
+    monkeypatch.setattr("sk.tools.tool_web_search", fake_search)
     out = agent._auto_search_context("what is the best laptop for a creative director right now")
     assert "AUTO" not in out and "hits for" in out  # search block, no refusal possible
     assert seen["q"] == "best laptop for creative director right now"  # keyword-compressed
