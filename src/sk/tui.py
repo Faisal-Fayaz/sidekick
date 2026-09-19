@@ -21,6 +21,34 @@ def _w(log: RichLog, s: str, markup: bool = False) -> None:
     log.write(Text.from_markup(s) if markup else Text(s))
 
 
+ROLE_STYLES = {
+    "you": "bold green",
+    "sidekick": "bold cyan",
+    "tool": "dim",
+    "sys": "dim",
+    "warn": "bold yellow",
+    "error": "bold red",
+}
+
+
+def _line(when: str, role: str, body: str) -> Text:
+    """Role-colored chat line: dim timestamp, colored `role>`, neutral body.
+
+    Bodies stay neutral on purpose — brackets and code copy cleanly and the
+    role color alone carries who-is-who.
+    """
+    t = Text()
+    t.append(f"[{when}] ", style="dim")
+    if role:
+        t.append(f"{role}> ", style=ROLE_STYLES.get(role, ""))
+    t.append(body)
+    return t
+
+
+def _role(log: RichLog, role: str, body: str) -> None:
+    log.write(_line(_now(), role, body))
+
+
 def _now() -> str:
     return time.strftime("%H:%M")
 
@@ -199,7 +227,7 @@ class SidekickTUI(App):
         area.push_history(text)
         area.hist_idx = -1
         log = self.query_one("#chat-log", RichLog)
-        _w(log, f"[{_now()}] you> {text}")
+        _role(log, "you", text)
         if text.startswith("/"):
             # /model switches session model (and saves default)
             if text.startswith("/model ") and text[7:].strip():
@@ -214,7 +242,7 @@ class SidekickTUI(App):
                     cfg.save()
                 except Exception:
                     pass
-                _w(log, f"[{_now()}] model → `{name}`")
+                _role(log, "sys", f"model → `{name}`")
                 self._sub()
                 return
             from .config import Config
@@ -229,7 +257,7 @@ class SidekickTUI(App):
             if out.clear_view:
                 log.clear()
             if out.text:
-                _w(log, f"[{_now()}] {out.text}")
+                _role(log, "", out.text)
             self._sub()
             if out.agent_prompt:
                 self._prime_live()
@@ -254,7 +282,12 @@ class SidekickTUI(App):
             body = "".join(self._live_parts)
             head = "".join(self._live_reason)[-500:]
             live.text = (("…" + head + "\n───\n") if head else "") + body[-2000:]
-            live.cursor_at_end_of_text()
+            try:
+                lines = live.text.split("\n")
+                end = (len(lines) - 1, len(lines[-1]))
+                live.selection = type(live.selection)(end, end)
+            except Exception:
+                pass
             live.scroll_end(animate=False)
         except Exception:
             pass
@@ -268,7 +301,7 @@ class SidekickTUI(App):
 
         log = self.query_one("#chat-log", RichLog)
         if not show_as:
-            _w(log, f"[{_now()}] thinking...")
+            _role(log, "", "thinking...")
         cfg = Config.load()
         if self.model_override:
             cfg.model = self.model_override
@@ -278,7 +311,7 @@ class SidekickTUI(App):
         def on_tool(name: str, args: dict) -> None:
             preview = args if name not in ("write_file",) else {"path": args.get("path")}
             try:
-                self.call_from_thread(_w, log, f"[{_now()}] ○ tool: {name} {preview}")
+                self.call_from_thread(_role, log, "tool", f"○ tool: {name} {preview}")
             except Exception:
                 pass
 
@@ -303,9 +336,9 @@ class SidekickTUI(App):
             )
         except Exception as e:
             try:
-                self.call_from_thread(_w, log, f"[{_now()}] Error: {e}")
+                self.call_from_thread(_role, log, "error", f"Error: {e}")
             except Exception:
-                _w(log, f"[{_now()}] Error: {e}")
+                _role(log, "error", f"Error: {e}")
             try:
                 self.call_from_thread(self._hide_live)
             except Exception:
@@ -336,11 +369,11 @@ class SidekickTUI(App):
         self._stats = stats
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, f"[{_now()}] sidekick>")
+        _role(log, "sidekick", "")
         try:
             log.write(Markdown(answer))
         except Exception:
-            _w(log, answer)
+            _role(log, "sidekick", answer)
 
 
 def launch(model: str = "") -> None:

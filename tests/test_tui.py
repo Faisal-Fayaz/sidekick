@@ -9,6 +9,19 @@ def _blob(app) -> str:
     return "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
 
 
+def test_role_builder_styles():
+    from sk.tui import _line
+
+    you = _line("12:00", "you", "hi [x]")
+    assert any("green" in str(s.style) for s in you.spans)
+    assert "hi [x]" in you.plain  # brackets literal, body neutral
+    bot = _line("12:00", "sidekick", "hello")
+    assert any("cyan" in str(s.style) for s in bot.spans)
+    tool = _line("12:00", "tool", "○ tool: x")
+    assert any("dim" in str(s.style) for s in tool.spans)
+    assert _line("12:00", "", "plain").plain.startswith("[12:00] ")
+
+
 async def _pilot_checks():
     app = SidekickTUI()
     async with app.run_test() as pilot:
@@ -130,6 +143,7 @@ async def _pilot_streaming(monkeypatch):
                 pass
         blob = _blob(app)
         assert "Hi" in blob
+        assert "green" in blob and "cyan" in blob  # role colors rendered
         assert re.search(r"\d+s · ~\d+tok", app.sub_title)
 
 
