@@ -220,6 +220,12 @@ class SidekickTUI(App):
         self._sub()
         log = self.query_one("#chat-log", RichLog)
         _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · click ● mic / ctrl+t to talk · ctrl+b/f scroll · hold Shift to select text, `ctrl+y` copies last answer.")
+        try:
+            from .cli import _code_version
+
+            _w(log, f"build {_code_version()} — restart the TUI after updates or you keep running old code.")
+        except Exception:
+            pass
 
     def action_mic(self) -> None:
         self._mic_toggle()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -312,6 +313,31 @@ def mic_test(
     console.print(f"[dim]{res.get('hint', '')}[/dim]")
 
 
+def _code_version() -> str:
+    """Short git hash of the running checkout (dev) or package version."""
+    try:
+        import subprocess as _sp
+
+        r = _sp.run(["git", "-C", str(Path(__file__).resolve().parent.parent.parent), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5)
+        h = (r.stdout or "").strip()
+        if h:
+            return h
+    except Exception:
+        pass
+    try:
+        from . import __version__
+
+        return __version__
+    except Exception:
+        return "unknown"
+
+
+@app.command()
+def version():
+    """Show running code version (git hash). Compare with TUI header."""
+    console.print(f"sk {_code_version()}")
+
+
 @app.command()
 def run(
     task: str = typer.Argument(..., help="Task in quotes, e.g. \"summarize disk usage\""),
@@ -375,7 +401,7 @@ def doctor():
     from .auth import provider_status
 
     cfg = _cfg()
-    console.print(f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan]")
+    console.print(f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan] code=[cyan]{_code_version()}[/cyan]")
     ok, msg = provider_status(cfg)
     if ok and cfg.provider in ("ollama", "lmstudio"):
         from .auth import fetch_models

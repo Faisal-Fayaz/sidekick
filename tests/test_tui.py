@@ -263,6 +263,19 @@ def test_timestamps():
     _run(_pilot_timestamps())
 
 
+def test_mount_shows_build():
+    from sk.tui import SidekickTUI as _T
+
+    async def _go():
+        app = _T()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+            assert "build " in blob and "restart the TUI" in blob
+
+    _run(_go())
+
+
 async def _pilot_scroll_keys():
     from sk.tui import SidekickTUI as _T
 

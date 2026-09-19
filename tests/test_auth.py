@@ -105,3 +105,13 @@ def test_setup_local_flow(monkeypatch):
     res = runner.invoke(app, ["setup"], input="1\nn\n")
     assert res.exit_code == 0, res.output
     assert "setup complete" in res.output
+
+
+def test_version_command():
+    from typer.testing import CliRunner
+
+    from sk.cli import _code_version, app
+
+    assert len(_code_version()) >= 4
+    res = CliRunner().invoke(app, ["version"])
+    assert res.exit_code == 0 and "sk " in res.output
