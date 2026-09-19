@@ -169,6 +169,52 @@ def test_quick_reply_greetings():
     assert run_agent("hi", [], _cfg()) == "Hey! What are we working on?"
 
 
+def test_quick_reply_date():
+    from datetime import datetime
+
+    from sk.agent import _quick_reply, run_agent
+
+    out = _quick_reply("what day is today")
+    assert out is not None and datetime.now().strftime("%A") in out
+    assert _quick_reply("what time is it") is not None
+    assert _quick_reply("what day is the meeting") is None  # not a date question
+    assert "20" in run_agent("what day is today", [], _cfg())  # instant, offline
+
+
+def test_today_in_system_prompt(tmp_path, monkeypatch):
+    import sk.store as store
+    from datetime import datetime
+
+    from sk.agent import build_messages
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    system = build_messages("hello", [], _cfg())[0]["content"]
+    assert datetime.now().strftime("%Y-%m-%d") in system
+
+
+def test_repeat_tool_uses_cache():
+    from sk.agent import _run_tool_cached
+
+    seen: dict[str, str] = {}
+    calls: list[str] = []
+
+    def fake_dispatch(name, args):
+        calls.append(name)
+        return "RESULT"
+
+    import sk.agent as agent
+
+    orig = agent.dispatch_tool
+    agent.dispatch_tool = fake_dispatch  # type: ignore
+    try:
+        r1, rep1 = _run_tool_cached("read_url", {"url": "https://x", "max_chars": 400}, None, None, seen)
+        r2, rep2 = _run_tool_cached("read_url", {"url": "https://x", "max_chars": 2000}, None, None, seen)
+    finally:
+        agent.dispatch_tool = orig
+    assert (r1, rep1) == ("RESULT", False)
+    assert rep2 is True and "already ran" in r2 and calls == ["read_url"]  # fetched once
+
+
 def test_build_messages_auto_search(monkeypatch, tmp_path):
     import sk.store as store
 

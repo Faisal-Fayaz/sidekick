@@ -29,6 +29,7 @@ Rules:
 - Recommend only Ollama models (qwen, llama, mistral, phi, gemma). Never recommend GPT-2/GPT-3.5/GPT-4/transformers for local run. VRAM truth: 3-4B fits 4GB VRAM easily and fast; 7-8B CAN run with partial CPU offload (you are qwen2.5-coder:7b doing it now) but slower, needs swap; 14B+ does NOT fit this box.
 - To use a tool, use native function calling. If that is unavailable, emit EXACTLY one fenced block: ```json {{"name": "sysinfo", "arguments": {{}}}}``` or {{"name": "list_dir", "arguments": {{"path": "~/neural-hangar"}}}} and nothing else.
 - Current working directory: {cwd} — HOME is /home/faisal.
+- Today is {today}. Answer date/day questions from this, never tools or memory.
 - OS: Linux.
 REAL SYSTEM SNAPSHOT (do not re-guess, but still call sysinfo tool if user asks about their device so the trace shows grounding):
 {sysinfo}
@@ -139,11 +140,12 @@ def _auto_web_context(text: str) -> str:
 
 
 def _quick_reply(text: str) -> str | None:
-    """Deterministic instant replies for pure greetings/thanks. No LLM, no tools.
+    """Deterministic instant replies for greetings/thanks/date. No LLM, no tools.
 
     Strict full-match only: 'hi, check ~/x' still goes to the model.
     """
     import re
+    from datetime import datetime
 
     t = (text or "").strip().lower().rstrip("!.~")
     if re.fullmatch(r"(hi|hii+|hello|hey|yo|hiya|namaste)(\s+(there|buddy|mate))?", t or ""):
@@ -152,6 +154,13 @@ def _quick_reply(text: str) -> str | None:
         return "Anytime!"
     if re.fullmatch(r"(bye|goodbye|see you|alvida)", t or ""):
         return "Later!"
+    if re.fullmatch(
+        r"(what(\s+is|\'s)?\s+(the\s+)?(day|date)(\s+(is\s+)?(it|today))?|"
+        r"(today'?s?\s+(day|date))|(what\s+time\s+is\s+it)|(current\s+(day|date|time)))",
+        t or "",
+    ):
+        now = datetime.now()
+        return f"Today is {now.strftime('%A, %B %d, %Y')}."
     return None
 
 
@@ -289,6 +298,31 @@ def _extra_body(cfg: Config) -> dict:
     return {}
 
 
+def _tool_target(name: str, args: dict) -> str:
+    """Canonical repeat-key: same tool + same target, ignoring cosmetic params."""
+    for key in ("url", "path", "cmd", "query", "content", "text", "id"):
+        if key in args and args[key] not in ("", None):
+            return f"{name}|{key}={str(args[key])[:300]}"
+    return f"{name}|{json.dumps(args, sort_keys=True)[:300]}"
+
+
+def _run_tool_cached(
+    name: str, args: dict, approve, on_tool, seen: dict[str, str]
+) -> tuple[str, bool]:
+    """Execute unless this exact target already ran this turn. Returns (result, repeated)."""
+    key = _tool_target(name, args)
+    if key in seen:
+        return (f"[cached — already ran above]\n{seen[key][:2000]}\nSynthesize the final answer now. Do not call more tools.", True)
+    result, _ = _gated_dispatch(name, args, approve)
+    seen[key] = result
+    if on_tool is not None:
+        try:
+            on_tool(name, args)  # type: ignore
+        except Exception:
+            pass
+    return (result, False)
+
+
 def _gated_dispatch(name: str, args: dict, approve: object = None) -> tuple[str, bool]:
     """Run dispatch_tool with approval gate. Returns (result, approved)."""
     if name in WRITE_TOOLS and approve is not None:
@@ -423,11 +457,15 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config) -> list[dict
         skill_block = "(none)"
     if len(mem_block) > 1500:
         mem_block = mem_block[:1500] + "\n... [truncated]"
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block)},
+    from datetime import datetime as _dt
+
+    today = _dt.now().strftime("%A, %Y-%m-%d")
+    messages: list[dict] = [
+        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today)},
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
+    return messages
 
 
 def run_agent(
@@ -459,6 +497,7 @@ def run_agent(
     # 350-token cap bounds worst-case generation time on CPU offload.
     # (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
     extra = _extra_body(cfg)
+    seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     for _ in range(cfg.max_steps):
         msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 350, extra, on_token)
 
@@ -476,12 +515,7 @@ def run_agent(
             messages.append({"role": "assistant", "content": msg_text})
             combined: list[str] = []
             for tname, targs in text_tools[:4]:  # cap 4 per turn
-                result, _ = _gated_dispatch(tname, targs, approve)
-                if on_tool is not None:
-                    try:
-                        on_tool(tname, targs)  # type: ignore
-                    except Exception:
-                        pass
+                result, _ = _run_tool_cached(tname, targs, approve, on_tool, seen)
                 combined.append(f"[tool {tname} result]\n{result}")
             messages.append({"role": "user", "content": "\n".join(combined) + "\nAnswer the original question concisely using these results. Do not emit more tool JSON."})
             continue
@@ -513,12 +547,7 @@ def run_agent(
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            result, _ = _gated_dispatch(name, args, approve)
-            if on_tool is not None:
-                try:
-                    on_tool(name, args)  # type: ignore
-                except Exception:
-                    pass
+            result, _ = _run_tool_cached(name, args, approve, on_tool, seen)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
         # after tools, loop to let model synthesize (next iteration)
