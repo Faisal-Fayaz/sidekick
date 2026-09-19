@@ -68,3 +68,24 @@ def test_auto_context_injects(tmp_path):
     ctx2 = _auto_local_context(f"check {d} please")
     # absolute /tmp not in regex (only ~ and /home/faisal), so empty is ok
     assert isinstance(ctx, str) and isinstance(ctx2, str)
+
+
+def test_make_dir_roundtrip(tmp_path, monkeypatch):
+    import sk.tools as _t
+
+    monkeypatch.setattr(_t.Path, "home", classmethod(lambda cls: tmp_path))
+    from sk.tools import dispatch_tool, tool_make_dir
+
+    d = tmp_path / "a" / "b"
+    assert "Created" in tool_make_dir(str(d)) and d.is_dir()
+    assert "Created" in tool_make_dir(str(d))  # idempotent
+    assert "blocked" in tool_make_dir("/etc/sk-evil").lower()
+    assert "Created" in dispatch_tool("make_dir", {"path": str(tmp_path / "c")})
+    assert (tmp_path / "c").is_dir()
+
+
+def test_make_dir_needs_approval():
+    from sk.agent import _gated_dispatch
+
+    out, ok = _gated_dispatch("make_dir", {"path": "/tmp/x"}, approve=lambda n, a: False)
+    assert ok is False and "Denied" in out

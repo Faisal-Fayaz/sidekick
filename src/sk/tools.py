@@ -139,7 +139,7 @@ def tool_sysinfo() -> str:
     )
 
 
-WRITE_TOOLS = {"write_file", "edit_file"}
+WRITE_TOOLS = {"write_file", "edit_file", "make_dir"}
 
 # never allow writes here, even with --yes
 WRITE_BLOCKLIST = (
@@ -179,6 +179,21 @@ def _check_write_path(path: str) -> Path | str:
     if not (is_home or is_tmp):
         return f"Error: MVP only allows writes under {home} or /tmp (got {p})."
     return p
+
+
+def tool_make_dir(path: str) -> str:
+    """mkdir -p under HOME or /tmp. Approval-gated like other writes."""
+    checked = _check_write_path(path)
+    if isinstance(checked, str):
+        return checked
+    p: Path = checked
+    try:
+        if p.exists() and not p.is_dir():
+            return f"Error: {p} exists and is not a directory."
+        p.mkdir(parents=True, exist_ok=True)
+        return f"Created {p}"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 def tool_write_file(path: str, content: str) -> str:
@@ -305,6 +320,18 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "make_dir",
+            "description": "Create a directory (like mkdir -p, HOME or /tmp only). REQUIRES user approval.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Directory to create, e.g. ~/notes"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "remember",
             "description": "Save a short fact for future sessions (e.g. 'prefers qwen3:4b for speed'). No approval needed.",
             "parameters": {
@@ -416,6 +443,8 @@ def dispatch_tool(name: str, args: dict) -> str:
         return tool_write_file(str(args.get("path", "")), str(args.get("content", "")))
     if name == "edit_file":
         return tool_edit_file(str(args.get("path", "")), str(args.get("old_string", "")), str(args.get("new_string", "")))
+    if name == "make_dir":
+        return tool_make_dir(str(args.get("path", "")))
     if name == "remember":
         from .store import save_memory
 

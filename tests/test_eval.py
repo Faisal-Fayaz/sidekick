@@ -103,7 +103,7 @@ def test_read_tools_bypass_gate():
 def test_all_tools_parseable():
     from sk.agent import _parse_text_tool
 
-    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"):
+    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"):
         args = {"path": "/tmp/x"} if name in ("list_dir", "read_file") else {}
         import json
 
@@ -230,3 +230,16 @@ def test_prompt_greeting_and_search_rules():
     assert "GREETINGS" in SYSTEM_PROMPT and "direct one-line" in SYSTEM_PROMPT
     assert "web_search FIRST" in SYSTEM_PROMPT
     assert "SKILL INDEX" in SYSTEM_PROMPT and "call `skill`" in SYSTEM_PROMPT
+    assert "don't ask in prose" in SYSTEM_PROMPT
+
+
+def test_approval_mode_prompt(tmp_path, monkeypatch):
+    import sk.store as store
+
+    from sk.agent import build_messages
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    auto = build_messages("hi there", [], _cfg(), auto_approve=True)[0]["content"]
+    assert "AUTOMATIC" in auto
+    conf = build_messages("hi there", [], _cfg(), auto_approve=False)[0]["content"]
+    assert "CONFIRM" in conf

@@ -35,6 +35,8 @@ def _make_approver(auto_yes: bool):
         if name == "write_file":
             c = str(args.get("content", ""))
             preview = c[:600] + ("... [truncated]" if len(c) > 600 else "")
+        elif name == "make_dir":
+            preview = "(new directory)"
         else:
             old = str(args.get("old_string", ""))[:300]
             new = str(args.get("new_string", ""))[:300]
@@ -168,7 +170,7 @@ def chat(
 
         console.print("[dim]thinking... (streams live)[/dim]")
         try:
-            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve)
+            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve, auto_approve=bool(state.get("yolo")))
         except Exception as e:
             console.print(f"[red]Error talking to {cfg.provider} ({cfg.effective_base_url()} model={cfg.model}): {e}[/red]")
             console.print("[dim]Tip: run `sk doctor` and `ollama serve`[/dim]")
@@ -277,7 +279,7 @@ def talk(
         console.print("[dim]thinking... (streams live)[/dim]")
         try:
             t0 = _t.monotonic()
-            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve)
+            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve, auto_approve=bool(state.get("yolo")))
             console.print(f"[dim]({ _t.monotonic() - t0:.0f}s)[/dim]")
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
@@ -332,7 +334,7 @@ def run(
 
     console.print("[dim]working... (streams live)[/dim]")
     try:
-        answer = run_agent(task, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve)
+        answer = run_agent(task, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve, auto_approve=yes)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
@@ -638,7 +640,7 @@ def setup():
         pass
     console.print("[dim]test run...[/dim]")
     try:
-        answer = run_agent("say hi in 5 words", [], _cfg(), approve=_make_approver(True))
+        answer = run_agent("say hi in 5 words", [], _cfg(), approve=_make_approver(True), auto_approve=True)
         console.print(Markdown((answer or "")[:500]))
     except Exception as e:
         console.print(f"[red]test run failed: {e}[/red]")
@@ -820,6 +822,7 @@ def oops(
             on_tool=_make_on_tool(),
             on_token=on_token,
             approve=_make_approver(True),
+            auto_approve=True,
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -937,6 +940,7 @@ def brief(
             on_tool=_make_on_tool(),
             on_token=_make_on_token(),
             approve=_make_approver(True),
+            auto_approve=True,
         )
         console.print()
         console.print("[dim]--- done ---[/dim]")

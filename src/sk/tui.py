@@ -524,7 +524,7 @@ class SidekickTUI(App):
 
         try:
             answer = await asyncio.to_thread(
-                run_agent, text, hist, cfg, on_tool, on_token, self._approve, on_reasoning
+                run_agent, text, hist, cfg, on_tool, None, self._approve, on_reasoning, bool(self.state.get("yolo"))
             )
         except Exception as e:
             log_error("answer", e)

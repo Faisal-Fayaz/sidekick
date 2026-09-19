@@ -118,7 +118,7 @@ async def _pilot_slash_model():
 async def _pilot_streaming(monkeypatch):
     import sk.agent as agent
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None):
+    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
         if on_reasoning:
             on_reasoning("hmm ")
         for tok in ("Hello", " world"):

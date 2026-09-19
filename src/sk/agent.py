@@ -16,7 +16,7 @@ SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
 You run on the user's Linux machine via Ollama.
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
-- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done, read_url, web_search, skill.
+- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, make_dir, remember, recall, todo_add, todo_list, todo_done, read_url, web_search, skill.
 - SKILLS: the SKILL INDEX lists packs by description. When a task matches one (debugging→systematic-debugging, new feature→brainstorming, plan→writing-plans), call `skill` to load its full instructions and FOLLOW them.
 - WEB: for summarize/docs/URL questions, call read_url (public http/https only). For "search the internet / latest / right now" questions, call web_search FIRST, then read_url the best hits. Never fetch localhost/private IPs. You HAVE these tools — never claim you cannot fetch URLs or search.
 - GREETINGS: hi/hello/thanks/bye get a direct one-line reply. Never call tools for greetings.
@@ -25,7 +25,8 @@ Rules:
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
 - PATHS (mandatory): ~/X means /home/faisal/X, NOT ./X. If user asks about ~/neural-hangar, you MUST call list_dir with path "~/neural-hangar" (or "/home/faisal/neural-hangar"). Never answer "does not exist" from cwd listing. cwd is {cwd} but ~ is /home/faisal. Always try the exact path first.
 - exec is READ-ONLY (ls, df, free, git status, etc). Never claim you ran a blocked command.
-- WRITES need approval: write_file/edit_file will ask the user. Announce what you will write + why before calling. Keep writes under HOME or /tmp, max 100KB. Never write to ~/.ssh, ~/.gnupg, /etc, /usr.
+- WRITES need approval: write_file/edit_file/make_dir will ask the user. Announce what you will write + why before calling. Keep writes under HOME or /tmp, max 100KB. Never write to ~/.ssh, ~/.gnupg, /etc, /usr.
+- CALL tools, don't ask in prose: to write/create, emit the tool call immediately with a one-line announcement. The approval UI handles permission — a prose "shall I?" stalls forever. {approval_mode}
 - If a tool is blocked/denied, explain why and suggest an allowed alternative.
 - Recommend only Ollama models (qwen, llama, mistral, phi, gemma). Never recommend GPT-2/GPT-3.5/GPT-4/transformers for local run. VRAM truth: 3-4B fits 4GB VRAM easily and fast; 7-8B CAN run with partial CPU offload (you are qwen2.5-coder:7b doing it now) but slower, needs swap; 14B+ does NOT fit this box.
 - To use a tool, use native function calling. If that is unavailable, emit EXACTLY one fenced block: ```json {{"name": "sysinfo", "arguments": {{}}}}``` or {{"name": "list_dir", "arguments": {{"path": "~/neural-hangar"}}}} and nothing else.
@@ -270,7 +271,7 @@ def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
     """
     import re
 
-    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
+    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
     found: list[tuple[str, dict]] = []
     seen: set[str] = set()
     for span in _balanced_objects(text):
@@ -425,7 +426,7 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
     return _Msg(acc_text, tool_calls, acc_reason)
 
 
-def build_messages(user_msg: str, history: list[dict], cfg: Config) -> list[dict]:
+def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False) -> list[dict]:
     """Assemble system + history + user messages with all grounding. Pure I/O, no LLM.
 
     Extracted for the eval harness: every quality regression (unguessed specs,
@@ -466,8 +467,13 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config) -> list[dict
     from datetime import datetime as _dt
 
     today = _dt.now().strftime("%A, %Y-%m-%d")
+    approval_mode = (
+        "Approval mode: AUTOMATIC — call write tools directly, do not ask."
+        if auto_approve
+        else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
+    )
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today)},
+        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today, approval_mode=approval_mode)},
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
@@ -482,12 +488,15 @@ def run_agent(
     on_token: object = None,
     approve: object = None,
     on_reasoning: object = None,
+    auto_approve: bool = False,
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
     approve(name, args) -> bool: gate for WRITE_TOOLS. If None, auto-approve.
     on_tool(name, args, result_or_denied) is notification only.
     on_reasoning(chunk) receives thinking deltas separately when given.
+    auto_approve only changes the prompt line (tool gating is the caller's
+    approve callback); pass True when --yes/yolo so the model calls directly.
     """
     quick = _quick_reply(user_msg)
     if quick is not None:
@@ -498,7 +507,7 @@ def run_agent(
                 pass
         return quick
     client = get_client(cfg)
-    messages = build_messages(user_msg, history, cfg)
+    messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
 
     final_text = ""
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU;
