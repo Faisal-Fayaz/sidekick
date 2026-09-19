@@ -13,7 +13,8 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Footer, Header, RichLog, TextArea
+from textual.widgets import Button, Footer, Header, RichLog, TextArea
+from textual.containers import Horizontal
 
 
 def _w(log: RichLog, s: str, markup: bool = False) -> None:
@@ -148,12 +149,15 @@ class ChatArea(TextArea):
 
 class SidekickTUI(App):
     TITLE = "sidekick"
-    BINDINGS = [("ctrl+y", "copy_last", "copy last answer")]
+    BINDINGS = [("ctrl+y", "copy_last", "copy last answer"), ("ctrl+t", "mic", "push to talk")]
     CSS = """
     RichLog { height: 1fr; border: solid #1d3327; }
     #live { height: auto; max-height: 10; border: solid #1d3327; display: none; }
-    ChatArea { height: 5; border: solid #1d3327; }
+    #input-row { height: 5; }
+    ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
     ChatArea:focus { border: solid #00ff9d; }
+    #mic-btn { width: 12; height: 5; }
+    #mic-btn.recording { background: #5c1010; }
     """
 
     def __init__(self, model: str = ""):
@@ -164,12 +168,19 @@ class SidekickTUI(App):
         self._live_reason: list[str] = []
         self._live_n: int = 0
         self._stats: str = ""
+        self._rec_proc = None
+        self._rec_wav: str = ""
+        self._rec_timer = None
+        self._rec_start: float = 0.0
+        self._transcribing: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield RichLog(id="chat-log", wrap=True, highlight=True)
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
-        yield ChatArea(id="chat-input", show_line_numbers=False)
+        with Horizontal(id="input-row"):
+            yield ChatArea(id="chat-input", show_line_numbers=False)
+            yield Button("● mic", id="mic-btn", variant="default")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -185,7 +196,120 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · select text to copy, `ctrl+y` copies last answer.")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t or ● mic to talk · select text to copy, `ctrl+y` copies last answer.")
+
+    def action_mic(self) -> None:
+        self._mic_toggle()
+
+    @on(Button.Pressed, "#mic-btn")
+    def _mic_btn(self) -> None:
+        self._mic_toggle()
+
+    def _mic_toggle(self) -> None:
+        import time as _t
+
+        from . import voice as _voice
+
+        log = self.query_one("#chat-log", RichLog)
+        btn = self.query_one("#mic-btn", Button)
+        if self._transcribing:
+            _w(log, f"[{_now()}] still transcribing, hold on...")
+            return
+        if self._rec_proc is None:
+            ok, msg = _voice.check_mic()
+            if not ok:
+                _role(log, "error", msg)
+                return
+            ok, msg = _voice.ensure_stt()
+            if not ok:
+                _role(log, "warn", f"{msg} — `sk talk --install` in a shell, then retry")
+                return
+            import tempfile
+
+            self._rec_wav = f"{tempfile.mkdtemp(prefix='sk-voice-')}/in.wav"
+            try:
+                self._rec_proc = _voice.start_recording(self._rec_wav)
+            except Exception as e:
+                _role(log, "error", f"mic failed: {e}")
+                self._rec_proc = None
+                return
+            self._rec_start = _t.monotonic()
+            btn.label = "■ stop"
+            btn.add_class("recording")
+            self._rec_timer = self.set_interval(1.0, self._rec_tick)
+            _role(log, "", "recording... press ● mic / ctrl+t to stop")
+        else:
+            self._mic_stop()
+
+    def _rec_tick(self) -> None:
+        import time as _t
+
+        try:
+            secs = int(_t.monotonic() - self._rec_start)
+            self.query_one("#mic-btn", Button).label = f"■ {secs}s"
+        except Exception:
+            pass
+
+    def _mic_stop(self) -> None:
+        from . import voice as _voice
+
+        log = self.query_one("#chat-log", RichLog)
+        btn = self.query_one("#mic-btn", Button)
+        proc, self._rec_proc = self._rec_proc, None
+        if self._rec_timer is not None:
+            try:
+                self._rec_timer.stop()
+            except Exception:
+                pass
+            self._rec_timer = None
+        try:
+            btn.label = "● mic"
+            btn.remove_class("recording")
+        except Exception:
+            pass
+        if proc is None:
+            return
+        err = _voice.stop_recording(proc)
+        if err:
+            _role(log, "error", err)
+            return
+        self._transcribing = True
+        _role(log, "", "transcribing locally...")
+        self.run_worker(self._do_transcribe(self._rec_wav), exclusive=True)
+
+    async def _do_transcribe(self, wav: str) -> None:
+        import asyncio
+
+        from . import voice as _voice
+
+        log = self.query_one("#chat-log", RichLog)
+        try:
+            text = await asyncio.to_thread(_voice.transcribe, wav)
+        except Exception as e:
+            try:
+                self.call_from_thread(_role, log, "error", str(e))
+            except Exception:
+                _role(log, "error", str(e))
+            self._transcribing = False
+            return
+        finally:
+            import shutil
+
+            shutil.rmtree(wav.rsplit("/", 1)[0], ignore_errors=True)
+        self._transcribing = False
+        try:
+            self.call_from_thread(self._drop_transcript, text)
+        except Exception:
+            self._drop_transcript(text)
+
+    def _drop_transcript(self, text: str) -> None:
+        log = self.query_one("#chat-log", RichLog)
+        area = self.query_one("#chat-input", ChatArea)
+        cur = area.text.strip()
+        area.text = (cur + " " + text).strip() if cur else text
+        area.cursor_to_end()
+        area.focus()
+        _role(log, "", f"heard> {text[:200]} (edit + Enter to send)")
 
     def _sub(self) -> None:
         from .config import Config

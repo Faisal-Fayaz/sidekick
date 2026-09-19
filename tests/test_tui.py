@@ -233,3 +233,71 @@ def test_ctrl_y_copies():
 
 def test_timestamps():
     _run(_pilot_timestamps())
+
+
+class _FakeProc:
+    returncode = 0
+
+    def terminate(self):
+        pass
+
+    def wait(self, timeout=None):
+        pass
+
+
+def _mock_voice(monkeypatch, text="hello from mic"):
+    import sk.voice as _v
+
+    monkeypatch.setattr(_v, "check_mic", lambda: (True, "mic ready"))
+    monkeypatch.setattr(_v, "ensure_stt", lambda: (True, "stt ready"))
+    monkeypatch.setattr(_v, "start_recording", lambda *a, **k: _FakeProc())
+    monkeypatch.setattr(_v, "stop_recording", lambda proc, timeout=5: None)
+    monkeypatch.setattr(_v, "transcribe", lambda *a, **k: text)
+
+
+async def _pilot_mic_roundtrip(monkeypatch):
+    from textual.widgets import Button
+
+    from sk.tui import SidekickTUI as _T
+
+    _mock_voice(monkeypatch)
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.click("#mic-btn")
+        await pilot.pause()
+        assert "stop" in str(app.query_one("#mic-btn").label).lower()
+        # second activation via posted Pressed: repeated pilot.clicks don't
+        # re-fire in headless mode (pilot mouse-state quirk, not app code).
+        btn = app.query_one("#mic-btn", Button)
+        app.post_message(Button.Pressed(btn))
+        for _ in range(30):
+            await pilot.pause()
+            if "hello from mic" in app.query_one("#chat-input").text:
+                break
+        assert "hello from mic" in app.query_one("#chat-input").text
+        assert "mic" in str(app.query_one("#mic-btn").label).lower()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "heard>" in blob
+
+
+async def _pilot_mic_no_stt(monkeypatch):
+    import sk.voice as _v
+    from sk.tui import SidekickTUI as _T
+
+    monkeypatch.setattr(_v, "check_mic", lambda: (True, "mic ready"))
+    monkeypatch.setattr(_v, "ensure_stt", lambda: (False, "faster-whisper not installed"))
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.click("#mic-btn")
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "sk talk --install" in blob
+
+
+def test_mic_roundtrip(monkeypatch):
+    _run(_pilot_mic_roundtrip(monkeypatch))
+
+
+def test_mic_no_stt_hint(monkeypatch):
+    _run(_pilot_mic_no_stt(monkeypatch))
