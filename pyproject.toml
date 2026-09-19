@@ -8,6 +8,7 @@ dependencies = [
     "rich>=13.0",
     "openai>=1.0",
     "python-dotenv>=1.0",
+    "textual>=8.0",
 ]
 
 [project.scripts]

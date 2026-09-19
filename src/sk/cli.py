@@ -522,5 +522,16 @@ def brief(
         console.print("[dim]--- done ---[/dim]")
 
 
+@app.command()
+def tui(
+    model: str = typer.Option("", help="Model override or fast/smart"),
+):
+    """Fullscreen dashboard: brief + todos + memories + chat."""
+    from .tui import launch
+
+    cfg = _cfg()
+    launch(_resolve_model(cfg, model))
+
+
 if __name__ == "__main__":
     app()

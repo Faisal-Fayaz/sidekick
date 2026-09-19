@@ -49,6 +49,14 @@ sk brief
 sk brief -p ~/sky-duel --smart
 ```
 
+## TUI
+
+```bash
+sk tui
+sk tui --model fast
+```
+Tabs: Brief (refresh) | Todos (type + Enter to add) | Memories (type + Enter) | Chat (Enter to send, LLM in background thread). Writes in chat still ask approval.
+
 ## Config
 
 `~/.sidekick/config.toml` — defaults to `qwen2.5-coder:7b` on `http://localhost:11434/v1`.
