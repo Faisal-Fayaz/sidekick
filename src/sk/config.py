@@ -26,7 +26,7 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 PRESETS: dict[str, dict[str, str]] = {
     "ollama": {"base_url": "http://localhost:11434/v1", "key": "ollama", "model": "qwen2.5-coder:7b"},
     "openai": {"base_url": "https://api.openai.com/v1", "key": "", "model": "gpt-4o-mini"},
-    "groq": {"base_url": "https://api.groq.com/openai/v1", "key": "", "model": "llama-3.3-70b-versatile"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "key": "", "model": "openai/gpt-oss-20b"},
     "together": {"base_url": "https://api.together.xyz/v1", "key": "", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
     "deepseek": {"base_url": "https://api.deepseek.com/v1", "key": "", "model": "deepseek-chat"},
     "openrouter": {"base_url": "https://openrouter.ai/api/v1", "key": "", "model": "openai/gpt-4o-mini"},

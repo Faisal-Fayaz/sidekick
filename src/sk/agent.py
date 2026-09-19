@@ -281,6 +281,14 @@ def _parse_text_tool(text: str) -> tuple[str, dict] | None:
     return hits[0] if hits else None
 
 
+def _extra_body(cfg: Config) -> dict:
+    """Provider-specific request params. Ollama-only knobs (options/num_ctx)
+    break cloud APIs with 400s, so they ship for local servers exclusively."""
+    if cfg.provider in ("ollama", "lmstudio"):
+        return {"options": {"num_ctx": 4096, "num_predict": 350}}
+    return {}
+
+
 def _gated_dispatch(name: str, args: dict, approve: object = None) -> tuple[str, bool]:
     """Run dispatch_tool with approval gate. Returns (result, approved)."""
     if name in WRITE_TOOLS and approve is not None:
@@ -449,7 +457,8 @@ def run_agent(
     final_text = ""
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU;
     # 350-token cap bounds worst-case generation time on CPU offload.
-    extra = {"options": {"num_ctx": 4096, "num_predict": 350}}
+    # (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
+    extra = _extra_body(cfg)
     for _ in range(cfg.max_steps):
         msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 350, extra, on_token)
 

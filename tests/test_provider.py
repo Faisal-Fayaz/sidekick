@@ -42,6 +42,16 @@ def test_client_uses_effective_values():
     assert "groq" in str(client.base_url)
 
 
+def test_extra_body_local_only():
+    from sk.agent import _extra_body
+
+    ollama = Config(provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2)
+    assert _extra_body(ollama) == {"options": {"num_ctx": 4096, "num_predict": 350}}
+    for prov in ("openai", "groq", "together", "deepseek", "openrouter", "custom"):
+        cfg = Config(provider=prov, model="m", base_url="", api_key="k", max_steps=5, temperature=0.2)
+        assert _extra_body(cfg) == {}, prov  # cloud 400s on Ollama-only 'options'
+
+
 def test_env_overrides(monkeypatch, tmp_path):
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "c.toml")
     monkeypatch.setenv("SIDEKICK_PROVIDER", "deepseek")
