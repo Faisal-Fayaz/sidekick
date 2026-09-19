@@ -164,7 +164,14 @@ class ChatArea(TextArea):
 
 class SidekickTUI(App):
     TITLE = "sidekick"
-    BINDINGS = [("ctrl+y", "copy_last", "copy last answer"), ("ctrl+t", "mic", "push to talk")]
+    BINDINGS = [
+        ("ctrl+y", "copy_last", "copy last answer"),
+        ("ctrl+t", "mic", "push to talk"),
+        ("ctrl+b", "scroll_log_up", "scroll up"),
+        ("ctrl+f", "scroll_log_down", "scroll down"),
+        ("ctrl+home", "scroll_log_top", "top"),
+        ("ctrl+end", "scroll_log_bottom", "bottom"),
+    ]
     CSS = """
     RichLog { height: 1fr; border: solid #1d3327; }
     #live { height: auto; max-height: 10; border: solid #1d3327; display: none; }
@@ -212,10 +219,31 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · select text to copy, `ctrl+y` copies last answer. (`sk tui --mouse` for clickable UI.)")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · select text to copy, `ctrl+y` copies last answer. (`sk tui --mouse` for mouse wheel.)")
 
     def action_mic(self) -> None:
         self._mic_toggle()
+
+    def _scroll_log(self, what: str) -> None:
+        # mouse tracking stays off (native copy), so the log scrolls by key.
+        # TextArea never sees these keys (unbound there) — they reach the app.
+        log = self.query_one("#chat-log", RichLog)
+        try:
+            {"up": log.scroll_page_up, "down": log.scroll_page_down, "top": log.scroll_home, "bottom": log.scroll_end}[what]()
+        except Exception:
+            pass
+
+    def action_scroll_log_up(self) -> None:
+        self._scroll_log("up")
+
+    def action_scroll_log_down(self) -> None:
+        self._scroll_log("down")
+
+    def action_scroll_log_top(self) -> None:
+        self._scroll_log("top")
+
+    def action_scroll_log_bottom(self) -> None:
+        self._scroll_log("bottom")
 
     def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
         """Status pill: never clickable (mouse stays off), shows mic state."""

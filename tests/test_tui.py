@@ -263,6 +263,38 @@ def test_timestamps():
     _run(_pilot_timestamps())
 
 
+async def _pilot_scroll_keys():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = app.query_one("#chat-log")
+        for i in range(100):
+            log.write(f"line {i}")
+        await pilot.pause()
+        area = app.query_one("#chat-input")
+        area.focus()
+        await pilot.pause()
+        assert log.scroll_y == log.max_scroll_y  # tail-followed on write
+        await pilot.press("ctrl+b")
+        await pilot.pause()
+        assert log.scroll_y < log.max_scroll_y
+        up_at = log.scroll_y
+        await pilot.press("ctrl+f")
+        await pilot.pause()
+        assert log.scroll_y > up_at
+        await pilot.press("ctrl+home")
+        await pilot.pause()
+        assert log.scroll_y == 0
+        await pilot.press("ctrl+end")
+        await pilot.pause()
+        assert log.scroll_y == log.max_scroll_y
+
+
+def test_scroll_keys():
+    _run(_pilot_scroll_keys())
+
+
 class _FakeProc:
     returncode = 0
 
