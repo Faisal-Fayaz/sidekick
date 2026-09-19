@@ -1,5 +1,6 @@
-"""Slash dispatcher tests: fully offline (isolated DB)."""
+"""Slash dispatcher tests: fully offline (isolated DB + isolated config)."""
 
+import sk.config as config_mod
 import sk.slash as slash
 import sk.store as store
 from sk.config import Config
@@ -7,8 +8,23 @@ from sk.config import Config
 
 def _ctx(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    # isolate config file: /model saves must never touch ~/.sidekick/config.toml
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
     cfg = Config(model="llama3.2:3b", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0)
     return {"session": "test", "cfg": cfg, "state": {"yolo": False}}
+
+
+def test_config_file_untouched(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    real = Path.home() / ".sidekick" / "config.toml"
+    before = real.read_bytes() if real.exists() else None
+    c = _ctx(tmp_path, monkeypatch)
+    slash.handle("/model smart", session=c["session"], cfg=c["cfg"], state=c["state"])
+    after = real.read_bytes() if real.exists() else None
+    assert before == after
+    assert (tmp_path / ".sidekick" / "config.toml").exists()
 
 
 def test_passthrough(tmp_path, monkeypatch):
