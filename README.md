@@ -70,6 +70,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom`. Any 
 | Command | What |
 |---|---|
 | `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies. Answers stream live, thinking dimmed, footer shows last-turn time/tokens. Copy works like a normal terminal (mouse tracking stays off); `/copy [n]` tabulates the nth-last answer via native clipboard → wl-copy/xclip/xsel → OSC52 (`sudo apt install xclip` on plain X11) |
+| `sk talk [-d SECS] [--stt-model base]` | Push-to-talk voice chat: Enter records, Enter stops. Transcribed locally by faster-whisper int8 (installs on first run, ~800MB + model). Voice never leaves your machine |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run |
 | `sk brief [-p PATH] [--smart]` | Morning digest, instant without LLM |
 | `sk remember/recall/memories/forget` | Long-term memory |

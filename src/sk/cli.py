@@ -183,6 +183,121 @@ def chat(
 
 
 @app.command()
+def talk(
+    session: str = typer.Option("voice", help="Session name for history"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes"),
+    model: str = typer.Option("", help="Model override: name or fast/smart"),
+    stt_model: str = typer.Option("tiny", help="faster-whisper size: tiny/base/small"),
+    duration: int = typer.Option(0, "--duration", "-d", help="Fixed record seconds (0 = Enter to start/stop)"),
+    install: bool = typer.Option(False, "--install", help="Install faster-whisper without asking"),
+    device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
+):
+    """Push-to-talk voice chat. All transcription happens on your CPU."""
+    import sys
+    import tempfile
+    import time as _t
+
+    from . import voice as _voice
+
+    cfg = _cfg()
+    cfg.model = _resolve_model(cfg, model)
+    ok, msg = _voice.check_mic()
+    if not ok:
+        console.print(f"[red]{msg}[/red]")
+        raise typer.Exit(1)
+    ok, msg = _voice.ensure_stt()
+    if not ok:
+        console.print(f"[yellow]{msg}[/yellow]")
+        if not install and not typer.confirm("Install now?", default=True):
+            raise typer.Exit(1)
+        console.print("[dim]installing faster-whisper into sidekick's env (one time, ~800MB)...[/dim]")
+        import subprocess as _sp
+
+        r = _sp.run([sys.executable, "-m", "pip", "install", "-q", "faster-whisper"], capture_output=True, text=True, timeout=900)
+        if r.returncode != 0:
+            console.print(f"[red]install failed. Try manually: {sys.executable} -m pip install faster-whisper\n{r.stderr[-500:]}[/red]")
+            raise typer.Exit(1)
+        ok, msg = _voice.ensure_stt()
+        if not ok:
+            console.print(f"[red]{msg}[/red]")
+            raise typer.Exit(1)
+    state = {"yolo": yes}
+    console.print(Panel(f"[bold]sidekick talk[/]  model=[cyan]{cfg.model}[/]  stt=[cyan]{stt_model}[/] (local int8)\n[bold green]Enter[/] to record, [bold green]Enter[/] to stop. [bold]/quit[/] exits, [bold]/help[/] commands.", expand=False))
+    approve = _make_approver_state(state)
+    on_tool = _make_on_tool()
+    on_token = _make_on_token()
+    import tempfile
+
+    while True:
+        try:
+            first = console.input("[bold green]talk> [/]").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nbye.")
+            break
+        if first.lower() in {"/quit", "/exit", ":q"}:
+            console.print("bye.")
+            break
+        if first.startswith("/") and first.lower() not in ("/quit",):
+            from . import slash as _slash
+
+            out = _slash.handle(first, session=session, cfg=cfg, state=state)
+            if out.quit:
+                console.print("bye.")
+                break
+            if out.text:
+                console.print(Markdown(out.text))
+            if not out.agent_prompt:
+                continue
+            user = out.agent_prompt
+        else:
+            out_wav = f"{tempfile.mkdtemp(prefix='sk-voice-')}/in.wav"
+            if duration > 0:
+                console.print(f"[red]● REC {duration}s...[/red]")
+                try:
+                    out_wav = str(_voice.record_once(duration, device))
+                except Exception as e:
+                    console.print(f"[red]record failed: {e}[/red]")
+                    continue
+            else:
+                console.print("[red]● REC — Enter to stop...[/red]")
+                proc = _voice.start_recording(out_wav, device)
+                try:
+                    console.input("")
+                except (EOFError, KeyboardInterrupt):
+                    console.print("\nbye.")
+                    _voice.stop_recording(proc)
+                    break
+                err = _voice.stop_recording(proc)
+                if err:
+                    console.print(f"[red]{err}[/red]")
+                    continue
+            console.print("[dim]transcribing locally...[/dim]")
+            try:
+                user = _voice.transcribe(out_wav, stt_model)
+            except Exception as e:
+                console.print(f"[red]{e}[/red]")
+                continue
+            console.print(f"[bold green]heard> [/]{user}")
+        history = get_history(session)
+        save_message(session, "user", user)
+        console.print("[dim]thinking... (streams live)[/dim]")
+        try:
+            t0 = _t.monotonic()
+            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve)
+            console.print(f"[dim]({ _t.monotonic() - t0:.0f}s)[/dim]")
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+            continue
+        save_message(session, "assistant", answer)
+        console.print()
+        streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
+        if streamed < len(answer or "") * 0.5:
+            console.print(Markdown(answer or "(empty)"))
+        console.print("[dim]--- done ---[/dim]")
+        console.print()
+
+
+@app.command()
 def run(
     task: str = typer.Argument(..., help="Task in quotes, e.g. \"summarize disk usage\""),
     session: str = typer.Option("default", help="Session name"),
