@@ -12,6 +12,9 @@ dependencies = [
     "httpx>=0.27",
 ]
 
+[project.optional-dependencies]
+voice = ["faster-whisper"]  # local STT for `sk talk` + TUI mic; install on demand
+
 [project.scripts]
 sk = "sk.cli:app"
 
