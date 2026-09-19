@@ -190,6 +190,7 @@ class SidekickTUI(App):
         self._live_reason: list[str] = []
         self._live_n: int = 0
         self._stats: str = ""
+        self._pending_approval = None
         self._rec_proc = None
         self._rec_wav: str = ""
         self._rec_timer = None
@@ -390,9 +391,44 @@ class SidekickTUI(App):
         self.sub_title = f"{model} · {mode} · /help{tail}"
 
     def _approve(self, name: str, args: dict) -> bool:
+        """Approval gate for worker threads. Reads auto-pass; writes either
+        auto-pass (/yolo) or block on an inline [y/N] question answered by
+        the user's next input line (120s timeout denies)."""
+        import threading
+        import time as _t
+
         from .tools import WRITE_TOOLS
 
-        return True if name not in WRITE_TOOLS else bool(self.state.get("yolo"))
+        if name not in WRITE_TOOLS:
+            return True
+        if bool(self.state.get("yolo")):
+            return True
+        path = args.get("path", "?")
+        preview = str(args.get("content", ""))[:200] if name == "write_file" else ""
+        if name == "edit_file":
+            preview = f"old: {str(args.get('old_string', ''))[:120]}"
+        event = threading.Event()
+        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic()}
+        try:
+            self.call_from_thread(self._ask_approval, name, path, preview)
+        except Exception:
+            self._ask_approval(name, path, preview)
+        expired = not event.wait(timeout=120)
+        pending, self._pending_approval = self._pending_approval, None
+        if expired:
+            try:
+                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", "approval timed out — denied")
+            except Exception:
+                pass
+            return False
+        return bool((pending or {}).get("answer", False))
+
+    def _ask_approval(self, name: str, path: str, preview: str) -> None:
+        log = self.query_one("#chat-log", RichLog)
+        _role(log, "warn", f"allow {name} -> {path}? [y/N] (type y or n)")
+        if preview:
+            _w(log, f"  {preview}")
+        self.query_one("#chat-input", ChatArea).focus()
 
     def action_copy_last(self) -> None:
         from .store import get_history
@@ -425,6 +461,18 @@ class SidekickTUI(App):
         area.push_history(text)
         area.hist_idx = -1
         log = self.query_one("#chat-log", RichLog)
+        # pending write approval eats the next line: y/yes approves, else denies
+        pending = getattr(self, "_pending_approval", None)
+        if pending is not None:
+            verdict = text.lower() in ("y", "yes", "yup", "ok", "okay", "sure", "approve")
+            _role(log, "you", text)
+            pending["answer"] = verdict
+            _role(log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}")
+            try:
+                pending["event"].set()
+            except Exception:
+                pass
+            return
         _role(log, "you", text)
         if text.startswith("/"):
             # /model switches session model (and saves default)

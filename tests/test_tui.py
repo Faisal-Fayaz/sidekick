@@ -263,6 +263,93 @@ def test_timestamps():
     _run(_pilot_timestamps())
 
 
+def _approval_fake(store):
+    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+        ok = approve("write_file", {"path": "/tmp/x", "content": "hi"})
+        store.append(ok)
+        return "wrote it" if ok else "blocked"
+
+    return fake
+
+
+async def _pilot_approval_yes(monkeypatch):
+    import sk.agent as agent
+
+    from sk.tui import SidekickTUI as _T
+
+    calls: list[bool] = []
+    monkeypatch.setattr(agent, "run_agent", _approval_fake(calls))
+    app = _T()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "write something"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            if "allow write_file" in _blob(app):
+                break
+        assert "allow write_file" in _blob(app)
+        area.focus()
+        area.text = "y"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause()
+            if "wrote it" in _blob(app):
+                break
+        assert calls == [True]
+        assert "approved" in _blob(app) and "wrote it" in _blob(app)
+
+
+async def _pilot_approval_no(monkeypatch):
+    import sk.agent as agent
+
+    from sk.tui import SidekickTUI as _T
+
+    calls: list[bool] = []
+    monkeypatch.setattr(agent, "run_agent", _approval_fake(calls))
+    app = _T()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "write something"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            if "allow write_file" in _blob(app):
+                break
+        area.focus()
+        area.text = "n"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause()
+            if "denied" in _blob(app):
+                break
+        assert calls == [False]
+        assert "denied" in _blob(app)
+
+
+def test_approval_fast_paths():
+    from sk.tui import SidekickTUI
+
+    app = SidekickTUI()
+    assert app._approve("list_dir", {}) is True  # reads pass, no UI needed
+    app.state["yolo"] = True
+    assert app._approve("write_file", {"path": "/tmp/x"}) is True
+
+
+def test_tui_approval_yes(monkeypatch):
+    _run(_pilot_approval_yes(monkeypatch))
+
+
+def test_tui_approval_no(monkeypatch):
+    _run(_pilot_approval_no(monkeypatch))
+
+
 def test_mount_shows_build():
     from sk.tui import SidekickTUI as _T
 
