@@ -1,5 +1,6 @@
 """Web fetch tests: guard rails offline + parsing; one live check is opt-in."""
 
+from sk.agent import _auto_web_context
 from sk.tools import _html_to_text, _url_blocked, dispatch_tool, tool_read_url
 
 
@@ -23,3 +24,12 @@ def test_html_strip():
 def test_dispatch_blocks():
     out = dispatch_tool("read_url", {"url": "http://127.0.0.1:11434/"})
     assert "blocked" in out.lower() or "error" in out.lower()
+
+
+def test_auto_web_empty():
+    assert _auto_web_context("no links here, just text") == ""
+
+
+def test_auto_web_blocked_offline():
+    out = _auto_web_context("check http://127.0.0.1:11434/ please")
+    assert "127.0.0.1" in out and "blocked" in out.lower()

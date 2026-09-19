@@ -17,7 +17,7 @@ You run on the user's Linux machine via Ollama.
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
 - Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done, read_url.
-- WEB: for summarize/docs/URL questions, call read_url (public http/https only). Never fetch localhost/private IPs.
+- WEB: for summarize/docs/URL questions, call read_url (public http/https only). Never fetch localhost/private IPs. You HAVE this tool — never claim you cannot fetch URLs. If page content is already in [AUTO WEB FACTS], summarize it directly.
 - MEMORY: user facts are in SAVED MEMORIES below. Use them (e.g. preferred model, projects). If user says "remember X", call remember. If asked "what do you remember / my prefs", call recall.
 - TODOS: open todos are in OPEN TODOS below. If user says "add todo / my todos / done #N", use todo tools. Proactively offer next todo when asked "what next".
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
@@ -105,6 +105,35 @@ def _auto_local_context(text: str) -> str:
                             break
         except Exception:
             pass
+    return "\n\n".join(chunks)
+
+
+def _auto_web_context(text: str) -> str:
+    """Deterministic grounding: fetch http(s) URLs so the model can never claim inability.
+
+    Mirrors _auto_local_context. Cap 2 URLs x 3000 chars to protect the 8k ctx window.
+    """
+    import re
+
+    from .tools import tool_read_url
+
+    urls = re.findall(r"https?://[^\s\"')<>]+", text)
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for u in urls:
+        u = u.rstrip(".,;:!?\"')")
+        if u not in seen:
+            seen.add(u)
+            uniq.append(u)
+    if not uniq:
+        return ""
+    chunks: list[str] = []
+    for u in uniq[:2]:
+        try:
+            body = tool_read_url(u, max_chars=3000)
+        except Exception as e:
+            body = f"Error fetching {u}: {e}"
+        chunks.append(f"[fetched {u}]\n{body[:3000]}")
     return "\n\n".join(chunks)
 
 
@@ -271,6 +300,9 @@ def run_agent(
     auto_ctx = _auto_local_context(user_msg)
     if auto_ctx:
         user_msg = user_msg + f"\n\n[AUTO LOCAL FACTS — these paths DO exist, never say otherwise]:\n{auto_ctx[:5000]}"
+    web_ctx = _auto_web_context(user_msg)
+    if web_ctx:
+        user_msg = user_msg + f"\n\n[AUTO WEB FACTS — already fetched, summarize directly, never claim inability]:\n{web_ctx[:6500]}"
     try:
         from .store import list_todos, recall_memories
 
