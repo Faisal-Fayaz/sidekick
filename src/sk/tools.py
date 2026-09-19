@@ -388,6 +388,18 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill",
+            "description": "Load full instructions of one skill pack by name (see SKILL INDEX in prompt, e.g. 'brainstorming'). Use when the task matches a skill's description.",
+            "parameters": {
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": "Skill name from the index"}},
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -434,6 +446,10 @@ def dispatch_tool(name: str, args: dict) -> str:
         return tool_read_url(str(args.get("url", "")), int(args.get("max_chars", 6000) or 6000))
     if name == "web_search":
         return tool_web_search(str(args.get("query", "")), int(args.get("count", 5) or 5))
+    if name == "skill":
+        from .skills import show_skill
+
+        return show_skill(str(args.get("name", "")))
     return f"Error: unknown tool '{name}'"
 
 

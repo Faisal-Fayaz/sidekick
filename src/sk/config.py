@@ -34,6 +34,20 @@ PRESETS: dict[str, dict[str, str]] = {
     "custom": {"base_url": "", "key": "", "model": ""},
 }
 
+# fast/smart tiers per provider. Only verified IDs here; unknown tiers fall
+# back to the provider default so aliases never 404.
+TIERS: dict[str, dict[str, str]] = {
+    "ollama": {"fast": "llama3.2:3b", "smart": "qwen2.5-coder:7b"},
+    "openai": {"fast": "gpt-4o-mini", "smart": "gpt-4o"},
+    "groq": {"fast": "openai/gpt-oss-20b", "smart": "openai/gpt-oss-120b"},
+    "deepseek": {"fast": "deepseek-chat", "smart": "deepseek-reasoner"},
+}
+
+
+def provider_tier(provider: str, tier: str, fallback: str) -> str:
+    """Resolve fast/smart for a provider, falling back to the saved default."""
+    return TIERS.get(provider, {}).get(tier, "") or fallback
+
 DEFAULTS = {
     "provider": "ollama",
     "model": PRESETS["ollama"]["model"],

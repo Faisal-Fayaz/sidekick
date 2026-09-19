@@ -87,3 +87,14 @@ def test_slash_provider(monkeypatch, tmp_path):
     out = slash.handle("/provider groq", session="s", cfg=cfg, state={})
     assert cfg.provider == "groq" and "groq" in out.text
     assert "unknown" in slash.handle("/provider nope", session="s", cfg=cfg, state={}).text.lower()
+
+
+def test_provider_tiers():
+    from sk.config import provider_tier
+
+    assert provider_tier("ollama", "fast", "d") == "llama3.2:3b"
+    assert provider_tier("ollama", "smart", "d") == "qwen2.5-coder:7b"
+    assert provider_tier("groq", "fast", "d") == "openai/gpt-oss-20b"
+    assert provider_tier("groq", "smart", "d") == "openai/gpt-oss-120b"
+    assert provider_tier("openrouter", "fast", "mydefault") == "mydefault"  # unverified -> fallback
+    assert provider_tier("custom", "smart", "mydefault") == "mydefault"

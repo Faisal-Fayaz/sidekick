@@ -41,11 +41,13 @@ Tip: paste with Ctrl+Shift+V (terminal). Hold Shift to select text with the mous
 
 
 def _resolve_model_name(cfg, raw: str) -> str:
+    from .config import provider_tier
+
     m = (raw or "").strip()
     if m == "fast":
-        return "llama3.2:3b"
+        return provider_tier(cfg.provider, "fast", cfg.model)
     if m == "smart":
-        return "qwen2.5-coder:7b"
+        return provider_tier(cfg.provider, "smart", cfg.model)
     return m
 
 

@@ -103,7 +103,7 @@ def test_read_tools_bypass_gate():
 def test_all_tools_parseable():
     from sk.agent import _parse_text_tool
 
-    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search"):
+    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"):
         args = {"path": "/tmp/x"} if name in ("list_dir", "read_file") else {}
         import json
 
@@ -229,3 +229,4 @@ def test_build_messages_auto_search(monkeypatch, tmp_path):
 def test_prompt_greeting_and_search_rules():
     assert "GREETINGS" in SYSTEM_PROMPT and "direct one-line" in SYSTEM_PROMPT
     assert "web_search FIRST" in SYSTEM_PROMPT
+    assert "SKILL INDEX" in SYSTEM_PROMPT and "call `skill`" in SYSTEM_PROMPT

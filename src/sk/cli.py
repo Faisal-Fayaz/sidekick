@@ -93,25 +93,28 @@ def _make_on_token():
 def _resolve_model(cfg, model_opt: str, task: str = "") -> str:
     """--model > SIDEKICK_MODEL > config. Supports fast/smart/auto aliases.
 
-    fast = llama3.2:3b (2GB, instant on 4GB VRAM, non-reasoning)
-    smart = qwen2.5-coder:7b (best tools/code, slower)
-    auto = router picks from task text (sk run default)
-    qwen3:4b available explicitly by name (good balance, but thinks a lot).
+    fast/smart resolve per provider (ollama: llama3.2:3b / qwen2.5-coder:7b).
+    auto = router picks a tier from task text (sk run default).
     """
     if model_opt:
+        from .config import provider_tier
+
         m = model_opt.strip()
         if m == "fast":
-            return "llama3.2:3b"
+            return provider_tier(cfg.provider, "fast", cfg.model)
         if m == "smart":
-            return "qwen2.5-coder:7b"
+            return provider_tier(cfg.provider, "smart", cfg.model)
         if m == "auto":
-            if cfg.provider not in ("ollama", "lmstudio", "custom"):
-                return cfg.model  # router knows local models only; honor provider default
-            from .router import FAST_MODEL, pick_model
+            from .router import FAST_MODEL, SMART_MODEL, pick_model
 
             picked, reason = pick_model(task, FAST_MODEL)
-            console.print(f"[dim]router → {picked} ({reason})[/dim]")
-            return picked
+            if cfg.provider in ("ollama", "lmstudio", "custom"):
+                console.print(f"[dim]router → {picked} ({reason})[/dim]")
+                return picked
+            tier = "smart" if picked == SMART_MODEL else "fast"
+            resolved = provider_tier(cfg.provider, tier, cfg.model)
+            console.print(f"[dim]router → {resolved} ({reason})[/dim]")
+            return resolved
         return m
     return cfg.model
 
@@ -635,6 +638,22 @@ def skills():
     for name, size in rows:
         console.print(f"• [cyan]{name}[/cyan] ({size}b)")
     console.print("[dim]Add your own: echo '# my skill\\n- rule' > ~/.sidekick/skills/my.md[/dim]")
+
+
+@app.command(name="skills-install")
+def skills_install(
+    name: str = typer.Argument("superpowers", help="Preset (superpowers) or git URL"),
+    force: bool = typer.Option(False, "--force", help="Re-clone if present"),
+):
+    """Install skill packs: sk skills-install superpowers"""
+    from .skills import install_preset
+
+    console.print(f"[dim]installing {name}...[/dim]")
+    out = install_preset(name, force=force)
+    if out.startswith("Installed"):
+        console.print(f"[green]{out}[/green]")
+    else:
+        console.print(f"[yellow]{out}[/yellow]")
 
 
 @app.command()

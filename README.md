@@ -76,8 +76,10 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom`. Any 
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
-| `sk skills` / `sk daemon [--once]` | Skill packs / background watcher |
+| `sk skills` / `sk skills-install superpowers` / `sk daemon [--once]` | Skill packs (obra/superpowers) / background watcher |
 | `sk doctor` / `sk models` / `sk config` | Health / models / settings |
+
+Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked index; the agent loads full instructions on demand via the `skill` tool. `fast`/`smart` resolve per provider (Ollama: llama3.2:3b/qwen2.5-coder:7b, Groq: gpt-oss-20b/120b).
 
 ## Architecture
 

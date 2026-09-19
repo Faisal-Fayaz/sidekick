@@ -16,7 +16,8 @@ SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
 You run on the user's Linux machine via Ollama.
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
-- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done, read_url.
+- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done, read_url, web_search, skill.
+- SKILLS: the SKILL INDEX lists packs by description. When a task matches one (debugging→systematic-debugging, new feature→brainstorming, plan→writing-plans), call `skill` to load its full instructions and FOLLOW them.
 - WEB: for summarize/docs/URL questions, call read_url (public http/https only). For "search the internet / latest / right now" questions, call web_search FIRST, then read_url the best hits. Never fetch localhost/private IPs. You HAVE these tools — never claim you cannot fetch URLs or search.
 - GREETINGS: hi/hello/thanks/bye get a direct one-line reply. Never call tools for greetings.
 - MEMORY: user facts are in SAVED MEMORIES below. Use them (e.g. preferred model, projects). If user says "remember X", call remember. If asked "what do you remember / my prefs", call recall.
@@ -269,7 +270,7 @@ def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
     """
     import re
 
-    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search"}
+    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
     found: list[tuple[str, dict]] = []
     seen: set[str] = set()
     for span in _balanced_objects(text):
@@ -455,7 +456,7 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config) -> list[dict
         todo_block = "\n".join(f"#{i}: {t}" for i, t, _ in todo_rows) if todo_rows else "(none)"
         from .skills import load_skills
 
-        skill_block = load_skills()
+        skill_block = load_skills(user_msg)
     except Exception:
         mem_block = "(none)"
         todo_block = "(none)"
