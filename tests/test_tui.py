@@ -161,7 +161,7 @@ async def _pilot_ctrl_y():
         assert "cop" in blob  # copied... or copy failed hint
 
 
-def test_launch_disables_mouse():
+def test_launch_mouse_default():
     import sk.tui as tui_mod
     from textual.app import App
 
@@ -176,10 +176,10 @@ def test_launch_disables_mouse():
         tui_mod.launch()
     finally:
         App.run = orig  # type: ignore
-    assert seen.get("mouse") is False  # native terminal selection = normal copy
+    assert seen.get("mouse") is True  # clickable buttons + wheel; Shift selects
 
 
-def test_launch_mouse_flag():
+def test_launch_no_mouse_flag():
     import sk.tui as tui_mod
     from textual.app import App
 
@@ -191,10 +191,10 @@ def test_launch_mouse_flag():
     orig = App.run
     App.run = fake_run  # type: ignore
     try:
-        tui_mod.launch(mouse=True)
+        tui_mod.launch(mouse=False)
     finally:
         App.run = orig  # type: ignore
-    assert seen.get("mouse") is True
+    assert seen.get("mouse") is False
 
 
 def test_mic_crash_logged(tmp_path, monkeypatch):
@@ -316,15 +316,20 @@ def _mock_voice(monkeypatch, text="hello from mic"):
 
 
 async def _pilot_mic_roundtrip(monkeypatch):
+    from textual.widgets import Button
+
     from sk.tui import SidekickTUI as _T
 
     _mock_voice(monkeypatch)
     app = _T()
     async with app.run_test() as pilot:
-        app.action_mic()  # start (pill is display-only; ctrl+t is the trigger)
+        await pilot.click("#mic-btn")  # real click: mouse is on by default
         await pilot.pause()
         assert app.mic_state == "recording"
-        app.action_mic()  # stop
+        # stop via posted Pressed: repeated pilot.clicks don't re-fire
+        # headless (pilot mouse-state quirk, not app code).
+        btn = app.query_one("#mic-btn", Button)
+        app.post_message(Button.Pressed(btn))
         for _ in range(30):
             await pilot.pause()
             if "hello from mic" in app.query_one("#chat-input").text:

@@ -13,7 +13,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Footer, Header, RichLog, Static, TextArea
+from textual.widgets import Button, Footer, Header, RichLog, TextArea
 from textual.containers import Horizontal
 
 
@@ -178,8 +178,8 @@ class SidekickTUI(App):
     #input-row { height: 5; }
     ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
     ChatArea:focus { border: solid #00ff9d; }
-    #mic-status { width: 22; height: 5; border: solid #1d3327; color: #9b9bab; content-align: center middle; }
-    #mic-status.recording { border: solid #ff5555; color: #ff5555; }
+    #mic-btn { width: 14; height: 5; }
+    #mic-btn.recording { background: #5c1010; }
     """
 
     def __init__(self, model: str = ""):
@@ -203,7 +203,7 @@ class SidekickTUI(App):
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
-            yield Static("ctrl+t\nto talk", id="mic-status")
+            yield Button("● mic", id="mic-btn", variant="default")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -219,9 +219,13 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · select text to copy, `ctrl+y` copies last answer. (`sk tui --mouse` for mouse wheel.)")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · click ● mic / ctrl+t to talk · ctrl+b/f scroll · hold Shift to select text, `ctrl+y` copies last answer.")
 
     def action_mic(self) -> None:
+        self._mic_toggle()
+
+    @on(Button.Pressed, "#mic-btn")
+    def _mic_btn(self) -> None:
         self._mic_toggle()
 
     def _scroll_log(self, what: str) -> None:
@@ -246,15 +250,15 @@ class SidekickTUI(App):
         self._scroll_log("bottom")
 
     def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
-        """Status pill: never clickable (mouse stays off), shows mic state."""
+        """Mic button face + state mirror (click, ctrl+t, or Tab+Enter all work)."""
         self.mic_state = state
         try:
-            pill = self.query_one("#mic-status", Static)
-            pill.update(text)
+            btn = self.query_one("#mic-btn", Button)
+            btn.label = text.replace("\n", " ")
             if recording:
-                pill.add_class("recording")
+                btn.add_class("recording")
             else:
-                pill.remove_class("recording")
+                btn.remove_class("recording")
         except Exception:
             pass
 
@@ -565,8 +569,7 @@ class SidekickTUI(App):
             _role(log, "sidekick", answer)
 
 
-def launch(model: str = "", mouse: bool = False) -> None:
-    # mouse=False (default): terminal keeps native selection, so copy works
-    # exactly like a regular terminal. --mouse opts into clickable buttons
-    # at the cost of terminal selection (then hold Shift to select).
+def launch(model: str = "", mouse: bool = True) -> None:
+    # Mouse on: buttons clickable, wheel scrolls — like every other TUI.
+    # Hold Shift to select/copy text natively. --no-mouse disables it.
     SidekickTUI(model=model).run(mouse=mouse)

@@ -945,13 +945,13 @@ def brief(
 @app.command()
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
-    mouse: bool = typer.Option(False, "--mouse", help="Enable mouse (clickable buttons, but terminal text selection needs Shift)"),
+    no_mouse: bool = typer.Option(False, "--no-mouse", help="Disable mouse (native text selection without Shift)"),
 ):
-    """Fullscreen chat. Mouse stays off by default so copy works natively."""
+    """Fullscreen chat. Mouse on: click + wheel; hold Shift to select text."""
     from .tui import launch
 
     cfg = _cfg()
-    launch(_resolve_model(cfg, model), mouse=mouse)
+    launch(_resolve_model(cfg, model), mouse=not no_mouse)
 
 
 @app.command()
