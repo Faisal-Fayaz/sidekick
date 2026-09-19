@@ -69,7 +69,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom`. Any 
 
 | Command | What |
 |---|---|
-| `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies. Answers stream live, thinking dimmed, footer shows last-turn time/tokens |
+| `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies. Answers stream live, thinking dimmed, footer shows last-turn time/tokens. Copy works like a normal terminal (mouse tracking stays off); `/copy [n]` tabulates the nth-last answer via native clipboard → wl-copy/xclip/xsel → OSC52 (`sudo apt install xclip` on plain X11) |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run |
 | `sk brief [-p PATH] [--smart]` | Morning digest, instant without LLM |
 | `sk remember/recall/memories/forget` | Long-term memory |

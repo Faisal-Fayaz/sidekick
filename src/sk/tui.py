@@ -84,6 +84,7 @@ class ChatArea(TextArea):
         Binding("enter", "send", "send", priority=True, show=False),
         Binding("ctrl+j", "newline", "newline", show=False),
         Binding("alt+enter", "newline", "newline", show=False),
+        Binding("ctrl+y", "copy_last", "copy last answer", priority=True, show=False),
         Binding("up", "hist_prev", "history", show=False),
         Binding("down", "hist_next", "history", show=False),
     ]
@@ -104,6 +105,10 @@ class ChatArea(TextArea):
             self.hist_idx = -1
             self.post_message(ChatArea.Send(text))
         self.clear()
+
+    def action_copy_last(self) -> None:
+        # TextArea binds ctrl+y to redo; this priority binding reclaims it.
+        self.app.action_copy_last()
 
     def action_newline(self) -> None:
         self.insert("\n")
@@ -180,7 +185,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · `/help` · `/model fast` · `ctrl+y` copies.")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · select text to copy, `ctrl+y` copies last answer.")
 
     def _sub(self) -> None:
         from .config import Config
@@ -377,4 +382,6 @@ class SidekickTUI(App):
 
 
 def launch(model: str = "") -> None:
-    SidekickTUI(model=model).run()
+    # mouse=False: terminal keeps native selection, so copy works exactly
+    # like a regular terminal (select + Ctrl+Shift+C). Keyboard runs the UI.
+    SidekickTUI(model=model).run(mouse=False)

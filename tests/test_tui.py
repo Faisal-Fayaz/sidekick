@@ -150,10 +150,33 @@ async def _pilot_streaming(monkeypatch):
 async def _pilot_ctrl_y():
     app = SidekickTUI()
     async with app.run_test() as pilot:
+        # focus the input: this is the real failing scenario, TextArea's
+        # builtin ctrl+y (redo) used to swallow the keystroke.
+        area = app.query_one("#chat-input", ChatArea)
+        area.focus()
+        await pilot.pause()
         await pilot.press("ctrl+y")
         await pilot.pause()
         blob = _blob(app)
         assert "cop" in blob  # copied... or copy failed hint
+
+
+def test_launch_disables_mouse():
+    import sk.tui as tui_mod
+    from textual.app import App
+
+    seen = {}
+
+    def fake_run(self, **kwargs):
+        seen.update(kwargs)
+
+    orig = App.run
+    App.run = fake_run  # type: ignore
+    try:
+        tui_mod.launch()
+    finally:
+        App.run = orig  # type: ignore
+    assert seen.get("mouse") is False  # native terminal selection = normal copy
 
 
 async def _pilot_timestamps():
