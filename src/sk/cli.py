@@ -748,12 +748,13 @@ def brief(
 @app.command()
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
+    mouse: bool = typer.Option(False, "--mouse", help="Enable mouse (clickable buttons, but terminal text selection needs Shift)"),
 ):
-    """Fullscreen dashboard: brief + todos + memories + chat."""
+    """Fullscreen chat. Mouse stays off by default so copy works natively."""
     from .tui import launch
 
     cfg = _cfg()
-    launch(_resolve_model(cfg, model))
+    launch(_resolve_model(cfg, model), mouse=mouse)
 
 
 @app.command()

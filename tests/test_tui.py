@@ -179,6 +179,34 @@ def test_launch_disables_mouse():
     assert seen.get("mouse") is False  # native terminal selection = normal copy
 
 
+def test_launch_mouse_flag():
+    import sk.tui as tui_mod
+    from textual.app import App
+
+    seen = {}
+
+    def fake_run(self, **kwargs):
+        seen.update(kwargs)
+
+    orig = App.run
+    App.run = fake_run  # type: ignore
+    try:
+        tui_mod.launch(mouse=True)
+    finally:
+        App.run = orig  # type: ignore
+    assert seen.get("mouse") is True
+
+
+def test_mic_crash_logged(tmp_path, monkeypatch):
+    import sk.config as _c
+    from sk.tui import log_error
+
+    monkeypatch.setattr(_c, "CONFIG_DIR", tmp_path)
+    log_error("mic-toggle", RuntimeError("boom"))
+    content = (tmp_path / "tui-errors.log").read_text()
+    assert "mic-toggle" in content and "boom" in content
+
+
 async def _pilot_timestamps():
     app = SidekickTUI()
     async with app.run_test() as pilot:

@@ -22,6 +22,21 @@ def _w(log: RichLog, s: str, markup: bool = False) -> None:
     log.write(Text.from_markup(s) if markup else Text(s))
 
 
+def log_error(where: str, exc: BaseException) -> None:
+    """Persist TUI errors where the user can't copy them. Best effort."""
+    import traceback
+
+    from .config import CONFIG_DIR
+
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_DIR / "tui-errors.log", "a") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {where}: {exc!r}\n")
+            f.write(traceback.format_exc()[-2000:] + "\n")
+    except Exception:
+        pass
+
+
 ROLE_STYLES = {
     "you": "bold green",
     "sidekick": "bold cyan",
@@ -196,7 +211,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t or ● mic to talk · select text to copy, `ctrl+y` copies last answer.")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t / Tab+Enter on ● mic to talk · select text to copy, `ctrl+y` copies last answer. (`sk tui --mouse` for clickable buttons.)")
 
     def action_mic(self) -> None:
         self._mic_toggle()
@@ -212,6 +227,13 @@ class SidekickTUI(App):
 
         log = self.query_one("#chat-log", RichLog)
         btn = self.query_one("#mic-btn", Button)
+        try:
+            self._mic_toggle_inner(log, btn, _voice, _t)
+        except Exception as e:
+            log_error("mic-toggle", e)
+            _role(log, "error", f"mic crashed: {e} (logged to ~/.sidekick/tui-errors.log)")
+
+    def _mic_toggle_inner(self, log: RichLog, btn: Button, _voice, _t) -> None:
         if self._transcribing:
             _w(log, f"[{_now()}] still transcribing, hold on...")
             return
@@ -464,6 +486,7 @@ class SidekickTUI(App):
                 run_agent, text, hist, cfg, on_tool, on_token, self._approve, on_reasoning
             )
         except Exception as e:
+            log_error("answer", e)
             try:
                 self.call_from_thread(_role, log, "error", f"Error: {e}")
             except Exception:
@@ -505,7 +528,8 @@ class SidekickTUI(App):
             _role(log, "sidekick", answer)
 
 
-def launch(model: str = "") -> None:
-    # mouse=False: terminal keeps native selection, so copy works exactly
-    # like a regular terminal (select + Ctrl+Shift+C). Keyboard runs the UI.
-    SidekickTUI(model=model).run(mouse=False)
+def launch(model: str = "", mouse: bool = False) -> None:
+    # mouse=False (default): terminal keeps native selection, so copy works
+    # exactly like a regular terminal. --mouse opts into clickable buttons
+    # at the cost of terminal selection (then hold Shift to select).
+    SidekickTUI(model=model).run(mouse=mouse)
