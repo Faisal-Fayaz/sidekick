@@ -16,7 +16,8 @@ SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
 You run on the user's Linux machine via Ollama.
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
-- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done.
+- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done, read_url.
+- WEB: for summarize/docs/URL questions, call read_url (public http/https only). Never fetch localhost/private IPs.
 - MEMORY: user facts are in SAVED MEMORIES below. Use them (e.g. preferred model, projects). If user says "remember X", call remember. If asked "what do you remember / my prefs", call recall.
 - TODOS: open todos are in OPEN TODOS below. If user says "add todo / my todos / done #N", use todo tools. Proactively offer next todo when asked "what next".
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
@@ -114,7 +115,7 @@ def _parse_text_tool(text: str) -> tuple[str, dict] | None:
     """
     import re
 
-    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done"}
+    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url"}
     # try fenced block first
     m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     candidates = [m.group(1)] if m else []

@@ -1,4 +1,4 @@
-"""MVP tools: sysinfo, list_dir, read_file, exec (read-only) + write_file/edit_file (approval)."""
+"""Tools: sysinfo, list_dir, read_file, exec + write_file/edit_file (approval) + remember/recall/todos + read_url."""
 
 from __future__ import annotations
 
@@ -358,6 +358,21 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_url",
+            "description": "Fetch a public http/https URL and return title + text (for docs, GitHub, articles). No localhost/private IPs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "https://..."},
+                    "max_chars": {"type": "integer", "description": "Max chars, default 6000"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
@@ -400,4 +415,115 @@ def dispatch_tool(name: str, args: dict) -> str:
         except Exception:
             return "Error: id must be int."
         return complete_todo(tid)
+    if name == "read_url":
+        return tool_read_url(str(args.get("url", "")), int(args.get("max_chars", 6000) or 6000))
     return f"Error: unknown tool '{name}'"
+
+
+def _url_blocked(url: str) -> str | None:
+    """SSRF guard. Returns error or None if OK."""
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+
+    try:
+        u = urlparse(url.strip())
+    except Exception:
+        return "Error: bad URL."
+    if u.scheme not in ("http", "https"):
+        return "Error: only http/https allowed."
+    host = (u.hostname or "").lower()
+    if not host or len(url) > 2000:
+        return "Error: bad URL."
+    if host in ("localhost",) or host.endswith(".local") or host.endswith(".internal"):
+        return f"Error: blocked host '{host}'."
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return f"Error: blocked IP '{host}'."
+    except ValueError:
+        pass  # hostname, resolve below
+    try:
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(5)
+        try:
+            resolved = socket.getaddrinfo(host, None)
+        finally:
+            socket.setdefaulttimeout(old_timeout)
+        ips = {r[4][0] for r in resolved}
+        for rip in ips:
+            try:
+                ip = ipaddress.ip_address(rip)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                    return f"Error: host resolves to private IP ({rip})."
+            except ValueError:
+                pass
+    except Exception:
+        return "Error: DNS failed."
+    return None
+
+
+def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
+    """Minimal readability: title + visible text. Stdlib only."""
+    import re
+    from html.parser import HTMLParser
+
+    title = ""
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    if m:
+        title = re.sub(r"\s+", " ", m.group(1)).strip()[:200]
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.out: list[str] = []
+            self.skip = 0
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style", "nav", "footer", "aside"):
+                self.skip += 1
+            if tag in ("p", "br", "h1", "h2", "h3", "h4", "li", "tr"):
+                self.out.append("\n")
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "style", "nav", "footer", "aside") and self.skip:
+                self.skip -= 1
+
+        def handle_data(self, data):
+            if not self.skip:
+                self.out.append(data)
+
+    p = P()
+    p.feed(html[:500_000])
+    text = re.sub(r"[ \t]+", " ", "".join(p.out))
+    text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    return (title, text[:limit])
+
+
+def tool_read_url(url: str, max_chars: int = 6000) -> str:
+    blocked = _url_blocked(url)
+    if blocked:
+        return blocked
+    max_chars = max(500, min(int(max_chars or 6000), 15000))
+    try:
+        import httpx
+
+        with httpx.Client(timeout=20, follow_redirects=True, max_redirects=3) as c:
+            r = c.get(url.strip(), headers={"User-Agent": "sidekick/0.1"})
+            r.raise_for_status()
+            ctype = r.headers.get("content-type", "")
+            if "text" not in ctype and "html" not in ctype and "json" not in ctype and "xml" not in ctype:
+                return f"Error: unsupported content-type '{ctype}'."
+            raw = r.text
+    except Exception as e:
+        return f"Error fetching: {str(e)[:300]}"
+    if len(raw) > 1_000_000:
+        return "Error: page too large (>1MB)."
+    title, text = _html_to_text(raw)
+    if len(text) < 50:
+        text = raw[:max_chars]
+    else:
+        text = text[:max_chars]
+    head = f"# {title}\n" if title else ""
+    tail = "\n... [truncated]" if len(raw) > max_chars else ""
+    return f"{head}{text}{tail}"

@@ -67,6 +67,13 @@ sk daemon --once
 sk daemon --interval 300   # foreground loop, log ~/.sidekick/nudges.log
 ```
 
+## Web
+
+```bash
+sk run "summarize https://example.com in one line"
+```
+`read_url` fetches public http/https only (blocks localhost/private IPs, 1MB cap, strips scripts). Stdlib HTML extract, no extra deps beyond httpx.
+
 ## Config
 
 `~/.sidekick/config.toml` — defaults to `qwen2.5-coder:7b` on `http://localhost:11434/v1`.
