@@ -58,6 +58,10 @@ sk tui --model fast
 ```
 Single chat view. Everything via slash: `/help /model /clear /yolo /confirm /remember /recall /memories /forget /todo /brief /history /oops /skills /models /exit`. Same commands work in `sk chat` and `sk tui`. Anything else goes to the agent.
 
+## Router
+
+`sk run` defaults to `--model auto`: paths/code/device questions → `smart` (qwen2.5-coder:7b), chit-chat/fetch/recall → `fast` (llama3.2:3b). Pin with `--model fast|smart|<name>`.
+
 ## Skills + daemon
 
 ```bash

@@ -90,11 +90,12 @@ def _make_on_token():
     return on_token
 
 
-def _resolve_model(cfg, model_opt: str) -> str:
-    """--model > SIDEKICK_MODEL > config. Supports fast/smart aliases.
+def _resolve_model(cfg, model_opt: str, task: str = "") -> str:
+    """--model > SIDEKICK_MODEL > config. Supports fast/smart/auto aliases.
 
     fast = llama3.2:3b (2GB, instant on 4GB VRAM, non-reasoning)
     smart = qwen2.5-coder:7b (best tools/code, slower)
+    auto = router picks from task text (sk run default)
     qwen3:4b available explicitly by name (good balance, but thinks a lot).
     """
     if model_opt:
@@ -103,6 +104,12 @@ def _resolve_model(cfg, model_opt: str) -> str:
             return "llama3.2:3b"
         if m == "smart":
             return "qwen2.5-coder:7b"
+        if m == "auto":
+            from .router import FAST_MODEL, pick_model
+
+            picked, reason = pick_model(task, FAST_MODEL)
+            console.print(f"[dim]router → {picked} ({reason})[/dim]")
+            return picked
         return m
     return cfg.model
 
@@ -175,12 +182,12 @@ def run(
     task: str = typer.Argument(..., help="Task in quotes, e.g. \"summarize disk usage\""),
     session: str = typer.Option("default", help="Session name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes (else prompts)"),
-    model: str = typer.Option("", help="Model override: name or fast/smart"),
+    model: str = typer.Option("auto", help="Model: auto (router), fast, smart, or name"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
 ):
     """Single-shot: sk run \"summarize disk usage in ~/\" """
     cfg = _cfg()
-    cfg.model = _resolve_model(cfg, model)
+    cfg.model = _resolve_model(cfg, model, task)
     history = get_history(session)
     mode = "auto-approve writes" if yes else "confirm writes"
     console.print(f"[dim]task: {task}  model: {cfg.model} ({mode})[/dim]")
