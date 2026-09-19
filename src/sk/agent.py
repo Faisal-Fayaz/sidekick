@@ -276,20 +276,12 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
     return _Msg(acc_text, tool_calls, acc_reason)
 
 
-def run_agent(
-    user_msg: str,
-    history: list[dict],
-    cfg: Config,
-    on_tool: object = None,
-    on_token: object = None,
-    approve: object = None,
-) -> str:
-    """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
+def build_messages(user_msg: str, history: list[dict], cfg: Config) -> list[dict]:
+    """Assemble system + history + user messages with all grounding. Pure I/O, no LLM.
 
-    approve(name, args) -> bool: gate for WRITE_TOOLS. If None, auto-approve.
-    on_tool(name, args, result_or_denied) is notification only.
+    Extracted for the eval harness: every quality regression (unguessed specs,
+    ~/ hallucinations, link refusals) is assertable here without a model.
     """
-    client = get_client(cfg)
     user_msg = _expand_at_refs(user_msg)
     try:
         snapshot = tool_sysinfo()
@@ -319,11 +311,28 @@ def run_agent(
         skill_block = "(none)"
     if len(mem_block) > 1500:
         mem_block = mem_block[:1500] + "\n... [truncated]"
-    messages: list[dict] = [
+    return [
         {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block)},
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
+
+
+def run_agent(
+    user_msg: str,
+    history: list[dict],
+    cfg: Config,
+    on_tool: object = None,
+    on_token: object = None,
+    approve: object = None,
+) -> str:
+    """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
+
+    approve(name, args) -> bool: gate for WRITE_TOOLS. If None, auto-approve.
+    on_tool(name, args, result_or_denied) is notification only.
+    """
+    client = get_client(cfg)
+    messages = build_messages(user_msg, history, cfg)
 
     final_text = ""
     # perf: smaller ctx + cap output so 4GB VRAM box stays fast
