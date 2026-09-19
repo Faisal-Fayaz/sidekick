@@ -17,7 +17,8 @@ You run on the user's Linux machine via Ollama.
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
 - Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add, todo_list, todo_done, read_url.
-- WEB: for summarize/docs/URL questions, call read_url (public http/https only). Never fetch localhost/private IPs. You HAVE this tool — never claim you cannot fetch URLs. If page content is already in [AUTO WEB FACTS], summarize it directly.
+- WEB: for summarize/docs/URL questions, call read_url (public http/https only). For "search the internet / latest / right now" questions, call web_search FIRST, then read_url the best hits. Never fetch localhost/private IPs. You HAVE these tools — never claim you cannot fetch URLs or search.
+- GREETINGS: hi/hello/thanks/bye get a direct one-line reply. Never call tools for greetings.
 - MEMORY: user facts are in SAVED MEMORIES below. Use them (e.g. preferred model, projects). If user says "remember X", call remember. If asked "what do you remember / my prefs", call recall.
 - TODOS: open todos are in OPEN TODOS below. If user says "add todo / my todos / done #N", use todo tools. Proactively offer next todo when asked "what next".
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
@@ -137,47 +138,120 @@ def _auto_web_context(text: str) -> str:
     return "\n\n".join(chunks)
 
 
-def _parse_text_tool(text: str) -> tuple[str, dict] | None:
-    """Parse ```json {"name": "list_dir", "arguments": {...}}``` or bare JSON.
+def _auto_search_context(text: str) -> str:
+    """Deterministic grounding for explicit web-search requests.
 
-    Returns (name, args) or None. Only allows known tools.
+    Triggers on "search the internet/web ..." phrasing and injects top hits,
+    so the model answers from results instead of refusing or guessing.
     """
     import re
 
-    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url"}
-    # try fenced block first
-    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    candidates = [m.group(1)] if m else []
-    # plus try whole text as JSON
-    candidates.append(text.strip())
-    for cand in candidates:
+    from .tools import tool_web_search
+
+    m = re.search(r"search\s+(?:on\s+)?(?:the\s+)?(?:internet|web)\b\s*(?:for\s+)?(.+)", text, re.IGNORECASE)
+    if not m:
+        return ""
+    query = m.group(1).strip().rstrip("?.!")[:200]
+    if len(query) < 3:
+        return ""
+    try:
+        hits = tool_web_search(query, count=5)
+    except Exception as e:
+        hits = f"Error searching: {e}"
+    return f"[search results for '{query}']\n{hits[:2500]}"
+
+
+def _balanced_objects(text: str) -> list[str]:
+    """Extract top-level {...} spans with balanced braces (handles nesting)."""
+    spans: list[str] = []
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    spans.append(text[start : i + 1])
+                    start = -1
+    return spans
+
+
+def _coerce_args(raw) -> dict | None:
+    import json as _json
+
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
         try:
-            obj = json.loads(cand)
+            obj = _json.loads(raw)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _match_tool_obj(obj: dict, allowed: set[str]) -> tuple[str, dict] | None:
+    if isinstance(obj, dict) and obj.get("name") in allowed:
+        for key in ("arguments", "parameters", "params", "input"):
+            if key in obj:
+                args = _coerce_args(obj.get(key))
+                if args is not None:
+                    return (obj["name"], args)
+        return (obj["name"], {})
+    if isinstance(obj, dict) and isinstance(obj.get("function"), dict):
+        fn = obj["function"]
+        if fn.get("name") in allowed:
+            for key in ("arguments", "parameters", "params", "input"):
+                if key in fn:
+                    args = _coerce_args(fn.get(key))
+                    if args is not None:
+                        return (fn["name"], args)
+            return (fn["name"], {})
+    return None
+
+
+def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
+    """Parse ALL tool JSON objects in text (fenced or bare, any args key).
+
+    Returns list of (name, args). Only allows known tools.
+    """
+    import re
+
+    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search"}
+    found: list[tuple[str, dict]] = []
+    seen: set[str] = set()
+    for span in _balanced_objects(text):
+        try:
+            obj = json.loads(span)
         except Exception:
             continue
-        # direct form: {"name": "list_dir", "arguments": {...}}
-        if isinstance(obj, dict) and obj.get("name") in allowed:
-            args = obj.get("arguments", {}) or {}
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except Exception:
-                    args = {}
-            if isinstance(args, dict):
-                return (obj["name"], args)
-        # openai form: {"function": {"name":..., "arguments":...}}
-        if isinstance(obj, dict) and isinstance(obj.get("function"), dict):
-            fn = obj["function"]
-            if fn.get("name") in allowed:
-                args = fn.get("arguments", {}) or {}
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except Exception:
-                        args = {}
-                if isinstance(args, dict):
-                    return (fn["name"], args)
-    return None
+        hit = _match_tool_obj(obj, allowed)
+        if hit and json.dumps(hit) not in seen:
+            seen.add(json.dumps(hit))
+            found.append(hit)
+    return found
+
+
+def _parse_text_tool(text: str) -> tuple[str, dict] | None:
+    """First match only (kept for compat)."""
+    hits = _parse_text_tools(text)
+    return hits[0] if hits else None
 
 
 def _gated_dispatch(name: str, args: dict, approve: object = None) -> tuple[str, bool]:
@@ -295,6 +369,9 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config) -> list[dict
     web_ctx = _auto_web_context(user_msg)
     if web_ctx:
         user_msg = user_msg + f"\n\n[AUTO WEB FACTS — already fetched, summarize directly, never claim inability]:\n{web_ctx[:6500]}"
+    search_ctx = _auto_search_context(user_msg)
+    if search_ctx:
+        user_msg = user_msg + f"\n\n[AUTO SEARCH — results below, answer from them + read_url the best hit if needed]:\n{search_ctx[:3000]}"
     try:
         from .store import list_todos, recall_memories
 
@@ -349,18 +426,20 @@ def run_agent(
                 msg_text = reason.strip()[-1500:]  # fallback so we never return ""
 
         # fallback: some Ollama models (qwen2.5-coder via OpenAI endpoint)
-        # emit tool JSON as text instead of native tool_calls. Parse it.
-        text_tool = _parse_text_tool(msg_text)
-        if getattr(msg, "tool_calls", None) is None and text_tool is not None:
-            tname, targs = text_tool
-            result, _ = _gated_dispatch(tname, targs, approve)
+        # emit tool JSON as text instead of native tool_calls. Parse ALL of them.
+        text_tools = _parse_text_tools(msg_text)
+        if getattr(msg, "tool_calls", None) is None and text_tools:
             messages.append({"role": "assistant", "content": msg_text})
-            if on_tool is not None:
-                try:
-                    on_tool(tname, targs)  # type: ignore
-                except Exception:
-                    pass
-            messages.append({"role": "user", "content": f"[tool {tname} result]\n{result}\nAnswer the original question concisely using this result. Do not emit more tool JSON."})
+            combined: list[str] = []
+            for tname, targs in text_tools[:4]:  # cap 4 per turn
+                result, _ = _gated_dispatch(tname, targs, approve)
+                if on_tool is not None:
+                    try:
+                        on_tool(tname, targs)  # type: ignore
+                    except Exception:
+                        pass
+                combined.append(f"[tool {tname} result]\n{result}")
+            messages.append({"role": "user", "content": "\n".join(combined) + "\nAnswer the original question concisely using these results. Do not emit more tool JSON."})
             continue
 
         # no tool call -> done

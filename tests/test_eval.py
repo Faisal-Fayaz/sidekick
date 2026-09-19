@@ -103,9 +103,53 @@ def test_read_tools_bypass_gate():
 def test_all_tools_parseable():
     from sk.agent import _parse_text_tool
 
-    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url"):
+    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search"):
         args = {"path": "/tmp/x"} if name in ("list_dir", "read_file") else {}
         import json
 
         blob = f'```json {json.dumps({"name": name, "arguments": args})} ```'
         assert _parse_text_tool(blob) is not None, name
+
+
+def test_parse_multi_and_parameters_key():
+    # exact shape of the live TUI failure: unfenced, several objects, "parameters" key
+    from sk.agent import _parse_text_tools
+
+    blob = '```\n{"name": "exec", "parameters": {"cmd": "df -h /"}}\n{"name": "read_url", "parameters": {"url": "https://example.com"}}\n{"name": "todo_done", "parameters": {"id": "1"}}\n```'
+    hits = _parse_text_tools(blob)
+    assert [n for n, _ in hits] == ["exec", "read_url", "todo_done"]
+    assert hits[0][1] == {"cmd": "df -h /"}
+
+
+def test_parse_openai_function_form():
+    import json
+
+    from sk.agent import _parse_text_tool
+
+    blob = json.dumps({"function": {"name": "list_dir", "arguments": {"path": "."}}})
+    assert _parse_text_tool(blob) == ("list_dir", {"path": "."})
+
+
+def test_auto_search_triggers_and_ignores(monkeypatch):
+    import sk.agent as agent
+
+    monkeypatch.setattr("sk.tools.tool_web_search", lambda q, count=5: f"hits for {q}")
+    out = agent._auto_search_context("search the internet for most used AI model")
+    assert "most used AI model" in out and "hits for" in out
+    assert agent._auto_search_context("say hi in 3 words") == ""
+
+
+def test_build_messages_auto_search(monkeypatch, tmp_path):
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr("sk.tools.tool_web_search", lambda q, count=5: "1. Example Model\n   https://example.com")
+    from sk.agent import build_messages
+
+    msgs = build_messages("search on the internet for the most used AI model", [], _cfg())
+    assert "AUTO SEARCH" in msgs[-1]["content"] and "Example Model" in msgs[-1]["content"]
+
+
+def test_prompt_greeting_and_search_rules():
+    assert "GREETINGS" in SYSTEM_PROMPT and "direct one-line" in SYSTEM_PROMPT
+    assert "web_search FIRST" in SYSTEM_PROMPT

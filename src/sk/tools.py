@@ -373,6 +373,21 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web (DuckDuckGo, no key). Use FIRST for 'search the internet / latest / most used right now' questions, then read_url the best hits.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search terms"},
+                    "count": {"type": "integer", "description": "Results, default 5, max 8"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -417,6 +432,8 @@ def dispatch_tool(name: str, args: dict) -> str:
         return complete_todo(tid)
     if name == "read_url":
         return tool_read_url(str(args.get("url", "")), int(args.get("max_chars", 6000) or 6000))
+    if name == "web_search":
+        return tool_web_search(str(args.get("query", "")), int(args.get("count", 5) or 5))
     return f"Error: unknown tool '{name}'"
 
 
@@ -498,6 +515,48 @@ def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
     text = re.sub(r"[ \t]+", " ", "".join(p.out))
     text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
     return (title, text[:limit])
+
+
+def tool_web_search(query: str, count: int = 5) -> str:
+    """Keyless web search via DuckDuckGo html endpoint. Returns title/url/snippet lines."""
+    import re
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    query = (query or "").strip()[:300]
+    if not query:
+        return "Error: empty query."
+    count = max(1, min(int(count or 5), 8))
+    try:
+        import httpx
+
+        with httpx.Client(timeout=20, follow_redirects=True) as c:
+            r = c.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query},
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
+            )
+            r.raise_for_status()
+            html = r.text
+    except Exception as e:
+        return f"Error searching: {str(e)[:200]}"
+    # result links: <a class="result__a" href="//duckduckgo.com/l/?uddg=<url>&...">title</a>
+    links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL)
+    snips = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
+    out: list[str] = []
+    for i, (href, title) in enumerate(links[:count]):
+        url = href
+        if "uddg=" in href:
+            try:
+                q = parse_qs(urlparse("https:" + href if href.startswith("//") else href).query)
+                url = unquote(q.get("uddg", [href])[0])
+            except Exception:
+                pass
+        elif href.startswith("//"):
+            url = "https:" + href
+        title = re.sub(r"<[^>]+>", "", title or "").strip()[:120]
+        snip = re.sub(r"<[^>]+>", "", snips[i] if i < len(snips) else "").strip()[:200]
+        out.append(f"{i + 1}. {title}\n   {url}" + (f"\n   {snip}" if snip else ""))
+    return "\n".join(out) if out else "(no results — try different words)"
 
 
 def tool_read_url(url: str, max_chars: int = 6000) -> str:
