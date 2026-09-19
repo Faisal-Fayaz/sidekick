@@ -297,6 +297,25 @@ def talk(
         console.print()
 
 
+@app.command(name="mic-test")
+def mic_test(
+    duration: int = typer.Option(3, "--duration", "-d", help="Record seconds"),
+    device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
+):
+    """Check mic levels: records, measures peak/RMS, tells you what to fix."""
+    from . import voice as _voice
+
+    console.print(f"[dim]recording {duration}s — speak normally...[/dim]")
+    try:
+        res = _voice.mic_level(duration, device)
+    except Exception as e:
+        console.print(f"[red]mic test failed: {e}[/red]")
+        raise typer.Exit(1)
+    color = "green" if res.get("verdict") == "good" else ("yellow" if res.get("ok") else "red")
+    console.print(f"[{color}]mic: {res.get('verdict')} ({res.get('peak_db', '?')} dB peak)[/]")
+    console.print(f"[dim]{res.get('hint', '')}[/dim]")
+
+
 @app.command()
 def run(
     task: str = typer.Argument(..., help="Task in quotes, e.g. \"summarize disk usage\""),

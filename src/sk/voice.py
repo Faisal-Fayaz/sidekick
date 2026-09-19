@@ -64,6 +64,14 @@ _model_cache: dict[str, object] = {}
 
 def transcribe(wav_path: str, model_size: str = STT_MODEL_DEFAULT) -> str:
     """Transcribe wav with local faster-whisper (int8 CPU). Downloads model once."""
+    import os
+
+    try:
+        size = os.path.getsize(wav_path)
+    except OSError:
+        raise RuntimeError("recording file missing — mic may have failed to start")
+    if size < 5000:
+        raise RuntimeError("recording is nearly empty — mic may be muted, run `sk mic-test`")
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -74,8 +82,38 @@ def transcribe(wav_path: str, model_size: str = STT_MODEL_DEFAULT) -> str:
     segments, _ = model.transcribe(wav_path, beam_size=5)  # type: ignore
     text = " ".join(s.text.strip() for s in segments).strip()
     if not text:
-        raise RuntimeError("heard nothing — speak closer / check mic level")
+        raise RuntimeError("heard only silence — speak louder/closer, or run `sk mic-test` to check levels")
     return text
+
+
+def mic_level(duration: int = 3, device: str = "default") -> dict:
+    """Record briefly and measure peak/RMS. Returns dict with verdict + hint."""
+    import audioop
+    import math
+    import wave
+
+    out = record_once(duration, device)
+    try:
+        with wave.open(str(out), "rb") as w:
+            frames = w.readframes(w.getnframes())
+            width = w.getsampwidth()
+    except Exception as e:
+        return {"ok": False, "verdict": "unreadable", "hint": f"could not read recording: {e}"}
+    try:
+        peak = audioop.max(frames, width)
+        rms = audioop.rms(frames, width)
+    except Exception as e:
+        return {"ok": False, "verdict": "unreadable", "hint": f"audio parse failed: {e}"}
+    full = float(1 << (width * 8 - 1))
+    peak_db = 20 * math.log10(max(peak, 1) / full)
+    if peak < 50:
+        return {"ok": False, "peak": peak, "rms": rms, "peak_db": round(peak_db, 1), "verdict": "silent",
+                "hint": "mic hears nothing. Unmute/raise it: `alsamixer` (F4 capture, M unmutes), or try `--device hw:2,0`."}
+    if peak_db < -30:
+        return {"ok": True, "peak": peak, "rms": rms, "peak_db": round(peak_db, 1), "verdict": "quiet",
+                "hint": f"very quiet ({round(peak_db,1)} dB). Move closer or boost gain in alsamixer."}
+    return {"ok": True, "peak": peak, "rms": rms, "peak_db": round(peak_db, 1), "verdict": "good",
+            "hint": "levels look fine — if words still vanish, try `--stt-model base`."}
 
 
 def record_once(duration: int, device: str = "default") -> Path:

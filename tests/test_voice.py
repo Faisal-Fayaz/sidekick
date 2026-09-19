@@ -73,16 +73,18 @@ def test_transcribe_stubbed(monkeypatch, tmp_path):
     mod.WhisperModel = WM
     monkeypatch.setitem(sys.modules, "faster_whisper", mod)
     wav = tmp_path / "in.wav"
-    wav.write_bytes(b"RIFFfake")
+    wav.write_bytes(b"RIFF" + b"\x00" * 6000)
     assert voice.transcribe(str(wav)) == "hello world"
 
 
-def test_transcribe_missing_dep(monkeypatch):
+def test_transcribe_missing_dep(monkeypatch, tmp_path):
     monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
+    big = tmp_path / "big.wav"
+    big.write_bytes(b"RIFF" + b"\x00" * 6000)
     import pytest
 
     with pytest.raises(RuntimeError, match="not installed"):
-        voice.transcribe("/tmp/x.wav")
+        voice.transcribe(str(big))
 
 
 def test_record_once_argv(monkeypatch):
@@ -97,3 +99,43 @@ def test_record_once_argv(monkeypatch):
     assert seen["argv"][:3] == ["arecord", "-D", "hw:1,0"]
     assert "-d" in seen["argv"] and "3" in seen["argv"]
     assert str(out).endswith("in.wav")
+
+
+def _sine_wav(path, peak_amp, seconds=1):
+    import math
+    import struct
+    import wave
+
+    n = 16000 * seconds
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        frames = b"".join(struct.pack("<h", int(peak_amp * math.sin(2 * math.pi * 440 * i / 16000))) for i in range(n))
+        w.writeframes(frames)
+
+
+def test_mic_level_silent(monkeypatch, tmp_path):
+    wav = tmp_path / "silent.wav"
+    _sine_wav(wav, 0)
+    monkeypatch.setattr(voice, "record_once", lambda *a, **k: wav)
+    res = voice.mic_level(1)
+    assert res["verdict"] == "silent" and res["ok"] is False
+    assert "alsamixer" in res["hint"]
+
+
+def test_mic_level_good(monkeypatch, tmp_path):
+    wav = tmp_path / "loud.wav"
+    _sine_wav(wav, 20000)
+    monkeypatch.setattr(voice, "record_once", lambda *a, **k: wav)
+    res = voice.mic_level(1)
+    assert res["verdict"] == "good" and res["ok"] is True
+
+
+def test_transcribe_empty_file(tmp_path):
+    small = tmp_path / "tiny.wav"
+    small.write_bytes(b"RIFF")
+    import pytest
+
+    with pytest.raises(RuntimeError, match="nearly empty"):
+        voice.transcribe(str(small))
