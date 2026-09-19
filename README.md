@@ -22,7 +22,7 @@ $ sk brief
 $ sk run "what is the ideal llm i can run on my device"
 • qwen3:4b (2.5 GB): fits comfortably in your 4096 MiB VRAM.
 • llama3.2:3b (2.0 GB): another good option.
-# grounded in real sysinfo — never guesses, never suggests GPT-4
+# grounded in real sysinfo — never guesses
 
 $ sk tui
 sidekick online. `/help` for commands, `/model fast` for speed.
