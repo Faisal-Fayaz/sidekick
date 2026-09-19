@@ -318,6 +318,127 @@ def todo_clear():
     console.print(f"[yellow]{clear_todos()}[/yellow]")
 
 
+BASH_SNIPPET = """# sidekick shell hook — logs commands for `sk history` / `sk oops`
+_sk_hook() {
+  local rc=$?
+  local cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^[ ]*[0-9]*[ ]*//')
+  SK_BIN="${SK_BIN:-$HOME/.local/bin/sk}"
+  [ -x "$SK_BIN" ] && "$SK_BIN" hook-log --cmd "$cmd" --exit "$rc" --cwd "$PWD" >/dev/null 2>&1
+  return $rc
+}
+case "$PROMPT_COMMAND" in *_sk_hook*) ;; *) PROMPT_COMMAND="_sk_hook;${PROMPT_COMMAND:-:}";; esac
+"""
+
+ZSH_SNIPPET = """# sidekick shell hook — logs commands for `sk history` / `sk oops`
+_sk_hook() {
+  local rc=$?
+  SK_BIN="${SK_BIN:-$HOME/.local/bin/sk}"
+  [ -x "$SK_BIN" ] && "$SK_BIN" hook-log --cmd "$1" --exit "$rc" --cwd "$PWD" >/dev/null 2>&1
+  return $rc
+}
+autoload -Uz add-zsh-hook
+_sk_log_preexec() { _SK_CMD="$1"; }
+_sk_log_precmd() { local rc=$?; _sk_hook "$_SK_CMD"; }
+add-zsh-hook preexec _sk_log_preexec
+add-zsh-hook precmd _sk_log_precmd
+"""
+
+
+@app.command(name="hook-log", hidden=True)
+def hook_log(
+    cmd: str = typer.Option("", "--cmd", help="Command line"),
+    exit: int = typer.Option(0, "--exit", help="Exit code"),
+    cwd: str = typer.Option("", "--cwd", help="Working dir"),
+):
+    """Internal: called by shell hook. Not for manual use."""
+    from .store import log_shell
+
+    log_shell(cmd, cwd, exit)
+
+
+@app.command()
+def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show")):
+    """Show recent shell commands: sk history """
+    from .store import list_shell
+
+    rows = list_shell(limit=limit)
+    if not rows:
+        console.print("[dim](no shell history yet — run `sk hook-install`)[/dim]")
+        return
+    for i, cmd, cwd, rc in reversed(rows):
+        mark = f"[red]✗{rc}[/red]" if rc else "[green]✓[/green]"
+        console.print(f"{mark} {cmd[:120]}  [dim]{cwd[-40:]}[/dim]")
+
+
+@app.command()
+def oops(
+    model: str = typer.Option("", help="Model override or fast/smart"),
+    no_stream: bool = typer.Option(False, "--no-stream", help="Disable streaming"),
+):
+    """Explain last failed command: sk oops """
+    from .store import last_failed
+
+    fail = last_failed()
+    if not fail:
+        console.print("[green]No failures logged. Clean shell.[/green]")
+        return
+    _, cmd, cwd, rc = fail
+    cfg = _cfg()
+    cfg.model = _resolve_model(cfg, model)
+    from .store import get_history
+
+    from .agent import run_agent
+
+    console.print(f"[dim]last failure (exit {rc}): {cmd} @ {cwd}[/dim]")
+    console.print("[dim]working... (streams live)[/dim]")
+    on_token = None if no_stream else _make_on_token()
+    try:
+        answer = run_agent(
+            f"My last shell command failed with exit {rc} in {cwd}: `{cmd}`. Explain the likely cause in 2 lines and give the exact fixed command. No fluff.",
+            get_history("oops")[-5:],
+            cfg,
+            on_tool=_make_on_tool(),
+            on_token=on_token,
+            approve=_make_approver(True),
+        )
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    save_message("oops", "user", cmd)
+    save_message("oops", "assistant", answer)
+    console.print()
+    streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
+    if on_token is None or streamed < len(answer or "") * 0.5:
+        console.print(Markdown(answer or "(empty)"))
+    console.print("[dim]--- done ---[/dim]")
+
+
+@app.command(name="hook-install")
+def hook_install(
+    shell: str = typer.Option("", help="bash or zsh (auto-detect)"),
+    write: bool = typer.Option(False, "--write", help="Append to rc file"),
+):
+    """Print shell hook. Use --write to append to ~/.bashrc or ~/.zshrc."""
+    import os
+    from pathlib import Path
+
+    sh = (shell or os.path.basename(os.getenv("SHELL", "bash"))).lower()
+    snippet = ZSH_SNIPPET if "zsh" in sh else BASH_SNIPPET
+    rc = Path.home() / (".zshrc" if "zsh" in sh else ".bashrc")
+
+    console.print(Panel(snippet, title=f"hook for {sh} -> {rc}", expand=False))
+    if not write:
+        console.print(f"[dim]re-run with `sk hook-install --write` to append to {rc}[/dim]")
+        return
+    text = rc.read_text() if rc.exists() else ""
+    if "_sk_hook" in text:
+        console.print("[yellow]hook already installed.[/yellow]")
+        return
+    with open(rc, "a") as f:
+        f.write("\n" + snippet)
+    console.print(f"[green]appended to {rc}. Restart shell or `source {rc}`.[/green]")
+
+
 @app.command()
 def brief(
     project: list[str] = typer.Option([], "--project", "-p", help="Extra project path (repeatable)"),

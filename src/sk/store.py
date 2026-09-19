@@ -36,6 +36,15 @@ def _connect() -> sqlite3.Connection:
             ts REAL NOT NULL
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS shell_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cmd TEXT NOT NULL,
+            cwd TEXT NOT NULL DEFAULT '',
+            exit INTEGER NOT NULL DEFAULT 0,
+            ts REAL NOT NULL
+        )"""
+    )
     # FTS5 for semantic-ish recall (zero deps, stdlib). Best-effort.
     try:
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(content)")
@@ -221,5 +230,56 @@ def clear_todos() -> str:
         cur = conn.execute("DELETE FROM todos WHERE done=1")
         conn.commit()
         return f"Cleared {cur.rowcount} done."
+    finally:
+        conn.close()
+
+
+SKIP_PREFIXES = ("sk hook-log", "sk hook_log")
+
+
+def log_shell(cmd: str, cwd: str = "", exit: int = 0) -> bool:
+    cmd = (cmd or "").strip()[:2000]
+    if not cmd:
+        return False
+    # skip our own hook noise + secrets
+    if cmd.startswith(SKIP_PREFIXES):
+        return False
+    if "sk " in cmd and "hook-log" in cmd:
+        return False
+    conn = _connect()
+    try:
+        # skip exact consecutive dupes
+        cur = conn.execute("SELECT cmd FROM shell_history ORDER BY id DESC LIMIT 1")
+        row = cur.fetchone()
+        if row and row[0] == cmd:
+            return False
+        conn.execute(
+            "INSERT INTO shell_history (cmd, cwd, exit, ts) VALUES (?, ?, ?, ?)",
+            (cmd, cwd[:500], int(exit or 0), time.time()),
+        )
+        conn.commit()
+        # cap 2000 rows
+        conn.execute("DELETE FROM shell_history WHERE id NOT IN (SELECT id FROM shell_history ORDER BY id DESC LIMIT 2000)")
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def list_shell(limit: int = 20) -> list[tuple[int, str, str, int]]:
+    conn = _connect()
+    try:
+        cur = conn.execute("SELECT id, cmd, cwd, exit FROM shell_history ORDER BY id DESC LIMIT ?", (limit,))
+        return [(r[0], r[1], r[2], r[3]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def last_failed() -> tuple[int, str, str, int] | None:
+    conn = _connect()
+    try:
+        cur = conn.execute("SELECT id, cmd, cwd, exit FROM shell_history WHERE exit != 0 ORDER BY id DESC LIMIT 1")
+        row = cur.fetchone()
+        return (row[0], row[1], row[2], row[3]) if row else None
     finally:
         conn.close()
