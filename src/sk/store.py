@@ -57,6 +57,15 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def clear_session(session: str) -> None:
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM messages WHERE session=?", (session,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def save_message(session: str, role: str, content: str) -> None:
     conn = _connect()
     try:

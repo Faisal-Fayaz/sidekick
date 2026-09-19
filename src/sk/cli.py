@@ -51,6 +51,22 @@ def _make_approver(auto_yes: bool):
     return approve
 
 
+def _make_approver_state(state: dict):
+    """Like _make_approver but reads live state['yolo'] (for /yolo toggling)."""
+
+    def approve(name: str, args: dict) -> bool:
+        from .tools import WRITE_TOOLS
+
+        if name not in WRITE_TOOLS:
+            return True
+        if state.get("yolo"):
+            console.print(f"[dim]yolo: auto-approved {name} -> {args.get('path', '?')}[/dim]")
+            return True
+        return _make_approver(False)(name, args)
+
+    return approve
+
+
 def _make_on_tool():
     def on_tool(name, args):
         # newline first since tokens stream without newlines
@@ -98,12 +114,12 @@ def chat(
     model: str = typer.Option("", help="Model override: name or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
 ):
-    """Interactive REPL: sk chat"""
+    """Interactive REPL: sk chat — try /help"""
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model)
-    mode = "auto-approve writes" if yes else "confirm writes"
-    console.print(Panel(f"[bold]sidekick[/]  model=[cyan]{cfg.model}[/]  session=[cyan]{session}[/]  {mode}\nType [bold]exit[/] to quit. Use [bold]@path[/] to attach a file.", expand=False))
-    approve = _make_approver(yes)
+    state = {"yolo": yes}
+    console.print(Panel(f"[bold]sidekick[/]  model=[cyan]{cfg.model}[/]  session=[cyan]{session}[/]\nType [bold]/help[/] for commands, [bold]@path[/] to attach a file.", expand=False))
+    approve = _make_approver_state(state)
     on_tool = _make_on_tool()
     on_token = None if no_stream else _make_on_token()
     while True:
@@ -114,9 +130,26 @@ def chat(
             break
         if not user:
             continue
-        if user.lower() in {"exit", "quit", ":q"}:
+        if user.lower() in {"exit", "quit", ":q"} and not user.startswith("/"):
             console.print("bye.")
             break
+
+        if user.startswith("/"):
+            from . import slash as _slash
+
+            out = _slash.handle(user, session=session, cfg=cfg, state=state)
+            if out.quit:
+                console.print("bye.")
+                break
+            if out.clear_view:
+                console.print("[dim]--- session cleared ---[/dim]")
+            if out.text:
+                console.print(Markdown(out.text))
+            if out.agent_prompt:
+                user = out.agent_prompt
+                console.print(f"[dim]oops → {out.agent_prompt[:80]}...[/dim]")
+            else:
+                continue
 
         history = get_history(session)
         save_message(session, "user", user)

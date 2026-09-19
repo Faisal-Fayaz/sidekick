@@ -49,13 +49,14 @@ sk brief
 sk brief -p ~/sky-duel --smart
 ```
 
-## TUI
+## Chat + TUI (Hermes-style /commands)
 
 ```bash
+sk chat
 sk tui
 sk tui --model fast
 ```
-Tabs: Brief (refresh) | Todos (type + Enter to add) | Memories (type + Enter) | Chat (Enter to send, LLM in background thread). Writes in chat still ask approval.
+Single chat view. Everything via slash: `/help /model /clear /yolo /confirm /remember /recall /memories /forget /todo /brief /history /oops /skills /models /exit`. Same commands work in `sk chat` and `sk tui`. Anything else goes to the agent.
 
 ## Skills + daemon
 

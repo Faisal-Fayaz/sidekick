@@ -47,3 +47,34 @@ def gather_brief(projects: list[str] | None = None) -> dict:
         sysinfo = f"(sysinfo failed: {e})"
     snaps = [git_snapshot(p) for p in projs]
     return {"when": datetime.now().strftime("%a %Y-%m-%d %H:%M"), "sysinfo": sysinfo, "projects": snaps, "memories": memories, "todos": todos}
+
+
+def format_brief_text(data: dict) -> str:
+    """Plain-markdown digest for /brief and other non-Rich surfaces."""
+    import re
+
+    sysinfo: str = data.get("sysinfo", "")
+    keep: list[str] = []
+    for line in sysinfo.splitlines():
+        ll = line.lower()
+        if line.startswith("CPU:") or line.startswith("GPU:") or "mem:" in ll or "/dev/nvme" in line or "OLLAMA MODELS" in line or "qwen" in line or "llama" in line or "NAME " in line:
+            keep.append(line.strip())
+    out = [f"**brief** {data.get('when','')}", "", "**system**"] + [f"- {l}"[:120] for l in keep[:10]]
+    out += ["", "**projects**"]
+    for s in data.get("projects", []):
+        if not s.get("exists"):
+            out.append(f"- {s['path']}: missing")
+        else:
+            log1 = (s.get("log") or "-").splitlines()
+            out.append(f"- {s['path']} [{s.get('branch','?')}] {s.get('changed',0)} changed — {(log1[0][:60] if log1 else '-')}")
+    m = re.search(r"(\d+)% /", sysinfo)
+    if m and int(m.group(1)) >= 90:
+        out += ["", f"⚠ disk {m.group(1)}% full"]
+    for s in data.get("projects", []):
+        if s.get("exists") and int(s.get("changed", 0) or 0) > 0:
+            out.append(f"⚠ {s['path']}: {s['changed']} uncommitted")
+    if data.get("todos"):
+        out += ["", "**open todos**"] + [f"- ○ #{i} {t}" for i, t, _ in data["todos"][:5]]
+    if data.get("memories"):
+        out += ["", "**memories**"] + [f"- {x}" for x in data["memories"][:5]]
+    return "\n".join(out)
