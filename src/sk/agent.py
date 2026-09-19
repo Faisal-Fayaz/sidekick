@@ -138,10 +138,28 @@ def _auto_web_context(text: str) -> str:
     return "\n\n".join(chunks)
 
 
-def _auto_search_context(text: str) -> str:
-    """Deterministic grounding for explicit web-search requests.
+def _quick_reply(text: str) -> str | None:
+    """Deterministic instant replies for pure greetings/thanks. No LLM, no tools.
 
-    Triggers on "search the internet/web ..." phrasing and injects top hits,
+    Strict full-match only: 'hi, check ~/x' still goes to the model.
+    """
+    import re
+
+    t = (text or "").strip().lower().rstrip("!.~")
+    if re.fullmatch(r"(hi|hii+|hello|hey|yo|hiya|namaste)(\s+(there|buddy|mate))?", t or ""):
+        return "Hey! What are we working on?"
+    if re.fullmatch(r"(thanks|thank you|thx|shukriya|dhanyavaad)", t or ""):
+        return "Anytime!"
+    if re.fullmatch(r"(bye|goodbye|see you|alvida)", t or ""):
+        return "Later!"
+    return None
+
+
+def _auto_search_context(text: str) -> str:
+    """Deterministic grounding for web-search requests.
+
+    Triggers on explicit 'search the internet/web' phrasing, or on recency
+    markers (right now/latest/...) for non-local questions. Injects top hits
     so the model answers from results instead of refusing or guessing.
     """
     import re
@@ -149,10 +167,19 @@ def _auto_search_context(text: str) -> str:
     from .tools import tool_web_search
 
     m = re.search(r"search\s+(?:on\s+)?(?:the\s+)?(?:internet|web)\b\s*(?:for\s+)?(.+)", text, re.IGNORECASE)
-    if not m:
-        return ""
-    query = m.group(1).strip().rstrip("?.!")[:200]
-    if len(query) < 3:
+    query = ""
+    if m:
+        query = m.group(1).strip().rstrip("?.!")[:200]
+    else:
+        low = text.lower()
+        recency = re.search(r"\b(right now|latest|currently|up[- ]to[- ]date|this week|today|2026)\b", low)
+        local = re.search(r"~/|/home/faisal|my (device|machine|files?|todos?|projects?|prefs?)|can i run|do i (have|need)", low)
+        if recency and not local and len(text.split()) > 3:
+            from .store import _keywords
+
+            keys = _keywords(text)
+            query = " ".join(keys[:8]) if keys else text.strip().rstrip("?.!")[:200]
+    if not query or len(query) < 3:
         return ""
     try:
         hits = tool_web_search(query, count=5)
@@ -408,6 +435,14 @@ def run_agent(
     approve(name, args) -> bool: gate for WRITE_TOOLS. If None, auto-approve.
     on_tool(name, args, result_or_denied) is notification only.
     """
+    quick = _quick_reply(user_msg)
+    if quick is not None:
+        if on_token is not None:
+            try:
+                on_token(quick)  # type: ignore
+            except Exception:
+                pass
+        return quick
     client = get_client(cfg)
     messages = build_messages(user_msg, history, cfg)
 

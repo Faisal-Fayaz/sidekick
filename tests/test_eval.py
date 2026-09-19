@@ -139,6 +139,31 @@ def test_auto_search_triggers_and_ignores(monkeypatch):
     assert agent._auto_search_context("say hi in 3 words") == ""
 
 
+def test_auto_search_recency_not_local(monkeypatch):
+    import sk.agent as agent
+
+    seen = {}
+    monkeypatch.setattr("sk.tools.tool_web_search", lambda q, count=5: seen.setdefault("q", q) or f"hits for {q}")
+    out = agent._auto_search_context("what is the best laptop for a creative director right now")
+    assert "AUTO" not in out and "hits for" in out  # search block, no refusal possible
+    assert seen["q"] == "best laptop for creative director right now"  # keyword-compressed
+    # local questions stay local even with recency words
+    assert agent._auto_search_context("what LLM can I run right now") == ""
+    assert agent._auto_search_context("my todos right now") == ""
+
+
+def test_quick_reply_greetings():
+    from sk.agent import _quick_reply, run_agent
+
+    assert _quick_reply("hi") == "Hey! What are we working on?"
+    assert _quick_reply("  Hello! ") is not None
+    assert _quick_reply("thanks") == "Anytime!"
+    assert _quick_reply("hi, check ~/x for scope") is None  # real task -> model
+    assert _quick_reply("what is the disk usage") is None
+    # instant + offline: no client needed
+    assert run_agent("hi", [], _cfg()) == "Hey! What are we working on?"
+
+
 def test_build_messages_auto_search(monkeypatch, tmp_path):
     import sk.store as store
 
