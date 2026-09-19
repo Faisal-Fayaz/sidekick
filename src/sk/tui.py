@@ -13,7 +13,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Button, Footer, Header, RichLog, TextArea
+from textual.widgets import Footer, Header, RichLog, Static, TextArea
 from textual.containers import Horizontal
 
 
@@ -171,8 +171,8 @@ class SidekickTUI(App):
     #input-row { height: 5; }
     ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
     ChatArea:focus { border: solid #00ff9d; }
-    #mic-btn { width: 12; height: 5; }
-    #mic-btn.recording { background: #5c1010; }
+    #mic-status { width: 22; height: 5; border: solid #1d3327; color: #9b9bab; content-align: center middle; }
+    #mic-status.recording { border: solid #ff5555; color: #ff5555; }
     """
 
     def __init__(self, model: str = ""):
@@ -188,6 +188,7 @@ class SidekickTUI(App):
         self._rec_timer = None
         self._rec_start: float = 0.0
         self._transcribing: bool = False
+        self.mic_state: str = "idle"  # idle | recording | busy (mirrors the pill)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -195,7 +196,7 @@ class SidekickTUI(App):
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
-            yield Button("● mic", id="mic-btn", variant="default")
+            yield Static("ctrl+t\nto talk", id="mic-status")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -211,14 +212,23 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t / Tab+Enter on ● mic to talk · select text to copy, `ctrl+y` copies last answer. (`sk tui --mouse` for clickable buttons.)")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · select text to copy, `ctrl+y` copies last answer. (`sk tui --mouse` for clickable UI.)")
 
     def action_mic(self) -> None:
         self._mic_toggle()
 
-    @on(Button.Pressed, "#mic-btn")
-    def _mic_btn(self) -> None:
-        self._mic_toggle()
+    def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
+        """Status pill: never clickable (mouse stays off), shows mic state."""
+        self.mic_state = state
+        try:
+            pill = self.query_one("#mic-status", Static)
+            pill.update(text)
+            if recording:
+                pill.add_class("recording")
+            else:
+                pill.remove_class("recording")
+        except Exception:
+            pass
 
     def _mic_toggle(self) -> None:
         import time as _t
@@ -226,14 +236,13 @@ class SidekickTUI(App):
         from . import voice as _voice
 
         log = self.query_one("#chat-log", RichLog)
-        btn = self.query_one("#mic-btn", Button)
         try:
-            self._mic_toggle_inner(log, btn, _voice, _t)
+            self._mic_toggle_inner(log, _voice, _t)
         except Exception as e:
             log_error("mic-toggle", e)
             _role(log, "error", f"mic crashed: {e} (logged to ~/.sidekick/tui-errors.log)")
 
-    def _mic_toggle_inner(self, log: RichLog, btn: Button, _voice, _t) -> None:
+    def _mic_toggle_inner(self, log: RichLog, _voice, _t) -> None:
         if self._transcribing:
             _w(log, f"[{_now()}] still transcribing, hold on...")
             return
@@ -256,10 +265,9 @@ class SidekickTUI(App):
                 self._rec_proc = None
                 return
             self._rec_start = _t.monotonic()
-            btn.label = "■ stop"
-            btn.add_class("recording")
+            self._mic_status("■ REC\n0s", recording=True, state="recording")
             self._rec_timer = self.set_interval(1.0, self._rec_tick)
-            _role(log, "", "recording... press ● mic / ctrl+t to stop")
+            _role(log, "", "recording... press ctrl+t to stop")
         else:
             self._mic_stop()
 
@@ -268,7 +276,7 @@ class SidekickTUI(App):
 
         try:
             secs = int(_t.monotonic() - self._rec_start)
-            self.query_one("#mic-btn", Button).label = f"■ {secs}s"
+            self._mic_status(f"■ REC\n{secs}s", recording=True, state="recording")
         except Exception:
             pass
 
@@ -276,7 +284,6 @@ class SidekickTUI(App):
         from . import voice as _voice
 
         log = self.query_one("#chat-log", RichLog)
-        btn = self.query_one("#mic-btn", Button)
         proc, self._rec_proc = self._rec_proc, None
         if self._rec_timer is not None:
             try:
@@ -284,12 +291,9 @@ class SidekickTUI(App):
             except Exception:
                 pass
             self._rec_timer = None
-        try:
-            btn.label = "● mic"
-            btn.remove_class("recording")
-        except Exception:
-            pass
+        self._mic_status("…busy…", state="busy")
         if proc is None:
+            self._mic_status("ctrl+t\nto talk")
             return
         err = _voice.stop_recording(proc)
         if err:
@@ -308,11 +312,11 @@ class SidekickTUI(App):
         try:
             text = await asyncio.to_thread(_voice.transcribe, wav)
         except Exception as e:
-            try:
-                self.call_from_thread(_role, log, "error", str(e))
-            except Exception:
-                _role(log, "error", str(e))
             self._transcribing = False
+            try:
+                self.call_from_thread(self._mic_failed, str(e))
+            except Exception:
+                self._mic_failed(str(e))
             return
         finally:
             import shutil
@@ -324,8 +328,13 @@ class SidekickTUI(App):
         except Exception:
             self._drop_transcript(text)
 
+    def _mic_failed(self, msg: str) -> None:
+        self._mic_status("ctrl+t\nto talk")
+        _role(self.query_one("#chat-log", RichLog), "error", msg)
+
     def _drop_transcript(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
+        self._mic_status("ctrl+t\nto talk")
         area = self.query_one("#chat-input", ChatArea)
         cur = area.text.strip()
         area.text = (cur + " " + text).strip() if cur else text

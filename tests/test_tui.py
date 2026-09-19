@@ -284,26 +284,21 @@ def _mock_voice(monkeypatch, text="hello from mic"):
 
 
 async def _pilot_mic_roundtrip(monkeypatch):
-    from textual.widgets import Button
-
     from sk.tui import SidekickTUI as _T
 
     _mock_voice(monkeypatch)
     app = _T()
     async with app.run_test() as pilot:
-        await pilot.click("#mic-btn")
+        app.action_mic()  # start (pill is display-only; ctrl+t is the trigger)
         await pilot.pause()
-        assert "stop" in str(app.query_one("#mic-btn").label).lower()
-        # second activation via posted Pressed: repeated pilot.clicks don't
-        # re-fire in headless mode (pilot mouse-state quirk, not app code).
-        btn = app.query_one("#mic-btn", Button)
-        app.post_message(Button.Pressed(btn))
+        assert app.mic_state == "recording"
+        app.action_mic()  # stop
         for _ in range(30):
             await pilot.pause()
             if "hello from mic" in app.query_one("#chat-input").text:
                 break
         assert "hello from mic" in app.query_one("#chat-input").text
-        assert "mic" in str(app.query_one("#mic-btn").label).lower()
+        assert app.mic_state == "idle"
         blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
         assert "heard>" in blob
 
@@ -316,7 +311,7 @@ async def _pilot_mic_no_stt(monkeypatch):
     monkeypatch.setattr(_v, "ensure_stt", lambda: (False, "faster-whisper not installed"))
     app = _T()
     async with app.run_test() as pilot:
-        await pilot.click("#mic-btn")
+        app.action_mic()
         await pilot.pause()
         await pilot.pause()
         blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
