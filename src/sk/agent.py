@@ -348,8 +348,13 @@ class _Msg:
         self.reasoning = reasoning
 
 
-def _stream_chat(client, model: str, messages: list[dict], tools, temperature: float, max_tokens: int, extra: dict, on_token=None) -> _Msg:
-    """Streaming chat.completions with tool accumulation. Calls on_token per text delta."""
+def _stream_chat(client, model: str, messages: list[dict], tools, temperature: float, max_tokens: int, extra: dict, on_token=None, on_reasoning=None) -> _Msg:
+    """Streaming chat.completions with tool accumulation.
+
+    Content deltas -> on_token, reasoning deltas -> on_reasoning (falls back
+    to on_token when no separate sink is given, so old callers keep working).
+    """
+    _on_r = on_reasoning if on_reasoning is not None else on_token
     acc_text = ""
     acc_reason = ""
     tc_buf: dict[int, dict] = {}  # idx -> {id, name, args}
@@ -366,13 +371,13 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
             delta = getattr(choice, "delta", None)
             if delta is None:
                 continue
-            # reasoning field (qwen3 via Ollama) — stream it too so UI never looks dead
+            # reasoning field (qwen3 via Ollama) — separate sink when provided
             r = getattr(delta, "reasoning", None) or (delta.get("reasoning") if isinstance(delta, dict) else None)
             if r:
                 acc_reason += r if isinstance(r, str) else str(r)
-                if on_token is not None:
+                if _on_r is not None:
                     try:
-                        on_token(r if isinstance(r, str) else str(r))  # type: ignore
+                        _on_r(r if isinstance(r, str) else str(r))  # type: ignore
                     except Exception:
                         pass
             c = getattr(delta, "content", None)
@@ -475,11 +480,13 @@ def run_agent(
     on_tool: object = None,
     on_token: object = None,
     approve: object = None,
+    on_reasoning: object = None,
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
     approve(name, args) -> bool: gate for WRITE_TOOLS. If None, auto-approve.
     on_tool(name, args, result_or_denied) is notification only.
+    on_reasoning(chunk) receives thinking deltas separately when given.
     """
     quick = _quick_reply(user_msg)
     if quick is not None:
@@ -499,7 +506,7 @@ def run_agent(
     extra = _extra_body(cfg)
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     for _ in range(cfg.max_steps):
-        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 350, extra, on_token)
+        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 350, extra, on_token, on_reasoning)
 
         # qwen3-style reasoning models put text in .reasoning, content empty
         msg_text = (msg.content or "").strip()
@@ -553,7 +560,7 @@ def run_agent(
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis
         if _ == cfg.max_steps - 1:
-            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, 350, extra, on_token)
+            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, 350, extra, on_token, on_reasoning)
             final_text = m2.content or m2.reasoning or ""
             messages.append({"role": "assistant", "content": final_text})
     else:
