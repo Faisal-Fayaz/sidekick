@@ -59,6 +59,37 @@ def ensure_stt() -> tuple[bool, str]:
     return (True, "stt ready")
 
 
+def install_cmd() -> list[str]:
+    """Argv to install faster-whisper into the RUNNING env.
+
+    uv-first: `uv tool` envs (which run `sk`) have no pip module, so
+    `sys.executable -m pip` fails there. `uv pip install --python <exe>`
+    targets the current interpreter regardless of active env.
+    """
+    import shutil
+    import sys
+
+    if shutil.which("uv"):
+        return ["uv", "pip", "install", "-q", "--python", sys.executable, "faster-whisper"]
+    return [sys.executable, "-m", "pip", "install", "-q", "faster-whisper"]
+
+
+def install_stt(timeout: int = 900) -> tuple[bool, str]:
+    """Install faster-whisper into the running env. Returns (ok, output tail)."""
+    try:
+        r = subprocess.run(install_cmd(), capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return (False, f"installer crashed: {e}")
+    if r.returncode != 0:
+        tail = ((r.stderr or "") + (r.stdout or ""))[-500:]
+        return (False, f"install failed. Try manually: `uv pip install faster-whisper`\n{tail}")
+    try:
+        import faster_whisper  # noqa: F401
+    except ImportError:
+        return (False, "installed but still not importable — restart the app and retry")
+    return (True, "installed")
+
+
 _model_cache: dict[str, object] = {}
 
 

@@ -193,7 +193,6 @@ def talk(
     device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
 ):
     """Push-to-talk voice chat. All transcription happens on your CPU."""
-    import sys
     import tempfile
     import time as _t
 
@@ -211,16 +210,11 @@ def talk(
         if not install and not typer.confirm("Install now?", default=True):
             raise typer.Exit(1)
         console.print("[dim]installing faster-whisper into sidekick's env (one time, ~800MB)...[/dim]")
-        import subprocess as _sp
-
-        r = _sp.run([sys.executable, "-m", "pip", "install", "-q", "faster-whisper"], capture_output=True, text=True, timeout=900)
-        if r.returncode != 0:
-            console.print(f"[red]install failed. Try manually: {sys.executable} -m pip install faster-whisper\n{r.stderr[-500:]}[/red]")
-            raise typer.Exit(1)
-        ok, msg = _voice.ensure_stt()
+        ok, out = _voice.install_stt()
         if not ok:
-            console.print(f"[red]{msg}[/red]")
+            console.print(f"[red]{out}[/red]")
             raise typer.Exit(1)
+        console.print("[dim]installed.[/dim]")
     state = {"yolo": yes}
     console.print(Panel(f"[bold]sidekick talk[/]  model=[cyan]{cfg.model}[/]  stt=[cyan]{stt_model}[/] (local int8)\n[bold green]Enter[/] to record, [bold green]Enter[/] to stop. [bold]/quit[/] exits, [bold]/help[/] commands.", expand=False))
     approve = _make_approver_state(state)

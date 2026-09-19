@@ -139,3 +139,39 @@ def test_transcribe_empty_file(tmp_path):
 
     with pytest.raises(RuntimeError, match="nearly empty"):
         voice.transcribe(str(small))
+
+
+def test_install_cmd_prefers_uv(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(voice.shutil, "which", lambda b: "/usr/bin/uv" if b == "uv" else None)
+    argv = voice.install_cmd()
+    assert argv[:3] == ["uv", "pip", "install"] and sys.executable in argv
+
+
+def test_install_cmd_pip_fallback(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(voice.shutil, "which", lambda b: None)
+    assert voice.install_cmd()[:3] == [sys.executable, "-m", "pip"]
+
+
+def test_install_stt_success(monkeypatch):
+    import sys as _sys
+
+    seen = {}
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(*a, **k):
+        seen["argv"] = a[0]
+        return R()
+
+    monkeypatch.setattr(voice.subprocess, "run", fake_run)
+    monkeypatch.setitem(_sys.modules, "faster_whisper", types.ModuleType("faster_whisper"))
+    ok, _ = voice.install_stt()
+    assert ok is True
+    assert seen["argv"][0] in ("uv", _sys.executable)
