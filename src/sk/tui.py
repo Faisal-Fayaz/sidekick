@@ -51,7 +51,7 @@ class SidekickTUI(App):
         self.refresh_todos()
         self.refresh_memories()
         self.refresh_brief()
-        self.query_one("#chat-log", RichLog).write("Ask anything. Writes still ask approval (auto-yes in TUI is OFF).")
+        self.query_one("#chat-log", RichLog).write("Ask anything. Default model is slow (~60s) — run `sk tui --model fast` for quick answers.")
 
     # ---- brief ----
     def refresh_brief(self) -> None:
@@ -150,6 +150,9 @@ class SidekickTUI(App):
         if not text:
             return
         ev.input.clear()
+        log = self.query_one("#chat-log", RichLog)
+        log.write(f"[bold green]you>[/] {text}")
+        log.write("[dim]thinking... (watch for ○ tool lines)[/dim]")
         self.run_worker(self._chat_answer(text), exclusive=True)
 
     async def _chat_answer(self, text: str) -> None:
@@ -160,31 +163,36 @@ class SidekickTUI(App):
         from .store import get_history, save_message
 
         log = self.query_one("#chat-log", RichLog)
-        log.write(f"[bold green]you>[/] {text}")
         cfg = Config.load()
         if self.model_override:
             cfg.model = self.model_override
         save_message("tui", "user", text)
         hist = get_history("tui")
-        chunks: list[str] = []
 
-        def on_token(tok: str) -> None:
-            chunks.append(tok)
+        def on_tool(name: str, args: dict) -> None:
+            preview = args if name not in ("write_file",) else {"path": args.get("path")}
+            try:
+                self.call_from_thread(log.write, f"[dim]○ tool: {name} {preview}[/dim]")
+            except Exception:
+                pass
 
         try:
-            answer = await asyncio.to_thread(run_agent, text, hist, cfg, None, on_token, None)
+            answer = await asyncio.to_thread(run_agent, text, hist, cfg, on_tool, None, None)
         except Exception as e:
-            log.write(f"[red]Error: {e}[/red]")
+            try:
+                self.call_from_thread(log.write, f"[red]Error: {e}[/red]")
+            except Exception:
+                log.write(f"[red]Error: {e}[/red]")
             return
         save_message("tui", "assistant", answer)
-        # stream may have been reasoning-heavy; show final compact answer
-        shown = "".join(chunks)
-        if len(shown) < len(answer or "") * 0.5:
-            log.write(f"[cyan]sidekick>[/] {answer}")
-        else:
-            log.write("")
-        self.refresh_todos()
-        self.refresh_memories()
+        try:
+            self.call_from_thread(log.write, f"[cyan]sidekick>[/] {answer or '(empty)'}")
+            self.call_from_thread(self.refresh_todos)
+            self.call_from_thread(self.refresh_memories)
+        except Exception:
+            log.write(f"[cyan]sidekick>[/] {answer or '(empty)'}")
+            self.refresh_todos()
+            self.refresh_memories()
 
 
 def launch(model: str = "") -> None:
