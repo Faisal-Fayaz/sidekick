@@ -259,9 +259,9 @@ def talk(
                     console.input("")
                 except (EOFError, KeyboardInterrupt):
                     console.print("\nbye.")
-                    _voice.stop_recording(proc)
+                    _voice.stop_recording(proc, wav_path=out_wav)
                     break
-                err = _voice.stop_recording(proc)
+                err = _voice.stop_recording(proc, wav_path=out_wav)
                 if err:
                     console.print(f"[red]{err}[/red]")
                     continue

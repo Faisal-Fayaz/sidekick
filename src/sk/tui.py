@@ -295,7 +295,7 @@ class SidekickTUI(App):
         if proc is None:
             self._mic_status("ctrl+t\nto talk")
             return
-        err = _voice.stop_recording(proc)
+        err = _voice.stop_recording(proc, wav_path=self._rec_wav)
         if err:
             _role(log, "error", err)
             return

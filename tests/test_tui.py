@@ -279,7 +279,7 @@ def _mock_voice(monkeypatch, text="hello from mic"):
     monkeypatch.setattr(_v, "check_mic", lambda: (True, "mic ready"))
     monkeypatch.setattr(_v, "ensure_stt", lambda: (True, "stt ready"))
     monkeypatch.setattr(_v, "start_recording", lambda *a, **k: _FakeProc())
-    monkeypatch.setattr(_v, "stop_recording", lambda proc, timeout=5: None)
+    monkeypatch.setattr(_v, "stop_recording", lambda proc, timeout=5, wav_path="": None)
     monkeypatch.setattr(_v, "transcribe", lambda *a, **k: text)
 
 

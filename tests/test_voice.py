@@ -38,10 +38,36 @@ def test_start_recording_argv(monkeypatch):
 
 
 def test_stop_recording():
-    class P:
+    import signal as _s
+
+    class Graceful:
+        """SIGINT -> clean exit 0 (fixed behavior)."""
+
+        returncode = None
+        signaled = None
+
+        def send_signal(self, sig):
+            self.signaled = sig
+            self.returncode = 0
+
+        def terminate(self):
+            self.returncode = 99
+
+        def wait(self, timeout=None):
+            pass
+
+        def kill(self):
+            pass
+
+    class Stubborn:
+        """SIGINT unsupported -> terminate path."""
+
         def __init__(self, rc):
             self._rc = rc
             self.returncode = None
+
+        def send_signal(self, sig):
+            raise OSError("no sigint")
 
         def terminate(self):
             self.returncode = self._rc
@@ -52,8 +78,57 @@ def test_stop_recording():
         def kill(self):
             pass
 
-    assert voice.stop_recording(P(0)) is None
-    assert "1" in (voice.stop_recording(P(1)) or "")
+    g = Graceful()
+    assert voice.stop_recording(g) is None and g.signaled == _s.SIGINT
+    assert voice.stop_recording(Stubborn(0)) is None
+    assert "1" in (voice.stop_recording(Stubborn(1)) or "")
+
+
+def test_stop_killed_but_valid_wav(tmp_path):
+    """SIGTERM rc=1 with good audio is success, not error (the live bug)."""
+
+    class P:
+        returncode = 1
+
+        def send_signal(self, sig):
+            raise OSError("gone")
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            pass
+
+        def kill(self):
+            pass
+
+    wav = tmp_path / "in.wav"
+    wav.write_bytes(b"RIFF" + b"\x00" * 6000)
+    assert voice.stop_recording(P(), wav_path=str(wav)) is None
+
+
+def test_stop_busy_hint(tmp_path, monkeypatch):
+    import sk.voice as _v
+
+    class P:
+        returncode = 1
+        stderr_log = str(tmp_path / "x.wav.stderr.log")
+
+        def send_signal(self, sig):
+            pass
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            pass
+
+        def kill(self):
+            pass
+
+    (tmp_path / "x.wav.stderr.log").write_bytes(b"ALSA lib pcm.c: Device or resource busy\n")
+    out = voice.stop_recording(P(), wav_path=str(tmp_path / "x.wav"))
+    assert out is not None and "busy" in out.lower()
 
 
 def test_transcribe_stubbed(monkeypatch, tmp_path):

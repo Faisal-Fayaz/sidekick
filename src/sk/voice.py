@@ -28,27 +28,75 @@ def check_mic() -> tuple[bool, str]:
 
 
 def start_recording(out_wav: str, device: str = "default", rate: int = 16000) -> subprocess.Popen:
-    """Start arecord in the background. Caller stops it (Enter) via proc.terminate()."""
-    return subprocess.Popen(
-        ["arecord", "-D", device, "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    """Start arecord in the background. Caller stops it (Enter) via stop_recording.
 
-
-def stop_recording(proc: subprocess.Popen, timeout: int = 5) -> str | None:
-    """Stop recorder. Returns None on success, error string otherwise."""
+    arecord's stderr goes to <out_wav>.stderr.log so real failures (busy
+    device, bad format) survive instead of vanishing into DEVNULL.
+    """
+    log_path = out_wav + ".stderr.log"
+    log_fh = open(log_path, "wb")
     try:
-        proc.terminate()
+        proc = subprocess.Popen(
+            ["arecord", "-D", device, "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav],
+            stdout=subprocess.DEVNULL,
+            stderr=log_fh,
+        )
+    except Exception:
+        log_fh.close()
+        raise
+    proc.stderr_log = log_path  # type: ignore
+    return proc
+
+
+def _stderr_tail(proc: subprocess.Popen, wav_path: str, n: int = 300) -> str:
+    path = getattr(proc, "stderr_log", "") or (wav_path + ".stderr.log" if wav_path else "")
+    try:
+        with open(path, "rb") as f:
+            data = f.read()[-2000:].decode(errors="replace")
+        lines = [l for l in data.splitlines() if l.strip()]
+        return "\n".join(lines[-4:])[-n:]
+    except Exception:
+        return ""
+
+
+def stop_recording(proc: subprocess.Popen, timeout: int = 5, wav_path: str = "") -> str | None:
+    """Stop recorder gracefully. Returns None on success, error string otherwise.
+
+    NOTE: SIGTERM makes arecord exit 1 even on success ("Aborted by signal
+    Terminated"), so we stop with SIGINT (clean finalize, exit 0) and accept
+    rc==1 only when the wav file is valid.
+    """
+    import os
+    import signal
+
+    try:
+        proc.send_signal(signal.SIGINT)
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception as e:
+            return f"stop failed: {e}"
+    try:
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
         return "recorder would not stop, killed"
     except Exception as e:
         return f"stop failed: {e}"
-    if proc.returncode not in (0, None, -15):
-        return f"arecord exited {proc.returncode}"
-    return None
+    if proc.returncode == 0:
+        return None
+    detail = _stderr_tail(proc, wav_path)
+    if "busy" in detail.lower() or "resource busy" in detail.lower():
+        return "mic is busy — another app (browser/meet?) holds it. Close it or try another `--device`."
+    if wav_path:
+        try:
+            if os.path.getsize(wav_path) > 5000:
+                return None  # killed-but-valid (e.g. SIGTERM rc=1): audio is fine
+        except OSError:
+            pass
+    if detail:
+        return f"arecord exited {proc.returncode}: {detail}"
+    return f"arecord exited {proc.returncode}"
 
 
 def ensure_stt() -> tuple[bool, str]:
