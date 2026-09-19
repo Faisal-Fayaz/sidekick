@@ -1,8 +1,8 @@
-# Sidekick — local-first terminal companion
+# Sidekick — local-first terminal companion you can talk to
 
-**Sidekick lives in your terminal, runs on your hardware, and remembers you.** No cloud account, no API bill — just Ollama, SQLite, and a 2–8B model on a 4GB GPU.
+**Sidekick lives in your terminal, runs on your hardware, and remembers you.** Local models via Ollama by default, any OpenAI-compatible API with your own key — plus push-to-talk voice that never leaves your machine.
 
-Built for fun as a long-term systems/CLI experiment. It talks, runs read-only commands, writes files with approval, remembers facts across sessions, tracks todos, briefs your morning, explains shell failures, and fetches the web — from a REPL, a Textual TUI, or one-shot runs.
+Built for fun as a long-term systems/CLI experiment. It talks *and listens*, runs read-only commands, writes files with approval, remembers facts across sessions, tracks todos, briefs your morning, explains shell failures, searches and fetches the web, and reasons with obra/superpowers skills — from a REPL, a Textual TUI, or one-shot runs.
 
 ## Demo
 
@@ -25,33 +25,41 @@ $ sk run "what is the ideal llm i can run on my device"
 # grounded in real sysinfo — never guesses
 
 $ sk tui
-sidekick online. `/help` for commands, `/model fast` for speed.
+sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk.
 /model fast   →  model → `llama3.2:3b`
 /todo add clean disk  →  Added todo #1.
 /copy  →  copied last answer via xclip
+
+$ sk talk
+[Enter] to record, [Enter] to stop. /quit exits.
+● REC — Enter to stop...
+heard> what files are in the sidekick repo
+# transcribed locally by faster-whisper int8, answered with streaming
 ```
 
 ## Features
 
-- **Agent loop** — Ollama tool-calling (native + text-JSON fallback for coders), streaming tokens, reasoning-model aware
-- **14 tools** — `sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add/list/done, read_url`
-- **Approval gate** — reads auto-run, writes prompt `[y/N]` (or `--yes` / `/yolo`)
+- **Voice-first option** — `sk talk` CLI + TUI mic pill (`ctrl+t`): arecord capture, local faster-whisper STT, transcript lands editable in the prompt. `sk mic-test` diagnoses levels.
+- **Agent loop** — Ollama/OpenAI-compatible tool-calling (native + text-JSON fallback for coders), streaming tokens, reasoning-model aware, repeat-call guard
+- **14 tools** — `sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add/list/done, read_url, web_search, skill`
+- **Approval gate** — reads auto-run, writes prompt `[y/N]` (or `--yes` / `/yolo`); every write backed up for `/rollback`-style recovery thinking
 - **Memory + todos** — SQLite with FTS5 prefix search, auto-injected into every prompt
-- **Hermes-style `/commands`** — `/help /model /clear /yolo /remember /todo /brief /history /oops /skills /copy…` in both REPL and TUI
-- **Auto model router** — `sk run` picks fast (chat) vs smart (code) itself
+- **Hermes-style `/commands`** — `/help /model /provider /clear /yolo /remember /todo /brief /history /oops /skills /copy…` in REPL, TUI, and voice loop
+- **Superpowers skills** — `sk skills-install superpowers` (15 obra packs); relevance-ranked index in prompt, full bodies on demand via `skill`
+- **Auto model router** — `sk run` picks fast (chat) vs smart (code) itself, per provider tiers
 - **Shell hook** — logs commands, `sk oops` explains the last failure
-- **Daemon** — disk / failure / dirty-repo watcher with state
-- **Eval harness** — 13 regression tests lock in every past quality bug fix
+- **Daemon** — disk / failure / dirty-repo watcher with state (`--once` for cron)
+- **Eval harness** — prompt-assembly + regression tests lock in every past quality bug fix
 
 ## Install
 
 ```bash
 git clone https://github.com/Faisal01011/sidekick && cd sidekick
-uv tool install -e .   # global `sk` in ~/.local/bin
-sk doctor               # checks Ollama + model
+uv tool install -e ".[voice]"   # global `sk` in ~/.local/bin, STT included
+sk doctor                        # checks provider + model
 ```
 
-Requires Python 3.12+ and Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed) — or any OpenAI-compatible API.
+Requires Python 3.12+. Without `[voice]` you get everything except Talk/mic (installs on first use instead). Local path needs Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed).
 
 ## Providers (BYO key)
 
@@ -69,8 +77,9 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom`. Any 
 
 | Command | What |
 |---|---|
-| `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies, ctrl+t / ● mic push-to-talk (transcribes into the prompt). Answers stream live, thinking dimmed, footer shows last-turn time/tokens. Copy works like a normal terminal (mouse tracking stays off); `/copy [n]` tabulates the nth-last answer via native clipboard → wl-copy/xclip/xsel → OSC52 (`sudo apt install xclip` on plain X11) |
-| `sk talk [-d SECS] [--stt-model base]` | Push-to-talk voice chat: Enter records, Enter stops. Transcribed locally by faster-whisper int8 (installs on first run, ~800MB + model). Voice never leaves your machine |
+| `sk chat` / `sk tui [--mouse]` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies, ctrl+t push-to-talk with mic status pill. Answers stream live, thinking dimmed, footer shows last-turn time/tokens. Copy works like a normal terminal (mouse tracking stays off unless `--mouse`); `/copy [n]` uses native clipboard → wl-copy/xclip/xsel → OSC52 (`sudo apt install xclip` on plain X11) |
+| `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat: Enter records, Enter stops. Transcribed locally by faster-whisper int8 (installs on first run, ~800MB + model). Voice never leaves your machine |
+| `sk mic-test [-d SECS]` | Check mic levels: peak dB + verdict (silent/quiet/good) with fix hints |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run |
 | `sk brief [-p PATH] [--smart]` | Morning digest, instant without LLM |
 | `sk remember/recall/memories/forget` | Long-term memory |
@@ -86,14 +95,17 @@ Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-rank
 
 ```
 sk (typer CLI / Textual TUI)
- └─ slash.py — /commands (local-first, no LLM)
- └─ agent.py — Ollama loop: stream → tools → synthesize
-     ├─ auto-grounding: ~/paths listed, URLs fetched, sysinfo snapshotted
-     │   before the model sees the prompt — it cannot hallucinate or refuse
-     ├─ tools.py — 14 tools, allowlists, SSRF guard, 100KB write caps
-     ├─ store.py — SQLite: history, memories (FTS5), todos, shell log
-     ├─ router.py — fast/smart pick from task text
-     └─ skills/brief/daemon/clip — packs, digest, watcher, clipboard
+ ├─ slash.py — /commands (local-first, no LLM)
+ ├─ tui.py — single-pane chat: live answer, role colors, history, mic pill
+ ├─ voice.py — arecord capture (SIGINT stop), faster-whisper int8, mic levels
+ ├─ agent.py — provider loop: stream → tools → synthesize
+ │   ├─ auto-grounding: ~/paths listed, URLs fetched, searches run, sysinfo
+ │   │   snapshotted before the model sees the prompt — it cannot hallucinate
+ │   │   or refuse; repeats served from per-turn cache; greetings+dates instant
+ │   ├─ tools.py — 14 tools, allowlists, SSRF guard, 100KB write caps
+ │   ├─ store.py — SQLite: history, memories (FTS5), todos, shell log
+ │   ├─ router.py — fast/smart pick from task text, per provider tiers
+ │   └─ skills/brief/daemon/clip — packs, digest, watcher, clipboard
 ```
 
 Design bets that paid off: **deterministic grounding beats prompt instructions** (small models ignore rules but can't argue with injected facts), **text-JSON fallback** (coders emit tools as text over the OpenAI endpoint), **FTS5 over vectors** (zero deps, instant, no embedding server on a 4GB box).
@@ -101,18 +113,18 @@ Design bets that paid off: **deterministic grounding beats prompt instructions**
 ## Tests
 
 ```bash
-.venv/bin/pytest tests -q   # 69 passed, no Ollama needed
+.venv/bin/pytest tests -q   # 117 passed, mic/STT subprocess calls mocked, no Ollama needed
 ```
 
 Unit + regression + Textual pilot tests. Suite-wide fixture guarantees tests never touch your live `~/.sidekick/config.toml` (a real bug we caught: `/model` overwrote it mid-suite).
 
 ## Config
 
-`~/.sidekick/config.toml` (`qwen2.5-coder:7b` @ `http://localhost:11434/v1` by default). Env overrides: `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`. Data stays home: `history.db`, `skills/`, `nudges.log`.
+`~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`. Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
 
 ## Safety
 
-Reads auto-run. Writes need approval, HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. `exec` blocks `rm/sudo/pipes/redirects`. `read_url` blocks localhost/private IPs, 1MB cap.
+Reads auto-run. Writes need approval, HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. `exec` blocks `rm/sudo/pipes/redirects`. `read_url`/`web_search` block localhost/private IPs (1MB cap). Mic recordings are temp files, deleted after each take. API keys chmod 600, masked in output.
 
 ## License
 
