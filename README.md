@@ -1,113 +1,104 @@
-# Sidekick — local terminal companion (MVP)
+# Sidekick — local-first terminal companion
 
-Local-first agent that lives in your terminal. Talks to Ollama, uses tools with approval.
+**Sidekick lives in your terminal, runs on your hardware, and remembers you.** No cloud account, no API bill — just Ollama, SQLite, and a 2–8B model on a 4GB GPU.
 
-## Quickstart
+Built for fun as a long-term systems/CLI experiment. It talks, runs read-only commands, writes files with approval, remembers facts across sessions, tracks todos, briefs your morning, explains shell failures, and fetches the web — from a REPL, a Textual TUI, or one-shot runs.
 
-```bash
-cd ~/sidekick
-uv tool install -e .  # global `sk` in ~/.local/bin
-sk doctor
-sk run "summarize disk usage in ~/"
-sk chat
-# writes need approval:
-sk run "create /tmp/demo.txt with 'hi'"        # prompts [y/N]
-sk run "create /tmp/demo.txt with 'hi'" --yes  # auto-approve
-sk chat --yes
-# models: fast = llama3.2:3b (instant), smart = qwen2.5-coder:7b (default, slower)
-sk run "say hi" --model fast
-sk run "refactor script" --model smart --no-stream
+## Demo
+
+```console
+$ sk brief
+╭─ sidekick brief  Sat 2026-09-19 11:58 ─╮
+│ CPU: AMD Ryzen 7 4800H (16 threads)     │
+│ Mem: 7.2Gi · GPU: GTX 1650 4GB          │
+│ /dev/nvme0n1p8  133G  117G  8.5G  94% / │
+│ qwen3:4b · qwen2.5-coder:7b · llama3.2  │
+├─ projects ──────────────────────────────┤
+│ ~/ecomind  improve/async-and-js  0 changed │
+╭─ warnings ──────────────────────────────╮
+│ ! disk 94% full — clean ~/Downloads…    │
+╰─────────────────────────────────────────╯
+
+$ sk run "what is the ideal llm i can run on my device"
+• qwen3:4b (2.5 GB): fits comfortably in your 4096 MiB VRAM.
+• llama3.2:3b (2.0 GB): another good option.
+# grounded in real sysinfo — never guesses, never suggests GPT-4
+
+$ sk tui
+sidekick online. `/help` for commands, `/model fast` for speed.
+/model fast   →  model → `llama3.2:3b`
+/todo add clean disk  →  Added todo #1.
+/copy  →  copied last answer via xclip
 ```
 
-Streaming is on by default (live tokens). Use `--no-stream` for clean markdown only.
-In chat, use `@path/to/file` to inline a file. Type `exit` to quit.
+## Features
+
+- **Agent loop** — Ollama tool-calling (native + text-JSON fallback for coders), streaming tokens, reasoning-model aware
+- **14 tools** — `sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add/list/done, read_url`
+- **Approval gate** — reads auto-run, writes prompt `[y/N]` (or `--yes` / `/yolo`)
+- **Memory + todos** — SQLite with FTS5 prefix search, auto-injected into every prompt
+- **Hermes-style `/commands`** — `/help /model /clear /yolo /remember /todo /brief /history /oops /skills /copy…` in both REPL and TUI
+- **Auto model router** — `sk run` picks fast (chat) vs smart (code) itself
+- **Shell hook** — logs commands, `sk oops` explains the last failure
+- **Daemon** — disk / failure / dirty-repo watcher with state
+- **Eval harness** — 13 regression tests lock in every past quality bug fix
+
+## Install
+
+```bash
+git clone https://github.com/Faisal01011/sidekick && cd sidekick
+uv tool install -e .   # global `sk` in ~/.local/bin
+sk doctor               # checks Ollama + model
+```
+
+Requires Python 3.12+ and Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed).
+
+## Command reference
+
+| Command | What |
+|---|---|
+| `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside |
+| `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run |
+| `sk brief [-p PATH] [--smart]` | Morning digest, instant without LLM |
+| `sk remember/recall/memories/forget` | Long-term memory |
+| `sk todo add/list/done/clear` | Todos |
+| `sk history` / `sk oops` | Shell log / explain last failure |
+| `sk hook-install [--write]` | Bash/zsh logging hook |
+| `sk skills` / `sk daemon [--once]` | Skill packs / background watcher |
+| `sk doctor` / `sk models` / `sk config` | Health / models / settings |
+
+## Architecture
+
+```
+sk (typer CLI / Textual TUI)
+ └─ slash.py — /commands (local-first, no LLM)
+ └─ agent.py — Ollama loop: stream → tools → synthesize
+     ├─ auto-grounding: ~/paths listed, URLs fetched, sysinfo snapshotted
+     │   before the model sees the prompt — it cannot hallucinate or refuse
+     ├─ tools.py — 14 tools, allowlists, SSRF guard, 100KB write caps
+     ├─ store.py — SQLite: history, memories (FTS5), todos, shell log
+     ├─ router.py — fast/smart pick from task text
+     └─ skills/brief/daemon/clip — packs, digest, watcher, clipboard
+```
+
+Design bets that paid off: **deterministic grounding beats prompt instructions** (small models ignore rules but can't argue with injected facts), **text-JSON fallback** (coders emit tools as text over the OpenAI endpoint), **FTS5 over vectors** (zero deps, instant, no embedding server on a 4GB box).
 
 ## Tests
 
 ```bash
-.venv/bin/pytest tests -q  # 12 passed, no Ollama needed
+.venv/bin/pytest tests -q   # 69 passed, no Ollama needed
 ```
 
-## Memory
-
-```bash
-sk remember "prefers llama3.2:3b for quick answers"
-sk recall "model"
-sk memories
-sk forget "llama"
-```
-Memories use FTS5 prefix search (stdlib, no deps) + keyword fallback, auto-inject top-5. True vectors (`sqlite-vec` + `nomic-embed-text`) deferred: disk 94% full + Ollama needs `--embeddings` restart.
-
-## Todos + brief
-
-```bash
-sk todo add "clean disk"
-sk todo list
-sk todo done 1
-sk todo clear
-sk brief
-sk brief -p ~/sky-duel --smart
-```
-
-## Chat + TUI (Hermes-style /commands)
-
-```bash
-sk chat
-sk tui
-sk tui --model fast
-```
-Single chat view. Everything via slash: `/help /model /clear /yolo /confirm /remember /recall /memories /forget /todo /brief /history /oops /skills /copy /models /exit`. Same commands work in `sk chat` and `sk tui`. Anything else goes to the agent.
-
-## Copy/paste in TUI
-
-- Copy: `/copy [n]` or `ctrl+y` — copies nth-last answer (default last) via native clipboard, else wl-copy/xclip/xsel, else OSC52. Needs `xclip` on plain X11: `sudo apt install xclip`.
-- Paste: Ctrl+Shift+V (terminal handles it; Textual accepts bracketed paste).
-- Mouse select: hold Shift to bypass the app and select natively.
-
-## Router
-
-`sk run` defaults to `--model auto`: paths/code/device questions → `smart` (qwen2.5-coder:7b), chit-chat/fetch/recall → `fast` (llama3.2:3b). Pin with `--model fast|smart|<name>`.
-
-## Skills + daemon
-
-```bash
-sk skills
-echo '# deploy
-- never push on fridays' > ~/.sidekick/skills/deploy.md
-sk daemon --once
-sk daemon --interval 300   # foreground loop, log ~/.sidekick/nudges.log
-```
-
-## Web
-
-```bash
-sk run "summarize https://example.com in one line"
-```
-`read_url` fetches public http/https only (blocks localhost/private IPs, 1MB cap, strips scripts). Stdlib HTML extract, no extra deps beyond httpx.
+Unit + regression + Textual pilot tests. Suite-wide fixture guarantees tests never touch your live `~/.sidekick/config.toml` (a real bug we caught: `/model` overwrote it mid-suite).
 
 ## Config
 
-`~/.sidekick/config.toml` — defaults to `qwen2.5-coder:7b` on `http://localhost:11434/v1`.
-
-```bash
-sk config --show
-sk config --model qwen3:4b
-sk models
-```
-
-Env overrides: `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`.
+`~/.sidekick/config.toml` (`qwen2.5-coder:7b` @ `http://localhost:11434/v1` by default). Env overrides: `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`. Data stays home: `history.db`, `skills/`, `nudges.log`.
 
 ## Safety
 
-Read tools auto-run: `sysinfo, list_dir, read_file, exec(read-only)`.
-Write tools require approval: `write_file, edit_file` (HOME or /tmp only, max 100KB, blocks `~/.ssh, ~/.gnupg, /etc, /usr`).
-`exec` blocks: `rm, sudo, pipes, redirects, ; &&`.
+Reads auto-run. Writes need approval, HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. `exec` blocks `rm/sudo/pipes/redirects`. `read_url` blocks localhost/private IPs, 1MB cap.
 
-## Layout
+## License
 
-- `src/sk/cli.py` — typer commands + approval prompts
-- `src/sk/agent.py` — Ollama tool loop + auto ~/ grounding + approval gate
-- `src/sk/tools.py` — sysinfo, list_dir, read_file, exec + write_file/edit_file
-- `src/sk/store.py` — sqlite history
-- `src/sk/config.py` — toml config
-```
+MIT
