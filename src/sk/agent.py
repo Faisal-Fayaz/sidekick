@@ -335,10 +335,11 @@ def run_agent(
     messages = build_messages(user_msg, history, cfg)
 
     final_text = ""
-    # perf: smaller ctx + cap output so 4GB VRAM box stays fast
-    extra = {"options": {"num_ctx": 8192, "num_predict": 600}}
+    # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU;
+    # 350-token cap bounds worst-case generation time on CPU offload.
+    extra = {"options": {"num_ctx": 4096, "num_predict": 350}}
     for _ in range(cfg.max_steps):
-        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 600, extra, on_token)
+        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 350, extra, on_token)
 
         # qwen3-style reasoning models put text in .reasoning, content empty
         msg_text = (msg.content or "").strip()
@@ -400,7 +401,7 @@ def run_agent(
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis
         if _ == cfg.max_steps - 1:
-            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, 600, extra, on_token)
+            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, 350, extra, on_token)
             final_text = m2.content or m2.reasoning or ""
             messages.append({"role": "assistant", "content": final_text})
     else:
