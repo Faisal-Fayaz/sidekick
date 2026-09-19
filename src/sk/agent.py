@@ -9,14 +9,14 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
-from .tools import TOOLS_SCHEMA, WRITE_TOOLS, dispatch_tool, tool_sysinfo
+from .tools import APPROVAL_TOOLS, TOOLS_SCHEMA, dispatch_tool, tool_sysinfo
 
 
 SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
 You run on the user's Linux machine via Ollama.
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
-- Prefer using tools: sysinfo, list_dir, read_file, exec, write_file, edit_file, make_dir, remember, recall, todo_add, todo_list, todo_done, read_url, web_search, skill.
+- Prefer using tools: sysinfo, list_dir, read_file, exec (read-only), shell (any command, approval), write_file, edit_file, make_dir, delete_file, remember, recall, todo_add, todo_list, todo_done, read_url, web_search, skill.
 - SKILLS: the SKILL INDEX lists packs by description. When a task matches one (debugging→systematic-debugging, new feature→brainstorming, plan→writing-plans), call `skill` to load its full instructions and FOLLOW them.
 - WEB: for summarize/docs/URL questions, call read_url (public http/https only). For "search the internet / latest / right now" questions, call web_search FIRST, then read_url the best hits. Never fetch localhost/private IPs. You HAVE these tools — never claim you cannot fetch URLs or search.
 - GREETINGS: hi/hello/thanks/bye get a direct one-line reply. Never call tools for greetings.
@@ -25,7 +25,7 @@ Rules:
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
 - PATHS (mandatory): ~/X means /home/faisal/X, NOT ./X. If user asks about ~/neural-hangar, you MUST call list_dir with path "~/neural-hangar" (or "/home/faisal/neural-hangar"). Never answer "does not exist" from cwd listing. cwd is {cwd} but ~ is /home/faisal. Always try the exact path first.
 - exec is READ-ONLY (ls, df, free, git status, etc). Never claim you ran a blocked command.
-- WRITES need approval: write_file/edit_file/make_dir will ask the user. Announce what you will write + why before calling. Keep writes under HOME or /tmp, max 100KB. Never write to ~/.ssh, ~/.gnupg, /etc, /usr.
+- WRITES need approval: write_file/edit_file/make_dir/delete_file/shell will ask the user. Announce what you will write + why before calling. Keep writes under HOME or /tmp, max 100KB. Never write to ~/.ssh, ~/.gnupg, /etc, /usr.
 - CALL tools, don't ask in prose: to write/create, emit the tool call immediately with a one-line announcement. The approval UI handles permission — a prose "shall I?" stalls forever. {approval_mode}
 - If a tool is blocked/denied, explain why and suggest an allowed alternative.
 - Recommend only Ollama models (qwen, llama, mistral, phi, gemma). Never recommend GPT-2/GPT-3.5/GPT-4/transformers for local run. VRAM truth: 3-4B fits 4GB VRAM easily and fast; 7-8B CAN run with partial CPU offload (you are qwen2.5-coder:7b doing it now) but slower, needs swap; 14B+ does NOT fit this box.
@@ -271,7 +271,7 @@ def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
     """
     import re
 
-    allowed = {"sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
+    allowed = {"sysinfo", "list_dir", "read_file", "exec", "shell", "delete_file", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
     found: list[tuple[str, dict]] = []
     seen: set[str] = set()
     for span in _balanced_objects(text):
@@ -327,7 +327,7 @@ def _run_tool_cached(
 
 def _gated_dispatch(name: str, args: dict, approve: object = None) -> tuple[str, bool]:
     """Run dispatch_tool with approval gate. Returns (result, approved)."""
-    if name in WRITE_TOOLS and approve is not None:
+    if name in APPROVAL_TOOLS and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
         except Exception:
@@ -344,10 +344,11 @@ class _TC:
 
 
 class _Msg:
-    def __init__(self, content: str, tool_calls: list | None, reasoning: str = ""):
+    def __init__(self, content: str, tool_calls: list | None, reasoning: str = "", finish: str = ""):
         self.content = content
         self.tool_calls = tool_calls
         self.reasoning = reasoning
+        self.finish = finish  # stop | length | tool_calls | ...
 
 
 def _stream_chat(client, model: str, messages: list[dict], tools, temperature: float, max_tokens: int, extra: dict, on_token=None, on_reasoning=None) -> _Msg:
@@ -359,6 +360,7 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
     _on_r = on_reasoning if on_reasoning is not None else on_token
     acc_text = ""
     acc_reason = ""
+    finish = ""
     tc_buf: dict[int, dict] = {}  # idx -> {id, name, args}
     try:
         stream = client.chat.completions.create(
@@ -370,6 +372,9 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
                 choice = chunk.choices[0]
             except Exception:
                 continue
+            fr = getattr(choice, "finish_reason", None)
+            if fr:
+                finish = str(fr)
             delta = getattr(choice, "delta", None)
             if delta is None:
                 continue
@@ -417,13 +422,13 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
             temperature=temperature, max_tokens=max_tokens, stream=False, extra_body=extra,  # type: ignore
         )
         m = resp.choices[0].message
-        return _Msg(m.content or "", getattr(m, "tool_calls", None), getattr(m, "reasoning", "") or "")
+        return _Msg(m.content or "", getattr(m, "tool_calls", None), getattr(m, "reasoning", "") or "", str(getattr(resp.choices[0], "finish_reason", "") or ""))
     tool_calls = None
     if tc_buf:
         tool_calls = [_TC(b["id"] or f"call_{i}", b["name"], b["args"]) for i, b in sorted(tc_buf.items()) if b["name"]]
         if not tool_calls:
             tool_calls = None
-    return _Msg(acc_text, tool_calls, acc_reason)
+    return _Msg(acc_text, tool_calls, acc_reason, finish)
 
 
 def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False) -> list[dict]:
@@ -492,7 +497,7 @@ def run_agent(
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
-    approve(name, args) -> bool: gate for WRITE_TOOLS. If None, auto-approve.
+    approve(name, args) -> bool: gate for APPROVAL_TOOLS. If None, auto-approve.
     on_tool(name, args, result_or_denied) is notification only.
     on_reasoning(chunk) receives thinking deltas separately when given.
     auto_approve only changes the prompt line (tool gating is the caller's
@@ -510,13 +515,16 @@ def run_agent(
     messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
 
     final_text = ""
-    # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU;
-    # 350-token cap bounds worst-case generation time on CPU offload.
+    # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
+    # Token cap is provider-aware: tight on CPU offload, roomy on cloud GPUs
+    # so plans don't get cut off mid-tool-call.
     # (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
     extra = _extra_body(cfg)
+    max_tokens = 350 if cfg.provider in ("ollama", "lmstudio") else 800
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
+    continued = 0
     for _ in range(cfg.max_steps):
-        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, 350, extra, on_token, on_reasoning)
+        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, max_tokens, extra, on_token, on_reasoning)
 
         # qwen3-style reasoning models put text in .reasoning, content empty
         msg_text = (msg.content or "").strip()
@@ -537,8 +545,14 @@ def run_agent(
             messages.append({"role": "user", "content": "\n".join(combined) + "\nAnswer the original question concisely using these results. Do not emit more tool JSON."})
             continue
 
-        # no tool call -> done
+        # no tool call -> done, unless cut off mid-thought (finish=length):
+        # then ask for continuation instead of accepting a plan with no action.
         if not getattr(msg, "tool_calls", None):
+            if msg.finish == "length" and continued < 2:
+                continued += 1
+                messages.append({"role": "assistant", "content": msg_text})
+                messages.append({"role": "user", "content": "Continue: emit the tool calls now, no more prose."})
+                continue
             final_text = msg_text
             messages.append({"role": "assistant", "content": final_text})
             break
@@ -570,7 +584,7 @@ def run_agent(
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis
         if _ == cfg.max_steps - 1:
-            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, 350, extra, on_token, on_reasoning)
+            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, max_tokens, extra, on_token, on_reasoning)
             final_text = m2.content or m2.reasoning or ""
             messages.append({"role": "assistant", "content": final_text})
     else:

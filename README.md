@@ -41,7 +41,7 @@ heard> what files are in the sidekick repo
 
 - **Voice-first option** — `sk talk` CLI + TUI mic pill (`ctrl+t`): arecord capture, local faster-whisper STT, transcript lands editable in the prompt. `sk mic-test` diagnoses levels.
 - **Agent loop** — Ollama/OpenAI-compatible tool-calling (native + text-JSON fallback for coders), streaming tokens, reasoning-model aware, repeat-call guard
-- **14 tools** — `sysinfo, list_dir, read_file, exec, write_file, edit_file, remember, recall, todo_add/list/done, read_url, web_search, skill`
+- **17 tools** — `sysinfo, list_dir, read_file, exec (read-only), shell (approval), write_file, edit_file, make_dir, delete_file, remember, recall, todo_add/list/done, read_url, web_search, skill`
 - **Approval gate** — reads auto-run, writes prompt `[y/N]` (or `--yes` / `/yolo`); every write backed up for `/rollback`-style recovery thinking
 - **Memory + todos** — SQLite with FTS5 prefix search, auto-injected into every prompt
 - **Hermes-style `/commands`** — `/help /model /provider /clear /yolo /remember /todo /brief /history /oops /skills /copy…` in REPL, TUI, and voice loop
@@ -104,7 +104,7 @@ sk (typer CLI / Textual TUI)
  │   ├─ auto-grounding: ~/paths listed, URLs fetched, searches run, sysinfo
  │   │   snapshotted before the model sees the prompt — it cannot hallucinate
  │   │   or refuse; repeats served from per-turn cache; greetings+dates instant
- │   ├─ tools.py — 14 tools, allowlists, SSRF guard, 100KB write caps
+  │   ├─ tools.py — 17 tools, allowlists, shell hard-blocks, SSRF guard, 100KB write caps
  │   ├─ store.py — SQLite: history, memories (FTS5), todos, shell log
  │   ├─ router.py — fast/smart pick from task text, per provider tiers
  │   └─ skills/brief/daemon/clip — packs, digest, watcher, clipboard
@@ -126,7 +126,7 @@ Unit + regression + Textual pilot tests. Suite-wide fixture guarantees tests nev
 
 ## Safety
 
-Reads auto-run. Writes need approval, HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. `exec` blocks `rm/sudo/pipes/redirects`. `read_url`/`web_search` block localhost/private IPs (1MB cap). Mic recordings are temp files, deleted after each take. API keys chmod 600, masked in output.
+Reads auto-run. Writes, deletes, and general shell need approval, HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. `exec` blocks `rm/sudo/pipes/redirects`. `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs (1MB cap). Mic recordings are temp files, deleted after each take. API keys chmod 600, masked in output.
 
 ## License
 

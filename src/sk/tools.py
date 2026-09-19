@@ -97,6 +97,63 @@ def tool_exec(cmd: str, timeout: int = 15) -> str:
         return f"Error: {e}"
 
 
+def _check_shell(cmd: str) -> str | None:
+    """Hard blocks. Returns error or None if allowed (approval still applies)."""
+    import re
+
+    if not (cmd or "").strip():
+        return "Error: empty command."
+    if len(cmd) > 2000:
+        return "Error: command too long (>2000 chars)."
+    for pat in SHELL_BLOCK_PATTERNS:
+        if re.search(pat, cmd):
+            return "Error: blocked destructive command (refused even with approval)."
+    return None
+
+
+def tool_shell(cmd: str, timeout: int = 30) -> str:
+    """General shell via bash -c. Approval-gated; catastrophic patterns hard-blocked."""
+    blocked = _check_shell(cmd)
+    if blocked:
+        return blocked
+    timeout = max(5, min(int(timeout or 30), 120))
+    try:
+        res = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=timeout)
+        out = (res.stdout or "") + (("\n[stderr]\n" + res.stderr) if res.stderr else "")
+        out = out.strip() or "(no output)"
+        if len(out) > 6000:
+            out = out[:6000] + "\n... [truncated]"
+        return f"$ {cmd}\n[exit {res.returncode}]\n{out}"
+    except subprocess.TimeoutExpired:
+        return f"Error: timed out after {timeout}s"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def tool_delete_file(path: str) -> str:
+    """Delete a file or empty dir under HOME/tmp. Approval-gated, blocklist enforced."""
+    import shutil
+
+    checked = _check_write_path(path)
+    if isinstance(checked, str):
+        return checked
+    p: Path = checked
+    try:
+        if not p.exists() and not p.is_symlink():
+            return f"Error: {p} does not exist."
+        if p.is_symlink() or p.is_file():
+            p.unlink()
+            return f"Deleted file {p}"
+        # dir: only empty dirs, no recursion (use shell rmdir/rm with approval for more)
+        try:
+            p.rmdir()
+            return f"Deleted empty dir {p}"
+        except OSError:
+            return f"Error: {p} is a non-empty directory — refusing (remove contents first)."
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def tool_sysinfo() -> str:
     """One-shot grounded hardware + Ollama snapshot. Fast, no chaining."""
     import shutil
@@ -140,6 +197,21 @@ def tool_sysinfo() -> str:
 
 
 WRITE_TOOLS = {"write_file", "edit_file", "make_dir"}
+# everything requiring user approval (writes + general shell + delete)
+APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "delete_file"}
+
+# hard blocks: never run, even with --yes (prompt-injection safety net)
+SHELL_BLOCK_PATTERNS = [
+    r"\brm\s+(-[a-z]*r[a-z]*\s+)+/(?:\s|$)",  # rm -rf /
+    r"\brm\s+(-[a-z]*r[a-z]*\s+)+/\*",  # rm -rf /*
+    r"\brm\s+(-[a-z]*r[a-z]*\s+)+(~|\$HOME)(?:\s|$)",  # rm -rf ~ / $HOME
+    r"\bmkfs(\s|$|\.)",  # mkfs
+    r"\bdd\b.*\bof=/dev/",  # dd to devices
+    r":\(\)\s*\{",  # fork bomb
+    r">\s*/dev/sd[a-z]",  # redirect onto disks
+    r"\bshred\b.*\/dev\/",
+    r"\bchmod\s+-R\s+777\s+/",  # chmod -R 777 /
+]
 
 # never allow writes here, even with --yes
 WRITE_BLOCKLIST = (
@@ -278,11 +350,38 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "exec",
-            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects.",
+            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects. No approval needed.",
             "parameters": {
                 "type": "object",
                 "properties": {"cmd": {"type": "string", "description": "Command, e.g. 'df -h' or 'ls -la'"}},
                 "required": ["cmd"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": "Run ANY shell command (pipes, installs, git push, scripts...). REQUIRES user approval. Destructive patterns (rm -rf /, mkfs, dd to disks) are refused outright.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cmd": {"type": "string", "description": "Full bash command"},
+                    "timeout": {"type": "integer", "description": "Seconds, default 30, max 120"},
+                },
+                "required": ["cmd"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": "Delete a file or EMPTY dir under HOME/tmp. REQUIRES user approval. Non-empty dirs refused.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
             },
         },
     },
@@ -439,6 +538,14 @@ def dispatch_tool(name: str, args: dict) -> str:
         return tool_read_file(str(args.get("path", "")))
     if name == "exec":
         return tool_exec(str(args.get("cmd", "")))
+    if name == "shell":
+        try:
+            timeout = int(args.get("timeout", 30) or 30)
+        except Exception:
+            timeout = 30
+        return tool_shell(str(args.get("cmd", "")), timeout)
+    if name == "delete_file":
+        return tool_delete_file(str(args.get("path", "")))
     if name == "write_file":
         return tool_write_file(str(args.get("path", "")), str(args.get("content", "")))
     if name == "edit_file":

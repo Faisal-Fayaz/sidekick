@@ -89,3 +89,49 @@ def test_make_dir_needs_approval():
 
     out, ok = _gated_dispatch("make_dir", {"path": "/tmp/x"}, approve=lambda n, a: False)
     assert ok is False and "Denied" in out
+
+
+def test_shell_blocks_catastrophic():
+    from sk.tools import dispatch_tool, tool_shell
+
+    for bad in ("rm -rf /", "rm -rf /*", "sudo rm -rf ~", "mkfs.ext4 /dev/sda1", "dd if=x of=/dev/sda", ":(){ :|:& };:", "echo hi > /dev/sda"):
+        out = tool_shell(bad)
+        assert "blocked" in out.lower(), bad
+    assert "hello-shell" in tool_shell("echo hello-shell")
+    assert "ok" in dispatch_tool("shell", {"cmd": "echo ok"})
+
+
+def test_shell_timeout_flag():
+    from sk.tools import dispatch_tool
+
+    assert "timed out" in dispatch_tool("shell", {"cmd": "sleep 30", "timeout": 1})
+
+
+def test_delete_file_roundtrip(tmp_path, monkeypatch):
+    import sk.tools as _t
+
+    monkeypatch.setattr(_t.Path, "home", classmethod(lambda cls: tmp_path))
+    from sk.tools import dispatch_tool, tool_delete_file
+
+    f = tmp_path / "gone.txt"
+    f.write_text("x")
+    assert "Deleted file" in tool_delete_file(str(f)) and not f.exists()
+    assert "does not exist" in tool_delete_file(str(f))
+    d = tmp_path / "emptyd"
+    d.mkdir()
+    assert "empty dir" in tool_delete_file(str(d))
+    nd = tmp_path / "fulld"
+    nd.mkdir()
+    (nd / "x").write_text("x")
+    assert "non-empty" in tool_delete_file(str(nd))
+    assert "blocked" in tool_delete_file("/etc/sk-evil").lower()
+    assert "Deleted" in dispatch_tool("delete_file", {"path": str(tmp_path / "g.txt")}) or "does not exist" in dispatch_tool("delete_file", {"path": str(tmp_path / "g.txt")})
+
+
+def test_shell_delete_need_approval():
+    from sk.agent import _gated_dispatch
+
+    out, ok = _gated_dispatch("shell", {"cmd": "echo hi"}, approve=lambda n, a: False)
+    assert ok is False and "Denied" in out
+    out, ok = _gated_dispatch("delete_file", {"path": "/tmp/x"}, approve=lambda n, a: False)
+    assert ok is False

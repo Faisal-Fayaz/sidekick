@@ -26,28 +26,32 @@ def _cfg() -> Config:
 
 
 def _make_approver(auto_yes: bool):
-    from .tools import WRITE_TOOLS
+    from .tools import APPROVAL_TOOLS
 
     def approve(name: str, args: dict) -> bool:
-        if name not in WRITE_TOOLS:
+        if name not in APPROVAL_TOOLS:
             return True
-        path = args.get("path", "?")
+        target = args.get("path", args.get("cmd", "?"))
         preview = ""
         if name == "write_file":
             c = str(args.get("content", ""))
             preview = c[:600] + ("... [truncated]" if len(c) > 600 else "")
         elif name == "make_dir":
             preview = "(new directory)"
+        elif name == "shell":
+            preview = f"$ {str(args.get('cmd', ''))[:600]}"
+        elif name == "delete_file":
+            preview = "(PERMANENT delete)"
         else:
             old = str(args.get("old_string", ""))[:300]
             new = str(args.get("new_string", ""))[:300]
             preview = f"OLD:\n{old}\nNEW:\n{new}"
-        console.print(Panel(f"[bold yellow]write approval[/] {name} -> [cyan]{path}[/cyan]\n{preview}", expand=False))
+        console.print(Panel(f"[bold yellow]approval[/] {name} -> [cyan]{target}[/cyan]\n{preview}", expand=False))
         if auto_yes:
             console.print("[dim]--yes: auto-approved[/dim]")
             return True
         try:
-            return typer.confirm("Allow this write?", default=False)
+            return typer.confirm("Allow?", default=False)
         except (EOFError, KeyboardInterrupt):
             return False
 
@@ -58,9 +62,9 @@ def _make_approver_state(state: dict):
     """Like _make_approver but reads live state['yolo'] (for /yolo toggling)."""
 
     def approve(name: str, args: dict) -> bool:
-        from .tools import WRITE_TOOLS
+        from .tools import APPROVAL_TOOLS
 
-        if name not in WRITE_TOOLS:
+        if name not in APPROVAL_TOOLS:
             return True
         if state.get("yolo"):
             console.print(f"[dim]yolo: auto-approved {name} -> {args.get('path', '?')}[/dim]")

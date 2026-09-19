@@ -103,7 +103,7 @@ def test_read_tools_bypass_gate():
 def test_all_tools_parseable():
     from sk.agent import _parse_text_tool
 
-    for name in ("sysinfo", "list_dir", "read_file", "exec", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"):
+    for name in ("sysinfo", "list_dir", "read_file", "exec", "shell", "delete_file", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"):
         args = {"path": "/tmp/x"} if name in ("list_dir", "read_file") else {}
         import json
 
@@ -243,3 +243,37 @@ def test_approval_mode_prompt(tmp_path, monkeypatch):
     assert "AUTOMATIC" in auto
     conf = build_messages("hi there", [], _cfg(), auto_approve=False)[0]["content"]
     assert "CONFIRM" in conf
+
+
+def test_length_cut_continues_to_tools(monkeypatch, tmp_path):
+    """A plan cut off by max_tokens (finish=length) must continue, not stop."""
+    import sk.agent as agent
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
+    calls = {"n": 0}
+
+    def fake_stream(client, model, messages, tools, temperature, max_tokens, extra, on_token=None, on_reasoning=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return agent._Msg("I will use write_file tool. Then", None, "", "length")
+        if calls["n"] == 2:
+            tc = agent._TC("c1", "exec", '{"cmd": "echo continued-ok"}')
+            return agent._Msg("", [tc], "", "tool_calls")
+        return agent._Msg("done continued-ok", None, "", "stop")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("do the thing", [], cfg, approve=lambda n, a: True)
+    assert calls["n"] >= 2 and "continued-ok" in out
+    # genuine stop still stops after exactly one model call
+    calls["n"] = 0
+
+    def stop_once(*a, **k):
+        calls["n"] += 1
+        return agent._Msg("all done", None, "", "stop")
+
+    monkeypatch.setattr(agent, "_stream_chat", stop_once)
+    assert agent.run_agent("summarize the logs", [], cfg) == "all done"
+    assert calls["n"] == 1

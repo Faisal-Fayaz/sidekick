@@ -16,7 +16,8 @@ SMART_WORDS = {
     "function", "class", "script", "write", "edit", "create", "scope",
     "architecture", "review", "explain", "error", "bug", "test", "tests",
     "device", "hardware", "llm", "model", "vram", "gpu", "ram",
-    "project", "repo", "repository",
+    "project", "repo", "repository", "install", "run", "execute", "delete",
+    "remove", "folder", "directory", "file",
 }
 
 PATH_HINT = re.compile(r"(~/|\.\w{1,5}\b|/home/|[\w\-./]+\.(py|ts|tsx|js|rs|go|md|toml|json|yaml)\b)")

@@ -397,16 +397,20 @@ class SidekickTUI(App):
         import threading
         import time as _t
 
-        from .tools import WRITE_TOOLS
+        from .tools import APPROVAL_TOOLS
 
-        if name not in WRITE_TOOLS:
+        if name not in APPROVAL_TOOLS:
             return True
         if bool(self.state.get("yolo")):
             return True
-        path = args.get("path", "?")
+        path = args.get("path", args.get("cmd", "?"))
         preview = str(args.get("content", ""))[:200] if name == "write_file" else ""
         if name == "edit_file":
             preview = f"old: {str(args.get('old_string', ''))[:120]}"
+        if name == "shell":
+            preview = f"$ {str(args.get('cmd', ''))[:200]}"
+        if name == "delete_file":
+            preview = "(PERMANENT delete)"
         event = threading.Event()
         self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic()}
         try:
