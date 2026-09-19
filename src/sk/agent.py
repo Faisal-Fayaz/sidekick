@@ -34,6 +34,8 @@ SAVED MEMORIES (use these, do not re-ask):
 {memories}
 OPEN TODOS:
 {todos}
+SKILLS (follow these packs when relevant):
+{skills}
 """
 
 
@@ -275,13 +277,17 @@ def run_agent(
         mem_block = "\n".join(f"- {m}" for m in mem_hits) if mem_hits else "(none yet)"
         todo_rows = list_todos(open_only=True)[:5]
         todo_block = "\n".join(f"#{i}: {t}" for i, t, _ in todo_rows) if todo_rows else "(none)"
+        from .skills import load_skills
+
+        skill_block = load_skills()
     except Exception:
         mem_block = "(none)"
         todo_block = "(none)"
+        skill_block = "(none)"
     if len(mem_block) > 1500:
         mem_block = mem_block[:1500] + "\n... [truncated]"
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block)},
+        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block)},
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
