@@ -230,6 +230,7 @@ def test_prompt_greeting_and_search_rules():
     assert "web_search FIRST" in SYSTEM_PROMPT
     assert "SKILL INDEX" in SYSTEM_PROMPT and "call `skill`" in SYSTEM_PROMPT
     assert "don't ask in prose" in SYSTEM_PROMPT
+    assert "Never narrate a denial you did not receive" in SYSTEM_PROMPT
 
 
 def test_approval_mode_prompt(tmp_path, monkeypatch):

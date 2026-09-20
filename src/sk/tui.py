@@ -69,6 +69,20 @@ def _now() -> str:
     return time.strftime("%H:%M")
 
 
+# Words that approve a pending write. Keep in sync with the prompt line.
+# Multi-word entries match when the whole line starts with them ("go ahead
+# and write it" counts; "yeah but not there" does not — strict startswith).
+AFFIRMATIVE_EXACT = ("y", "yes", "yup", "ok", "okay", "sure", "approve", "--yes", "-y", "yeah", "yep", "yepp", "aye")
+AFFIRMATIVE_PREFIX = ("go ahead", "do it", "yes please", "please do")
+
+
+def is_affirmative(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if t in AFFIRMATIVE_EXACT:
+        return True
+    return any(t.startswith(p) for p in AFFIRMATIVE_PREFIX)
+
+
 def _load_history() -> list[str]:
     import json
 
@@ -598,7 +612,7 @@ class SidekickTUI(App):
         # pending write approval eats the next NON-SLASH line: y/yes approves
         pending = self._live_pending()
         if pending is not None and not text.startswith("/"):
-            verdict = text.lower() in ("y", "yes", "yup", "ok", "okay", "sure", "approve", "--yes", "-y")
+            verdict = is_affirmative(text)
             _role(log, "you", text)
             pending["answer"] = verdict
             pending["reply"] = text[:20]

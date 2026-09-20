@@ -458,6 +458,15 @@ def test_dash_yes_approves():
     _run(_pilot_dash_yes_approves())
 
 
+def test_affirmative_words():
+    from sk.tui import is_affirmative
+
+    for yes in ("y", "yes", "yeah", "yep", "go ahead", "go ahead and do it", "do it", "--yes", "-y", "YES", "  Yup  "):
+        assert is_affirmative(yes), yes
+    for no in ("n", "no", "nope", "yesterday", "yeah but not there", "ok, wait", ""):
+        assert not is_affirmative(no), no
+
+
 async def _pilot_stale_pending_ignored(monkeypatch):
     import threading
     import time as _t
