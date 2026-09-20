@@ -101,6 +101,8 @@ class ChatLog(RichLog):
     from the stored line texts instead.
     """
 
+    ALLOW_SELECT = True
+
     def get_selection(self, selection) -> tuple[str, str] | None:
         try:
             from textual.selection import Selection as _Sel
@@ -112,6 +114,16 @@ class ChatLog(RichLog):
             return (extracted, "\n") if extracted else None
         except Exception:
             return None
+
+    def on_mouse_up(self, event) -> None:
+        if getattr(event, "button", 1) != 1:
+            return
+        app = self.app
+        if hasattr(app, "_copy_selection_if_any"):
+            try:
+                app.call_after_refresh(app._copy_selection_if_any)
+            except Exception:
+                app._copy_selection_if_any()
 
 
 class ChatArea(TextArea):
@@ -218,6 +230,7 @@ class SidekickTUI(App):
         self._rec_start: float = 0.0
         self._transcribing: bool = False
         self.mic_state: str = "idle"  # idle | recording | busy (mirrors the pill)
+        self._last_copied_selection: str = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -241,7 +254,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select, `ctrl+y` copies selection (else last answer).")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).")
         try:
             from .cli import _code_version
 
@@ -505,28 +518,19 @@ class SidekickTUI(App):
     def _selected_text(self) -> str:
         """Mouse-dragged text in the log, if any. Empty when nothing selected."""
         try:
-            kind = "none"
-            n = 0
-            try:
-                sels = dict(getattr(self.screen, "selections", {}) or {})
-                n = len(sels)
-                kind = ",".join(type(w).__name__ for w in sels) or "none"
-            except Exception:
-                pass
-            text = (self.screen.get_selected_text() or "").strip()
-            import datetime as _dt
-
-            from .config import CONFIG_DIR
-
-            try:
-                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-                with open(CONFIG_DIR / "tui-errors.log", "a") as f:
-                    f.write(f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] select-diag: widgets={kind} count={n} chars={len(text)}\n")
-            except Exception:
-                pass
-            return text
+            return (self.screen.get_selected_text() or "").strip()
         except Exception:
             return ""
+
+    def _copy_selection_if_any(self) -> None:
+        selected = self._selected_text()
+        if not selected:
+            self._last_copied_selection = ""
+            return
+        if selected == getattr(self, "_last_copied_selection", None):
+            return
+        self._last_copied_selection = selected
+        self._copy_out(selected, "selection")
 
     def _copy_out(self, text: str, what: str) -> None:
         """Copy via reliable backends, OSC52 fallback with honest warning."""
@@ -754,7 +758,7 @@ class SidekickTUI(App):
 
 
 def launch(model: str = "") -> None:
-    # Fullscreen, no mouse tracking: visible-screen selection works natively
-    # like sk chat scrollback; scroll with ctrl+b/f, yank with /copy lines.
-    # (Inline mode was tried and produced blank screens — reverted.)
-    SidekickTUI(model=model).run(mouse=False)
+    # Mouse tracking on: drag-select in the log auto-copies on release,
+    # clicks and wheel work like every other TUI. Hold Shift to select
+    # natively at terminal level.
+    SidekickTUI(model=model).run(mouse=True)

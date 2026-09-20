@@ -223,7 +223,7 @@ def test_ctrl_y_copies():
     _run(_pilot_ctrl_y())
 
 
-def test_launch_fullscreen_no_mouse():
+def test_launch_mouse_on():
     import sk.tui as tui_mod
     from textual.app import App
 
@@ -238,8 +238,7 @@ def test_launch_fullscreen_no_mouse():
         tui_mod.launch()
     finally:
         App.run = orig  # type: ignore
-    assert seen.get("inline", False) is not True  # fullscreen proven; inline blanked screens
-    assert seen.get("mouse") is False  # native visible-screen selection
+    assert seen.get("mouse") is True  # drag-select + auto-copy on release
 
 
 async def _pilot_copy_selection(monkeypatch):
@@ -272,6 +271,42 @@ async def _pilot_copy_selection(monkeypatch):
 
 def test_ctrl_y_copies_selection(monkeypatch):
     _run(_pilot_copy_selection(monkeypatch))
+
+
+async def _pilot_mouse_up_copies(monkeypatch):
+    import sk.clip as _c
+    from textual.geometry import Offset
+    from textual.selection import Selection
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    copied: list[str] = []
+    monkeypatch.setattr(_c, "backends_available", lambda: ["xclip"])
+    monkeypatch.setattr(_c, "copy_text", lambda t: copied.append(t) or "xclip")
+
+    class Up:
+        button = 1
+
+    app = _T()
+    async with app.run_test() as pilot:
+        log = app.query_one("#chat-log")
+        log.clear()
+        log.write("AUTO line one")
+        await pilot.pause()
+        app.screen.selections[log] = Selection(Offset(0, 0), Offset(4, 0))
+        await pilot.pause()
+        log.on_mouse_up(Up())  # release: auto-copy like a real drag
+        await pilot.pause()
+        assert copied == ["AUTO"]
+        log.on_mouse_up(Up())  # same selection again: no duplicate copy
+        await pilot.pause()
+        assert copied == ["AUTO"]
+        assert isinstance(log, RichLog)
+
+
+def test_mouse_up_copies(monkeypatch):
+    _run(_pilot_mouse_up_copies(monkeypatch))
 
 
 async def _pilot_ctrl_y_warn(monkeypatch):
