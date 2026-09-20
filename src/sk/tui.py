@@ -410,7 +410,7 @@ class SidekickTUI(App):
     def _approve(self, name: str, args: dict) -> bool:
         """Approval gate for worker threads. Reads auto-pass; writes either
         auto-pass (/yolo) or block on an inline [y/N] question answered by
-        the user's next input line (120s timeout denies)."""
+        the user's next input line (timeout denies, and says so)."""
         import threading
         import time as _t
 
@@ -428,28 +428,37 @@ class SidekickTUI(App):
             preview = f"$ {str(args.get('cmd', ''))[:200]}"
         if name == "delete_file":
             preview = "(PERMANENT delete)"
+        timeout = float(getattr(self, "_approve_timeout", 300))
         event = threading.Event()
-        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic()}
+        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic(), "reply": ""}
         try:
-            self.call_from_thread(self._ask_approval, name, path, preview)
+            self.call_from_thread(self._ask_approval, name, path, preview, int(timeout))
         except Exception:
-            self._ask_approval(name, path, preview)
-        expired = not event.wait(timeout=120)
+            self._ask_approval(name, path, preview, int(timeout))
+        expired = not event.wait(timeout=timeout)
         pending, self._pending_approval = self._pending_approval, None
         if expired:
             try:
-                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", "approval timed out — denied")
+                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)")
             except Exception:
                 pass
             return False
+        if not bool((pending or {}).get("answer", False)):
+            try:
+                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", f"denied (you answered '{(pending or {}).get('reply', '')[:20]}')")
+            except Exception:
+                pass
         return bool((pending or {}).get("answer", False))
 
-    def _ask_approval(self, name: str, path: str, preview: str) -> None:
+    def _ask_approval(self, name: str, path: str, preview: str, timeout: int = 300) -> None:
         log = self.query_one("#chat-log", RichLog)
-        _role(log, "warn", f"allow {name} -> {path}? [y/N] (type y or n)")
+        _role(log, "warn", f"allow {name} -> {path}? [y/N] (type y or n, {timeout}s)")
         if preview:
             _w(log, f"  {preview}")
-        self.query_one("#chat-input", ChatArea).focus()
+        try:
+            self.query_one("#chat-input", ChatArea).focus()
+        except Exception:
+            pass
 
     def _selected_text(self) -> str:
         """Mouse-dragged text in the log, if any. Empty when nothing selected."""
@@ -535,6 +544,7 @@ class SidekickTUI(App):
             verdict = text.lower() in ("y", "yes", "yup", "ok", "okay", "sure", "approve")
             _role(log, "you", text)
             pending["answer"] = verdict
+            pending["reply"] = text[:20]
             _role(log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}")
             try:
                 pending["event"].set()

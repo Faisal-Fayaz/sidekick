@@ -388,6 +388,26 @@ def test_tui_approval_no(monkeypatch):
     _run(_pilot_approval_no(monkeypatch))
 
 
+def test_approval_timeout_denies(monkeypatch):
+    """Nobody answers: short timeout denies and says it was a timeout."""
+    import threading
+
+    import sk.tui as _tmod
+    from sk.tui import SidekickTUI
+
+    app = SidekickTUI()
+    app._approve_timeout = 0.2
+    posted: list[str] = []
+    monkeypatch.setattr(app, "call_from_thread", lambda fn, *a, **k: fn(*a, **k))
+    monkeypatch.setattr(_tmod, "_role", lambda log, role, body: posted.append(f"{role}:{body}"))
+    monkeypatch.setattr(_tmod, "_w", lambda *a, **k: None)
+    monkeypatch.setattr(app, "query_one", lambda *a, **k: object())
+    t0 = __import__("time").monotonic()
+    assert app._approve("write_file", {"path": "/tmp/x"}) is False
+    assert __import__("time").monotonic() - t0 < 30
+    assert any("timed out" in p or "no answer" in p for p in posted)
+
+
 def test_mount_shows_build():
     from sk.tui import SidekickTUI as _T
 
