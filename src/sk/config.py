@@ -70,6 +70,7 @@ class Config:
     api_key: str = DEFAULTS["api_key"]
     max_steps: int = DEFAULTS["max_steps"]
     temperature: float = DEFAULTS["temperature"]
+    mouse: bool = True  # TUI mouse tracking; SIDEKICK_MOUSE=off disables
 
     def effective_base_url(self) -> str:
         if self.base_url.strip():
@@ -89,6 +90,7 @@ class Config:
         model = os.getenv("SIDEKICK_MODEL", "")
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
         api_key = os.getenv("SIDEKICK_API_KEY", "")
+        mouse_env = os.getenv("SIDEKICK_MOUSE", "").strip().lower()
 
         file_vals: dict = {}
         if CONFIG_PATH.exists():
@@ -101,6 +103,15 @@ class Config:
         prov = (provider or file_vals.get("provider", DEFAULTS["provider"])).strip().lower()
         if prov not in PRESETS:
             prov = "custom"
+        raw_mouse = file_vals.get("mouse", True)
+        if isinstance(raw_mouse, str):
+            mouse = raw_mouse.strip().lower() not in ("off", "0", "false", "no")
+        else:
+            mouse = bool(raw_mouse)
+        if mouse_env in ("off", "0", "false", "no"):
+            mouse = False
+        elif mouse_env in ("on", "1", "true", "yes"):
+            mouse = True
         return cls(
             provider=prov,
             model=str(model or file_vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]),
@@ -108,6 +119,7 @@ class Config:
             api_key=str(api_key or file_vals.get("api_key", "")),
             max_steps=int(file_vals.get("max_steps", DEFAULTS["max_steps"])),
             temperature=float(file_vals.get("temperature", DEFAULTS["temperature"])),
+            mouse=mouse,
         )
 
     def ensure_created(self) -> Path:
@@ -127,6 +139,7 @@ class Config:
             "api_key": self.api_key,
             "max_steps": self.max_steps,
             "temperature": self.temperature,
+            "mouse": self.mouse,
         }
         if _HAS_TOMLI_W:
             with open(CONFIG_PATH, "wb") as f:

@@ -79,7 +79,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom
 
 | Command | What |
 |---|---|
-| `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies, ctrl+t for push-to-talk (mic pill shows status), ctrl+b/f page-scroll, ctrl+home/end jump. Native terminal drag-select + copy/paste; `ctrl+y` copies input selection, chat selection, else last answer. Answers stream live, thinking dimmed, footer shows last-turn time/tokens. `/copy [n]` uses native clipboard → wl-copy/xclip/xsel → OSC52 (`sudo apt install xclip` on plain X11) |
+| `sk chat` / `sk tui [--mouse on|off]` | Interactive chat (REPL / fullscreen), `/help` inside. TUI keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, ctrl+y copies, ctrl+t or clickable ● mic for push-to-talk, ctrl+b/f page-scroll, ctrl+home/end jump, `/mouse` toggles tracking live. Mouse on: click + wheel work, drag-select + `ctrl+y` copies selection (else last answer); hold Shift to select natively. Answers stream live, thinking dimmed, footer shows last-turn time/tokens. `/copy [n]` uses native clipboard → wl-copy/xclip/xsel → OSC52 (`sudo apt install xclip` on plain X11) |
 | `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat: Enter records, Enter stops. Transcribed locally by faster-whisper int8 (installs on first run, ~800MB + model). Voice never leaves your machine |
 | `sk mic-test [-d SECS]` | Check mic levels: peak dB + verdict (silent/quiet/good) with fix hints |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run |

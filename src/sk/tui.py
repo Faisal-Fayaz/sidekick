@@ -13,7 +13,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Footer, Header, RichLog, Static, TextArea
+from textual.widgets import Button, Footer, Header, RichLog, TextArea
 from textual.containers import Horizontal
 
 
@@ -94,10 +94,11 @@ def _save_history(items: list[str]) -> None:
 
 
 class ChatLog(RichLog):
-    """Chat history (mouse tracking off — terminal handles select/copy).
+    """Chat history with working mouse-drag text selection.
 
     Stock RichLog renders RichVisual, which the base get_selection() can't
-    extract text from, so we extract from stored line texts for ctrl+y.
+    extract text from — so drag-selection in it copies nothing. We extract
+    from the stored line texts instead.
     """
 
     def get_selection(self, selection) -> tuple[str, str] | None:
@@ -198,13 +199,14 @@ class SidekickTUI(App):
     #input-row { height: 5; }
     ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
     ChatArea:focus { border: solid #00ff9d; }
-    #mic-pill { width: 14; height: 5; }
-    #mic-pill.recording { background: #5c1010; }
+    #mic-btn { width: 14; height: 5; }
+    #mic-btn.recording { background: #5c1010; }
     """
 
-    def __init__(self, model: str = ""):
+    def __init__(self, model: str = "", mouse: bool = True):
         super().__init__()
         self.model_override = model
+        self._mouse_on = mouse
         self.state: dict = {"yolo": False}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
@@ -224,7 +226,7 @@ class SidekickTUI(App):
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
-            yield Static("ctrl+t\nto talk", id="mic-pill")
+            yield Button("● mic", id="mic-btn", variant="default")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -240,7 +242,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select, `ctrl+y` copies selection (else last answer).")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · click ● mic / ctrl+t to talk · ctrl+b/f scroll · drag to select, `ctrl+y` copies selection (else last answer).")
         try:
             from .cli import _code_version
 
@@ -248,11 +250,44 @@ class SidekickTUI(App):
         except Exception:
             pass
 
+    def set_mouse(self, on: bool) -> str:
+        """Toggle terminal mouse tracking at runtime. Persisted like Hermes.
+
+        ON = clicks + wheel (select needs Shift). OFF = native selection
+        exactly like `sk chat` scrollback. No-op where the driver lacks it.
+        """
+        drv = getattr(self, "_driver", None)
+        try:
+            if on:
+                drv._enable_mouse_support()
+            else:
+                drv._disable_mouse_support()
+        except AttributeError:
+            return "mouse toggle unsupported by this driver"
+        except Exception as e:
+            return f"mouse toggle failed: {e}"
+        self._mouse_on = on
+        try:
+            from .config import Config
+
+            cfg = Config.load()
+            cfg.mouse = on
+            cfg.save()
+        except Exception:
+            pass
+        if on:
+            return "mouse on: click + wheel (Shift selects) — saved"
+        return "mouse off: native selection like sk chat — saved (wheel is dead here, scroll with ctrl+b / ctrl+f)"
+
     def action_mic(self) -> None:
         self._mic_toggle()
 
+    @on(Button.Pressed, "#mic-btn")
+    def _mic_btn(self) -> None:
+        self._mic_toggle()
+
     def _scroll_log(self, what: str) -> None:
-        # Mouse tracking stays off (native copy), so the log scrolls by key.
+        # mouse tracking stays off (native copy), so the log scrolls by key.
         # TextArea never sees these keys (unbound there) — they reach the app.
         log = self.query_one("#chat-log", RichLog)
         try:
@@ -273,15 +308,15 @@ class SidekickTUI(App):
         self._scroll_log("bottom")
 
     def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
-        """Mic pill face + state mirror (ctrl+t only; pill is not clickable)."""
+        """Mic button face + state mirror (click, ctrl+t, or Tab+Enter all work)."""
         self.mic_state = state
         try:
-            pill = self.query_one("#mic-pill", Static)
-            pill.update(text)
+            btn = self.query_one("#mic-btn", Button)
+            btn.label = text.replace("\n", " ")
             if recording:
-                pill.add_class("recording")
+                btn.add_class("recording")
             else:
-                pill.remove_class("recording")
+                btn.remove_class("recording")
         except Exception:
             pass
 
@@ -542,6 +577,9 @@ class SidekickTUI(App):
             return
         _role(log, "you", text)
         if text.startswith("/"):
+            if text.strip() == "/mouse":
+                _role(log, "sys", self.set_mouse(not self._mouse_on))
+                return
             if text.startswith("/model ") and text[7:].strip():
                 from .config import Config
                 from .slash import _resolve_model_name
@@ -689,7 +727,14 @@ class SidekickTUI(App):
             _role(log, "sidekick", answer)
 
 
-def launch(model: str = "") -> None:
-    # Mouse tracking stays off: native terminal drag-select + copy/paste.
-    # Scroll with ctrl+b/f/home/end. Mic pill is a status display only.
-    SidekickTUI(model=model).run(mouse=False)
+def launch(model: str = "", mouse: bool | None = None) -> None:
+    # Mouse on: buttons clickable, wheel scrolls — like every other TUI.
+    # Hold Shift to select text. None = saved preference (set via /mouse).
+    if mouse is None:
+        try:
+            from .config import Config
+
+            mouse = Config.load().mouse
+        except Exception:
+            mouse = True
+    SidekickTUI(model=model, mouse=mouse).run(mouse=mouse)
