@@ -458,7 +458,26 @@ class SidekickTUI(App):
     def _selected_text(self) -> str:
         """Mouse-dragged text in the log, if any. Empty when nothing selected."""
         try:
-            return (self.screen.get_selected_text() or "").strip()
+            kind = "none"
+            n = 0
+            try:
+                sels = dict(getattr(self.screen, "selections", {}) or {})
+                n = len(sels)
+                kind = ",".join(type(w).__name__ for w in sels) or "none"
+            except Exception:
+                pass
+            text = (self.screen.get_selected_text() or "").strip()
+            import datetime as _dt
+
+            from .config import CONFIG_DIR
+
+            try:
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                with open(CONFIG_DIR / "tui-errors.log", "a") as f:
+                    f.write(f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] select-diag: widgets={kind} count={n} chars={len(text)}\n")
+            except Exception:
+                pass
+            return text
         except Exception:
             return ""
 
