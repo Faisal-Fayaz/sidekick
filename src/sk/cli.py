@@ -128,14 +128,21 @@ def _resolve_model(cfg, model_opt: str, task: str = "") -> str:
 
 @app.command()
 def chat(
-    session: str = typer.Option("default", help="Session name for history"),
+    session: str = typer.Option("", help="Session name (omit for fresh, --continue for latest)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes"),
     model: str = typer.Option("", help="Model override: name or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
+    cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
 ):
     """Interactive REPL: sk chat — try /help"""
+    from .store import latest_session, new_session_id
+
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model)
+    if cont:
+        session = latest_session() or new_session_id("chat")
+    elif not session:
+        session = new_session_id("chat")
     state = {"yolo": yes}
     console.print(Panel(f"[bold]sidekick[/]  model=[cyan]{cfg.model}[/]  session=[cyan]{session}[/]\nType [bold]/help[/] for commands, [bold]@path[/] to attach a file.", expand=False))
     approve = _make_approver_state(state)
@@ -160,6 +167,12 @@ def chat(
             if out.quit:
                 console.print("bye.")
                 break
+            if out.switch_session:
+                session = out.switch_session
+                console.print(f"[dim]--- now on {session} ---[/dim]")
+                for m in get_history(session)[-10:]:
+                    who = "[bold green]you> [/]" if m["role"] == "user" else "sidekick> "
+                    console.print(f"{who}{m['content'][:300]}")
             if out.clear_view:
                 console.print("[dim]--- session cleared ---[/dim]")
             if out.text:
@@ -979,12 +992,13 @@ def brief(
 @app.command()
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
+    cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
 ):
-    """Fullscreen chat, inline in your scrollback — select/copy like a terminal."""
+    """Fullscreen chat (fresh session each launch unless --continue)."""
     from .tui import launch
 
     cfg = _cfg()
-    launch(_resolve_model(cfg, model))
+    launch(_resolve_model(cfg, model), cont=cont)
 
 
 @app.command()

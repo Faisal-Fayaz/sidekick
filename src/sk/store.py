@@ -66,6 +66,61 @@ def clear_session(session: str) -> None:
         conn.close()
 
 
+def new_session_id(prefix: str = "tui") -> str:
+    import time as _t
+
+    return f"{prefix}-{_t.strftime('%Y%m%d-%H%M%S')}"
+
+
+def list_sessions(limit: int = 20) -> list[dict]:
+    """Recent chat sessions: id, messages, last-ts, preview (first user line)."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT session, COUNT(*), MAX(ts) FROM messages GROUP BY session ORDER BY MAX(ts) DESC LIMIT ?",
+            (limit,),
+        )
+        out = []
+        for session, count, last_ts in cur.fetchall():
+            cur2 = conn.execute(
+                "SELECT content FROM messages WHERE session=? AND role='user' ORDER BY id ASC LIMIT 1",
+                (session,),
+            )
+            row = cur2.fetchone()
+            preview = (row[0] if row else "")[:80].replace("\n", " ")
+            out.append({"session": session, "count": count, "last_ts": last_ts or 0, "preview": preview})
+        return out
+    finally:
+        conn.close()
+
+
+def delete_session(session: str) -> int:
+    conn = _connect()
+    try:
+        cur = conn.execute("DELETE FROM messages WHERE session=?", (session,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def latest_session(prefix: str = "") -> str:
+    """Most recently active session id, optionally filtered by prefix."""
+    conn = _connect()
+    try:
+        if prefix:
+            cur = conn.execute(
+                "SELECT session FROM messages WHERE session LIKE ? GROUP BY session ORDER BY MAX(ts) DESC LIMIT 1",
+                (prefix + "%",),
+            )
+        else:
+            cur = conn.execute("SELECT session FROM messages GROUP BY session ORDER BY MAX(ts) DESC LIMIT 1")
+        row = cur.fetchone()
+        return row[0] if row else ""
+    finally:
+        conn.close()
+
+
 def save_message(session: str, role: str, content: str) -> None:
     conn = _connect()
     try:

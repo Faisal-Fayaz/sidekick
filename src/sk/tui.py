@@ -229,9 +229,13 @@ class SidekickTUI(App):
     #mic-status.recording { border: solid #ff5555; color: #ff5555; }
     """
 
-    def __init__(self, model: str = ""):
+    def __init__(self, model: str = "", session: str = ""):
         super().__init__()
         self.model_override = model
+        from .store import new_session_id
+
+        self.session = session or new_session_id("tui")
+        self._continued = bool(session)
         self.state: dict = {"yolo": False}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
@@ -269,6 +273,21 @@ class SidekickTUI(App):
         self._sub()
         log = self.query_one("#chat-log", RichLog)
         _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).")
+        if self._continued:
+            from .store import get_history
+
+            _role(log, "sys", f"continued `{self.session}`")
+            for m in get_history(self.session)[-10:]:
+                if m["role"] == "user":
+                    _role(log, "you", m["content"][:1500])
+                else:
+                    _role(log, "sidekick", "")
+                    try:
+                        from rich.markdown import Markdown
+
+                        log.write(Markdown(m["content"][:1500]))
+                    except Exception:
+                        _role(log, "sidekick", m["content"][:1500])
         try:
             from .cli import _code_version
 
@@ -432,7 +451,8 @@ class SidekickTUI(App):
         model = self.model_override or cfg.model
         mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""
-        self.sub_title = f"{model} · {mode} · /help{tail}"
+        short = self.session[-13:] if len(self.session) > 16 else self.session
+        self.sub_title = f"{model} · {mode} · {short} · /help{tail}"
 
     def _approve(self, name: str, args: dict) -> bool:
         """Approval gate for worker threads. Reads auto-pass; writes either
@@ -581,7 +601,7 @@ class SidekickTUI(App):
         if selected:
             self._copy_out(selected, "selection")
             return
-        answers = [m["content"] for m in get_history("tui") if m["role"] == "assistant"]
+        answers = [m["content"] for m in get_history(self.session) if m["role"] == "assistant"]
         if not answers:
             _w(log, f"[{_now()}] (no answers to copy yet)")
             return
@@ -644,9 +664,31 @@ class SidekickTUI(App):
             cfg = Config.load()
             if self.model_override:
                 cfg.model = self.model_override
-            out = slash.handle(text, session="tui", cfg=cfg, state=self.state)
+            out = slash.handle(text, session=self.session, cfg=cfg, state=self.state)
             if out.quit:
                 self.exit()
+                return
+            if out.switch_session:
+                from .store import get_history as _gh
+
+                self.session = out.switch_session
+                self._sub()
+                log.clear()
+                _role(log, "sys", f"now on `{self.session}`")
+                for m in _gh(self.session)[-10:]:
+                    role = "you" if m["role"] == "user" else "sidekick"
+                    if role == "sidekick":
+                        _role(log, role, "")
+                        try:
+                            from rich.markdown import Markdown
+
+                            log.write(Markdown(m["content"][:1500]))
+                        except Exception:
+                            _role(log, role, m["content"][:1500])
+                    else:
+                        _role(log, role, m["content"][:1500])
+                if out.text:
+                    _role(log, "", out.text)
                 return
             if out.clear_view:
                 log.clear()
@@ -699,8 +741,8 @@ class SidekickTUI(App):
         cfg = Config.load()
         if self.model_override:
             cfg.model = self.model_override
-        save_message("tui", "user", text)
-        hist = get_history("tui")
+        save_message(self.session, "user", text)
+        hist = get_history(self.session)
 
         def on_tool(name: str, args: dict) -> None:
             preview = args if name not in ("write_file",) else {"path": args.get("path")}
@@ -741,7 +783,7 @@ class SidekickTUI(App):
             return
         secs = time.monotonic() - self._turn_start
         toks = max(1, len("".join(self._live_parts)) // 4)
-        save_message("tui", "assistant", answer)
+        save_message(self.session, "assistant", answer)
         try:
             self.call_from_thread(self._finish, answer or "(empty)", f"{secs:.0f}s · ~{toks}tok")
         except Exception:
@@ -771,8 +813,12 @@ class SidekickTUI(App):
             _role(log, "sidekick", answer)
 
 
-def launch(model: str = "") -> None:
+def launch(model: str = "", session: str = "", cont: bool = False) -> None:
     # Mouse tracking on: drag-select in the log auto-copies on release,
     # clicks and wheel work like every other TUI. Hold Shift to select
     # natively at terminal level.
-    SidekickTUI(model=model).run(mouse=True)
+    if cont and not session:
+        from .store import latest_session
+
+        session = latest_session("tui")
+    SidekickTUI(model=model, session=session).run(mouse=True)

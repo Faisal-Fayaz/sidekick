@@ -69,7 +69,9 @@ def test_todo_flow_and_clear(tmp_path, monkeypatch):
     assert "Done" in slash.handle("/todo done 1", session=c["session"], cfg=c["cfg"], state=c["state"]).text
     store.save_message("test", "user", "hi")
     out = slash.handle("/clear", session=c["session"], cfg=c["cfg"], state=c["state"])
-    assert out.clear_view and store.get_history("test") == []
+    assert out.clear_view and out.switch_session.startswith("test-")
+    assert out.switch_session != "test"
+    assert store.get_history("test") != []  # old session kept, not wiped
 
 
 def test_oops_empty_and_quit(tmp_path, monkeypatch):

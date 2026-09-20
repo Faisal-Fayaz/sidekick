@@ -12,6 +12,7 @@ class SlashOut:
     agent_prompt: str = ""  # if set, caller should send this to run_agent instead
     clear_view: bool = False  # caller should clear visible log
     quit: bool = False
+    switch_session: str = ""  # caller should adopt this session going forward
 
 
 HELP_TEXT = """**slash commands**
@@ -19,7 +20,9 @@ HELP_TEXT = """**slash commands**
 - `/model [fast|smart|name]` — show or switch model (`sk model` for guided picker)
 - `/provider [name]` — show or switch provider (keys via `sk auth add`, never pasted here)
 - `/models` — list models on the current provider
-- `/clear` — fresh session (forgets chat history)
+- `/clear` — start a fresh session (old one kept, see `/sessions`)
+- `/sessions [delete <n>]` — list past sessions, or delete one
+- `/resume <n>` — switch to a past session
 - `/yolo` — auto-approve file writes
 - `/confirm` — ask before file writes (default in TUI)
 - `/remember <fact>` — save a memory
@@ -101,10 +104,51 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(handled=True, text=f"provider → `{p}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)")
 
     if cmd == "clear":
-        from .store import clear_session
+        from .store import clear_session, new_session_id
 
-        clear_session(session)
-        return SlashOut(handled=True, text="_session cleared_", clear_view=True)
+        fresh = new_session_id(session.split("-")[0] if "-" in session else session)
+        return SlashOut(handled=True, text=f"_fresh session `{fresh}`_", clear_view=True, switch_session=fresh)
+
+    def _session_lines() -> tuple[list[dict], list[str]]:
+        import datetime as _dt
+
+        from .store import list_sessions
+
+        rows = list_sessions(limit=20)
+        lines = []
+        for i, r in enumerate(rows, 1):
+            when = _dt.datetime.fromtimestamp(r["last_ts"]).strftime("%m-%d %H:%M") if r["last_ts"] else "?"
+            cur = " ← current" if r["session"] == session else ""
+            lines.append(f"{i}. `{r['session']}` · {r['count']} msgs · {r['preview'] or '(empty)'} · {when}{cur}")
+        return rows, lines
+
+    if cmd == "sessions":
+        from .store import delete_session
+
+        sub, _, rest = arg.partition(" ")
+        if sub.strip().lower() == "delete":
+            rows, _ = _session_lines()
+            try:
+                idx = int(rest.strip().split()[0]) - 1
+                target = rows[idx]["session"]
+            except (ValueError, IndexError):
+                return SlashOut(handled=True, text="usage: `/sessions delete <n>` (see `/sessions`)")
+            n = delete_session(target)
+            return SlashOut(handled=True, text=f"_deleted `{target}` ({n} messages)_")
+        rows, lines = _session_lines()
+        if not lines:
+            return SlashOut(handled=True, text="_(no past sessions yet)_")
+        return SlashOut(handled=True, text="**sessions**\n" + "\n".join(lines) + "\n`/resume <n>` to switch · `/sessions delete <n>` to remove")
+
+    if cmd == "resume":
+        rows, _ = _session_lines()
+        try:
+            target = rows[int(arg.strip().split()[0]) - 1]["session"]
+        except (ValueError, IndexError):
+            return SlashOut(handled=True, text="usage: `/resume <n>` (see `/sessions`)")
+        if target == session:
+            return SlashOut(handled=True, text=f"_already on `{target}`_")
+        return SlashOut(handled=True, text=f"_resumed `{target}`_", clear_view=True, switch_session=target)
 
     if cmd == "yolo":
         state["yolo"] = True
