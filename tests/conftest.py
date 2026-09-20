@@ -1,7 +1,11 @@
-"""Suite-wide isolation: no test may touch the real ~/.sidekick/config.toml.
+"""Suite-wide isolation: no test may touch the real ~/.sidekick/.
 
-Regression guard: /model (slash + TUI) calls cfg.save(). Without this,
-pilot tests rewrite the user's live config (happened once: base_url=http://x/v1).
+Regression guards:
+- /model (slash + TUI) calls cfg.save(). Without this, pilot tests rewrite
+  the user's live config (happened once: base_url=http://x/v1).
+- TUI pilot tests save chat history via store.save_message. Without this,
+  every suite run dumped ~30 fake rows ("wrote it", "blocked", ...) into the
+  user's live `tui` session, confusing the agent for real (happened: 256 rows).
 """
 
 import pytest
@@ -13,3 +17,10 @@ def _isolate_config(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_history(tmp_path, monkeypatch):
+    import sk.store as store_mod
+
+    monkeypatch.setattr(store_mod, "DB_PATH", tmp_path / "history.db")
