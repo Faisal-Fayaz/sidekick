@@ -979,18 +979,12 @@ def brief(
 @app.command()
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
-    mouse: str = typer.Option("", "--mouse", help="on|off, omit for saved preference"),
 ):
-    """Fullscreen chat. Mouse on: click + wheel; hold Shift to select text."""
+    """Fullscreen chat, inline in your scrollback — select/copy like a terminal."""
     from .tui import launch
 
     cfg = _cfg()
-    m: bool | None = None
-    if mouse.strip().lower() in ("on", "1", "true", "yes"):
-        m = True
-    elif mouse.strip().lower() in ("off", "0", "false", "no"):
-        m = False
-    launch(_resolve_model(cfg, model), mouse=m)
+    launch(_resolve_model(cfg, model))
 
 
 @app.command()

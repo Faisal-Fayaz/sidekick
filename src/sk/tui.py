@@ -13,7 +13,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Button, Footer, Header, RichLog, TextArea
+from textual.widgets import Footer, Header, RichLog, Static, TextArea
 from textual.containers import Horizontal
 
 
@@ -199,14 +199,13 @@ class SidekickTUI(App):
     #input-row { height: 5; }
     ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
     ChatArea:focus { border: solid #00ff9d; }
-    #mic-btn { width: 14; height: 5; }
-    #mic-btn.recording { background: #5c1010; }
+    #mic-status { width: 22; height: 5; border: solid #1d3327; color: #9b9bab; content-align: center middle; }
+    #mic-status.recording { border: solid #ff5555; color: #ff5555; }
     """
 
-    def __init__(self, model: str = "", mouse: bool = True):
+    def __init__(self, model: str = ""):
         super().__init__()
         self.model_override = model
-        self._mouse_on = mouse
         self.state: dict = {"yolo": False}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
@@ -226,7 +225,7 @@ class SidekickTUI(App):
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
-            yield Button("● mic", id="mic-btn", variant="default")
+            yield Static("ctrl+t\nto talk", id="mic-status")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -242,7 +241,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · click ● mic / ctrl+t to talk · ctrl+b/f scroll · drag to select, `ctrl+y` copies selection (else last answer).")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select, `ctrl+y` copies selection (else last answer).")
         try:
             from .cli import _code_version
 
@@ -250,41 +249,21 @@ class SidekickTUI(App):
         except Exception:
             pass
 
-    def set_mouse(self, on: bool) -> str:
-        """Toggle terminal mouse tracking at runtime. Persisted like Hermes.
-
-        ON = clicks + wheel (select needs Shift). OFF = native selection
-        exactly like `sk chat` scrollback. No-op where the driver lacks it.
-        """
-        drv = getattr(self, "_driver", None)
-        try:
-            if on:
-                drv._enable_mouse_support()
-            else:
-                drv._disable_mouse_support()
-        except AttributeError:
-            return "mouse toggle unsupported by this driver"
-        except Exception as e:
-            return f"mouse toggle failed: {e}"
-        self._mouse_on = on
-        try:
-            from .config import Config
-
-            cfg = Config.load()
-            cfg.mouse = on
-            cfg.save()
-        except Exception:
-            pass
-        if on:
-            return "mouse on: click + wheel (Shift selects) — saved"
-        return "mouse off: native selection like sk chat — saved (wheel is dead here, scroll with ctrl+b / ctrl+f)"
-
     def action_mic(self) -> None:
         self._mic_toggle()
 
-    @on(Button.Pressed, "#mic-btn")
-    def _mic_btn(self) -> None:
-        self._mic_toggle()
+    def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
+        """Mic status pill (display-only; ctrl+t is the trigger)."""
+        self.mic_state = state
+        try:
+            pill = self.query_one("#mic-status", Static)
+            pill.update(text)
+            if recording:
+                pill.add_class("recording")
+            else:
+                pill.remove_class("recording")
+        except Exception:
+            pass
 
     def _scroll_log(self, what: str) -> None:
         # mouse tracking stays off (native copy), so the log scrolls by key.
@@ -306,19 +285,6 @@ class SidekickTUI(App):
 
     def action_scroll_log_bottom(self) -> None:
         self._scroll_log("bottom")
-
-    def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
-        """Mic button face + state mirror (click, ctrl+t, or Tab+Enter all work)."""
-        self.mic_state = state
-        try:
-            btn = self.query_one("#mic-btn", Button)
-            btn.label = text.replace("\n", " ")
-            if recording:
-                btn.add_class("recording")
-            else:
-                btn.remove_class("recording")
-        except Exception:
-            pass
 
     def _mic_toggle(self) -> None:
         import time as _t
@@ -577,9 +543,6 @@ class SidekickTUI(App):
             return
         _role(log, "you", text)
         if text.startswith("/"):
-            if text.strip() == "/mouse":
-                _role(log, "sys", self.set_mouse(not self._mouse_on))
-                return
             if text.startswith("/model ") and text[7:].strip():
                 from .config import Config
                 from .slash import _resolve_model_name
@@ -727,14 +690,8 @@ class SidekickTUI(App):
             _role(log, "sidekick", answer)
 
 
-def launch(model: str = "", mouse: bool | None = None) -> None:
-    # Mouse on: buttons clickable, wheel scrolls — like every other TUI.
-    # Hold Shift to select text. None = saved preference (set via /mouse).
-    if mouse is None:
-        try:
-            from .config import Config
-
-            mouse = Config.load().mouse
-        except Exception:
-            mouse = True
-    SidekickTUI(model=model, mouse=mouse).run(mouse=mouse)
+def launch(model: str = "") -> None:
+    # Inline + no mouse tracking: the TUI lives in the normal scrollback, so
+    # selection, auto-scroll-on-drag, wheel and copy/paste behave exactly
+    # like a regular terminal. Nothing to configure.
+    SidekickTUI(model=model).run(inline=True, mouse=False)
