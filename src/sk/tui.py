@@ -430,25 +430,50 @@ class SidekickTUI(App):
             preview = "(PERMANENT delete)"
         timeout = float(getattr(self, "_approve_timeout", 300))
         event = threading.Event()
-        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic(), "reply": ""}
+        token = object()
+        owner = threading.get_ident()
+        deadline = _t.monotonic() + timeout + 30
+        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic(), "reply": "", "token": token, "owner": owner, "deadline": deadline}
         try:
             self.call_from_thread(self._ask_approval, name, path, preview, int(timeout))
         except Exception:
             self._ask_approval(name, path, preview, int(timeout))
-        expired = not event.wait(timeout=timeout)
-        pending, self._pending_approval = self._pending_approval, None
+        try:
+            expired = not event.wait(timeout=timeout)
+        finally:
+            # never leave a stale slot: only clear if still ours
+            if getattr(self, "_pending_approval", None) is not None and self._pending_approval.get("token") is token:
+                pending, self._pending_approval = self._pending_approval, None
+            else:
+                pending = None
         if expired:
             try:
                 self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)")
             except Exception:
                 pass
             return False
-        if not bool((pending or {}).get("answer", False)):
+        if pending is None:
+            return False  # slot stolen/cleared concurrently: fail closed
+        if not bool(pending.get("answer", False)):
             try:
-                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", f"denied (you answered '{(pending or {}).get('reply', '')[:20]}')")
+                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", f"denied (you answered '{pending.get('reply', '')[:20]}')")
             except Exception:
                 pass
-        return bool((pending or {}).get("answer", False))
+        return bool(pending.get("answer", False))
+
+    def _live_pending(self):
+        """Active approval or None. Clears stale slots (dead owner, past deadline)."""
+        import threading
+        import time as _t
+
+        pending = getattr(self, "_pending_approval", None)
+        if pending is None:
+            return None
+        alive = any(t.ident == pending.get("owner") for t in threading.enumerate())
+        if not alive or _t.monotonic() > pending.get("deadline", 0):
+            self._pending_approval = None
+            return None
+        return pending
 
     def _ask_approval(self, name: str, path: str, preview: str, timeout: int = 300) -> None:
         log = self.query_one("#chat-log", RichLog)
@@ -538,9 +563,20 @@ class SidekickTUI(App):
         area.push_history(text)
         area.hist_idx = -1
         log = self.query_one("#chat-log", RichLog)
-        # pending write approval eats the next line: y/yes approves, else denies
-        pending = getattr(self, "_pending_approval", None)
-        if pending is not None:
+        if text.lower() in ("exit", "quit", ":q", "/exit", "/quit", "/q"):
+            pending = self._live_pending()
+            if pending is not None:
+                try:
+                    pending["event"].set()  # release worker; deny by default
+                except Exception:
+                    pass
+                self._pending_approval = None
+            _role(log, "sys", "bye.")
+            self.exit()
+            return
+        # pending write approval eats the next NON-SLASH line: y/yes approves
+        pending = self._live_pending()
+        if pending is not None and not text.startswith("/"):
             verdict = text.lower() in ("y", "yes", "yup", "ok", "okay", "sure", "approve")
             _role(log, "you", text)
             pending["answer"] = verdict

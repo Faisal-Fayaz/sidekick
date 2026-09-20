@@ -388,6 +388,127 @@ def test_tui_approval_no(monkeypatch):
     _run(_pilot_approval_no(monkeypatch))
 
 
+async def _pilot_stale_pending_ignored(monkeypatch):
+    import threading
+    import time as _t
+
+    import sk.agent as agent
+
+    from sk.tui import SidekickTUI as _T
+
+    agent_calls: list[str] = []
+
+    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+        agent_calls.append(text)
+        return "agent heard you"
+
+    monkeypatch.setattr(agent, "run_agent", fake)
+    app = _T()
+    async with app.run_test() as pilot:
+        # stale slot: dead owner thread + blown deadline (crashed worker)
+        app._pending_approval = {
+            "question": "write_file -> /tmp/z",
+            "event": threading.Event(),
+            "answer": False,
+            "asked_at": _t.monotonic() - 999,
+            "reply": "",
+            "token": object(),
+            "owner": 42424242,
+            "deadline": _t.monotonic() - 10,
+        }
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "hello agent"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            if agent_calls:
+                break
+        assert agent_calls == ["hello agent"]  # not eaten by the stale slot
+        assert app._pending_approval is None  # stale slot reaped
+
+
+async def _pilot_quit_releases_pending(monkeypatch):
+    import threading
+    import time as _t
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        app._pending_approval = {
+            "question": "write_file -> /tmp/z",
+            "event": threading.Event(),
+            "answer": False,
+            "asked_at": _t.monotonic(),
+            "reply": "",
+            "token": object(),
+            "owner": threading.get_ident(),  # live owner: would block real flow
+            "deadline": _t.monotonic() + 300,
+        }
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "/quit"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert app._pending_approval is None  # released, not left dangling
+
+
+async def _pilot_slash_bypasses_pending(monkeypatch):
+    import threading
+    import time as _t
+
+    import sk.agent as agent
+
+    from sk.tui import SidekickTUI as _T
+
+    agent_calls: list[str] = []
+
+    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+        agent_calls.append(text)
+        return "done"
+
+    monkeypatch.setattr(agent, "run_agent", fake)
+    app = _T()
+    async with app.run_test() as pilot:
+        app._pending_approval = {
+            "question": "write_file -> /tmp/z",
+            "event": threading.Event(),
+            "answer": False,
+            "asked_at": _t.monotonic(),
+            "reply": "",
+            "token": object(),
+            "owner": threading.get_ident(),
+            "deadline": _t.monotonic() + 300,
+        }
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "/help"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "/model" in blob  # slash ran instead of being eaten
+        assert agent_calls == []  # and no agent turn started
+        assert app._pending_approval is not None  # still waiting for y/n
+
+
+def test_stale_pending_ignored(monkeypatch):
+    _run(_pilot_stale_pending_ignored(monkeypatch))
+
+
+def test_quit_releases_pending(monkeypatch):
+    _run(_pilot_quit_releases_pending(monkeypatch))
+
+
+def test_slash_bypasses_pending(monkeypatch):
+    _run(_pilot_slash_bypasses_pending(monkeypatch))
+
+
 def test_approval_timeout_denies(monkeypatch):
     """Nobody answers: short timeout denies and says it was a timeout."""
     import threading
