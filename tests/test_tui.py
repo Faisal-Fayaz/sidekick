@@ -259,6 +259,38 @@ def test_ctrl_y_copies():
     _run(_pilot_ctrl_y())
 
 
+async def _pilot_copy_selection(monkeypatch):
+    import sk.clip as _c
+    from textual.geometry import Offset
+    from textual.selection import Selection
+
+    from sk.tui import SidekickTUI as _T
+
+    copied: list[str] = []
+    monkeypatch.setattr(_c, "backends_available", lambda: ["xclip"])
+    monkeypatch.setattr(_c, "copy_text", lambda t: copied.append(t) or "xclip")
+    app = _T()
+    async with app.run_test() as pilot:
+        log = app.query_one("#chat-log")
+        log.clear()
+        log.write("SELECTME line one")
+        log.write("other line")
+        await pilot.pause()
+        # drag-select "SELEC" (row 0, cols 0-5) the way a mouse drag would
+        app.screen.selections[log] = Selection(Offset(0, 0), Offset(5, 0))
+        await pilot.pause()
+        assert app.screen.get_selected_text() == "SELEC"
+        app.action_copy_last()
+        await pilot.pause()
+        assert copied == ["SELEC"]
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "copied selection via xclip" in blob
+
+
+def test_ctrl_y_copies_selection(monkeypatch):
+    _run(_pilot_copy_selection(monkeypatch))
+
+
 async def _pilot_ctrl_y_warn(monkeypatch):
     import sk.clip as _c
     import sk.store as _s

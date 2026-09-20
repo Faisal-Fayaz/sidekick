@@ -93,6 +93,27 @@ def _save_history(items: list[str]) -> None:
         pass
 
 
+class ChatLog(RichLog):
+    """Chat history with working mouse-drag text selection.
+
+    Stock RichLog renders RichVisual, which the base get_selection() can't
+    extract text from — so drag-selection in it copies nothing. We extract
+    from the stored line texts instead.
+    """
+
+    def get_selection(self, selection) -> tuple[str, str] | None:
+        try:
+            from textual.selection import Selection as _Sel
+
+            text = "\n".join(ln.text for ln in self.lines)
+            if not text.strip():
+                return None
+            extracted = selection.extract(text) if hasattr(selection, "extract") else ""
+            return (extracted, "\n") if extracted else None
+        except Exception:
+            return None
+
+
 class ChatArea(TextArea):
     """Multiline input: Enter sends, ctrl+j / alt+enter newline, up/down history."""
 
@@ -200,7 +221,7 @@ class SidekickTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield RichLog(id="chat-log", wrap=True, highlight=True)
+        yield ChatLog(id="chat-log", wrap=True, highlight=True)
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
@@ -220,7 +241,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · click ● mic / ctrl+t to talk · ctrl+b/f scroll · hold Shift to select text, `ctrl+y` copies last answer.")
+        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · click ● mic / ctrl+t to talk · ctrl+b/f scroll · drag to select, `ctrl+y` copies selection (else last answer).")
         try:
             from .cli import _code_version
 
@@ -434,29 +455,45 @@ class SidekickTUI(App):
             _w(log, f"  {preview}")
         self.query_one("#chat-input", ChatArea).focus()
 
-    def action_copy_last(self) -> None:
+    def _selected_text(self) -> str:
+        """Mouse-dragged text in the log, if any. Empty when nothing selected."""
+        try:
+            return (self.screen.get_selected_text() or "").strip()
+        except Exception:
+            return ""
+
+    def _copy_out(self, text: str, what: str) -> None:
+        """Copy via reliable backends, OSC52 fallback with honest warning."""
         from .clip import backends_available, copy_text, install_hint
-        from .store import get_history
 
         log = self.query_one("#chat-log", RichLog)
-        answers = [m["content"] for m in get_history("tui") if m["role"] == "assistant"]
-        if not answers:
-            _w(log, f"[{_now()}] (no answers to copy yet)")
-            return
         if backends_available():
-            # reliable path; copy_text returns before any stdout fallback
             try:
-                method = copy_text(answers[-1])
-                _w(log, f"[{_now()}] copied last answer via {method}")
+                method = copy_text(text)
+                _w(log, f"[{_now()}] copied {what} via {method}")
             except Exception as e:
                 _role(log, "error", f"copy failed ({e})")
             return
         try:
-            self.copy_to_clipboard(answers[-1])  # driver-safe OSC52
+            self.copy_to_clipboard(text)  # driver-safe OSC52
         except Exception as e:
             _role(log, "error", f"copy failed ({e}) — {install_hint()}")
             return
         _role(log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty")
+
+    def action_copy_last(self) -> None:
+        from .store import get_history
+
+        log = self.query_one("#chat-log", RichLog)
+        selected = self._selected_text()
+        if selected:
+            self._copy_out(selected, "selection")
+            return
+        answers = [m["content"] for m in get_history("tui") if m["role"] == "assistant"]
+        if not answers:
+            _w(log, f"[{_now()}] (no answers to copy yet)")
+            return
+        self._copy_out(answers[-1], "last answer")
 
     @on(ChatArea.Send)
     def _send(self, ev: ChatArea.Send) -> None:
