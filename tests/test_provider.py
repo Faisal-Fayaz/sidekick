@@ -150,5 +150,5 @@ def test_google_preset():
     for name in ("google", "gemini"):
         assert PRESETS[name]["base_url"].startswith("https://")
         assert "gemini" in PRESETS[name]["model"]
-    assert provider_tier("google", "fast", "d") == "gemini-2.5-flash"
-    assert provider_tier("gemini", "smart", "d") == "gemini-2.5-pro"
+    assert provider_tier("google", "fast", "d") == "models/gemini-3.6-flash"
+    assert provider_tier("gemini", "smart", "d") == "models/gemini-3.8-flash"

@@ -30,8 +30,8 @@ PRESETS: dict[str, dict[str, str]] = {
     "together": {"base_url": "https://api.together.xyz/v1", "key": "", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
     "deepseek": {"base_url": "https://api.deepseek.com/v1", "key": "", "model": "deepseek-chat"},
     "openrouter": {"base_url": "https://openrouter.ai/api/v1", "key": "", "model": "openai/gpt-4o-mini"},
-    "google": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "", "model": "gemini-2.5-flash"},
-    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "", "model": "gemini-2.5-flash"},
+    "google": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "", "model": "models/gemini-3.6-flash"},
+    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "", "model": "models/gemini-3.6-flash"},
     "lmstudio": {"base_url": "http://localhost:1234/v1", "key": "lm-studio", "model": "local-model"},
     "custom": {"base_url": "", "key": "", "model": ""},
 }
@@ -43,8 +43,8 @@ TIERS: dict[str, dict[str, str]] = {
     "openai": {"fast": "gpt-4o-mini", "smart": "gpt-4o"},
     "groq": {"fast": "openai/gpt-oss-20b", "smart": "openai/gpt-oss-120b"},
     "deepseek": {"fast": "deepseek-chat", "smart": "deepseek-reasoner"},
-    "google": {"fast": "gemini-2.5-flash", "smart": "gemini-2.5-pro"},
-    "gemini": {"fast": "gemini-2.5-flash", "smart": "gemini-2.5-pro"},
+    "google": {"fast": "models/gemini-3.6-flash", "smart": "models/gemini-3.8-flash"},
+    "gemini": {"fast": "models/gemini-3.6-flash", "smart": "models/gemini-3.8-flash"},
 }
 
 
