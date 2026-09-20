@@ -42,9 +42,10 @@ heard> what files are in the sidekick repo
 - **Voice-first option** — `sk talk` CLI + TUI mic pill (`ctrl+t`): arecord capture, local faster-whisper STT, transcript lands editable in the prompt. `sk mic-test` diagnoses levels.
 - **Agent loop** — Ollama/OpenAI-compatible tool-calling (native + text-JSON fallback for coders), streaming tokens, reasoning-model aware, repeat-call guard
 - **17 tools** — `sysinfo, list_dir, read_file, exec (read-only), shell (approval), write_file, edit_file, make_dir, delete_file, remember, recall, todo_add/list/done, read_url, web_search, skill`
-- **Approval gate** — reads auto-run, writes prompt `[y/N]` (or `--yes` / `/yolo`); every write backed up for `/rollback`-style recovery thinking
+- **Approval gate** — reads auto-run, writes prompt `[y/N]` inline (or `--yes` / `/yolo`); denials and timeouts say which happened
 - **Memory + todos** — SQLite with FTS5 prefix search, auto-injected into every prompt
-- **Hermes-style `/commands`** — `/help /model /provider /clear /yolo /remember /todo /brief /history /oops /skills /copy…` in REPL, TUI, and voice loop
+- **Sessions** — fresh id per launch, all saved locally; `/sessions` lists past chats, `/resume <n>` switches with context, `/sessions delete <n>` removes; `--continue` resumes latest
+- **Hermes-style `/commands`** — `/help /model /provider /clear /sessions /resume /yolo /remember /todo /brief /history /oops /skills /copy…` in REPL, TUI, and voice loop
 - **Superpowers skills** — `sk skills-install superpowers` (15 obra packs); relevance-ranked index in prompt, full bodies on demand via `skill`
 - **Auto model router** — `sk run` picks fast (chat) vs smart (code) itself, per provider tiers
 - **Shell hook** — logs commands, `sk oops` explains the last failure
@@ -79,7 +80,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom
 
 | Command | What |
 |---|---|
-| `sk chat` / `sk tui` | Interactive chat (REPL / fullscreen), `/help` inside. TUI tracks the mouse like other agents: drag-select auto-copies on release (edge auto-scrolls), click ● mic / `ctrl+t` to talk, wheel scrolls. Keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, `ctrl+y` copies selection (else last answer), `/copy lines N` for code blocks, ctrl+b/f scroll. Answers stream live, footer shows last-turn time/tokens. Needs `xclip` for real clipboard carry (`sudo apt install xclip`). |
+| `sk chat [--continue]` / `sk tui [--continue]` | Interactive chat (REPL / fullscreen), `/help` inside. Fresh session each launch; `/sessions`, `/resume <n>`, `/sessions delete <n>` manage history. TUI tracks the mouse like other agents: drag-select auto-copies on release (edge auto-scrolls), click ● mic / `ctrl+t` to talk, wheel scrolls (hold Shift to select natively). Keys: Enter sends, ctrl+j/alt+enter newline, ↑/↓ history, `ctrl+y` copies selection (else last answer), `/copy lines N` for code blocks, ctrl+t push-to-talk, ctrl+b/f scroll. Answers stream live with role colors, footer shows model · session · last-turn time/tokens. |
 | `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat: Enter records, Enter stops. Transcribed locally by faster-whisper int8 (installs on first run, ~800MB + model). Voice never leaves your machine |
 | `sk mic-test [-d SECS]` | Check mic levels: peak dB + verdict (silent/quiet/good) with fix hints |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run |
@@ -115,7 +116,7 @@ Design bets that paid off: **deterministic grounding beats prompt instructions**
 ## Tests
 
 ```bash
-.venv/bin/pytest tests -q   # 117 passed, mic/STT subprocess calls mocked, no Ollama needed
+.venv/bin/pytest tests -q   # 163 passed, mic/STT subprocess calls mocked, no Ollama needed
 ```
 
 Unit + regression + Textual pilot tests. Suite-wide fixture guarantees tests never touch your live `~/.sidekick/config.toml` (a real bug we caught: `/model` overwrote it mid-suite).
