@@ -434,7 +434,7 @@ def doctor():
 @app.command()
 def config(
     model: str = typer.Option("", help="Set model, e.g. --model qwen3:4b"),
-    provider: str = typer.Option("", help="Set provider: ollama|openai|groq|together|deepseek|openrouter|lmstudio|custom"),
+    provider: str = typer.Option("", help="Set provider: ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom"),
     api_key: str = typer.Option("", help="Set API key (or use SIDEKICK_API_KEY env)"),
     base_url: str = typer.Option("", help="Custom base URL (sets provider=custom unless --provider given)"),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
@@ -979,18 +979,12 @@ def brief(
 @app.command()
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
-    mouse: str = typer.Option("", "--mouse", help="on|off, omit for saved preference"),
 ):
-    """Fullscreen chat. Mouse on: click + wheel; hold Shift to select text."""
+    """Fullscreen chat. Native select/copy; ctrl+t to talk; ctrl+b/f to scroll."""
     from .tui import launch
 
     cfg = _cfg()
-    m: bool | None = None
-    if mouse.strip().lower() in ("on", "1", "true", "yes"):
-        m = True
-    elif mouse.strip().lower() in ("off", "0", "false", "no"):
-        m = False
-    launch(_resolve_model(cfg, model), mouse=m)
+    launch(_resolve_model(cfg, model))
 
 
 @app.command()

@@ -89,28 +89,6 @@ def test_slash_provider(monkeypatch, tmp_path):
     assert "unknown" in slash.handle("/provider nope", session="s", cfg=cfg, state={}).text.lower()
 
 
-def test_mouse_roundtrip_and_env(monkeypatch, tmp_path):
-    import sk.config as _cm
-    from sk.config import Config as _C
-
-    monkeypatch.setattr(_cm, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(_cm, "CONFIG_PATH", tmp_path / "config.toml")
-    assert _C.load().mouse is True  # missing key defaults on
-    c = _C.load()
-    c.mouse = False
-    c.save()
-    assert _C.load().mouse is False  # manual-writer bools parse back
-    monkeypatch.setenv("SIDEKICK_MOUSE", "off")
-    c2 = _C.load()
-    assert c2.mouse is False  # env wins over file
-    c2.mouse = True
-    c2.save()
-    assert _C.load().mouse is False
-    monkeypatch.setenv("SIDEKICK_MOUSE", "on")
-    assert _C.load().mouse is True
-    monkeypatch.delenv("SIDEKICK_MOUSE", raising=False)
-
-
 def test_provider_tiers():
     from sk.config import provider_tier
 
@@ -122,23 +100,11 @@ def test_provider_tiers():
     assert provider_tier("custom", "smart", "mydefault") == "mydefault"
 
 
-def test_mouse_roundtrip_and_env(monkeypatch, tmp_path):
-    import sk.config as _cm
-    from sk.config import Config as _C
+def test_google_preset():
+    from sk.config import PRESETS, provider_tier
 
-    monkeypatch.setattr(_cm, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(_cm, "CONFIG_PATH", tmp_path / "config.toml")
-    c = _C.load()
-    assert c.mouse is True  # missing key defaults on
-    c.mouse = False
-    c.save()
-    assert _C.load().mouse is False  # manual-writer bools parse back
-    monkeypatch.setenv("SIDEKICK_MOUSE", "off")
-    c2 = _C.load()
-    c2.mouse = True
-    c2.save()
-    assert _C.load().mouse is False  # env wins
-    monkeypatch.setenv("SIDEKICK_MOUSE", "on")
-    assert _C.load().mouse is True
-    for v in ("SIDEKICK_MOUSE",):
-        monkeypatch.delenv(v, raising=False)
+    for name in ("google", "gemini"):
+        assert PRESETS[name]["base_url"].startswith("https://")
+        assert "gemini" in PRESETS[name]["model"]
+    assert provider_tier("google", "fast", "d") == "gemini-2.5-flash"
+    assert provider_tier("gemini", "smart", "d") == "gemini-2.5-pro"

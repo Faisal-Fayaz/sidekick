@@ -161,7 +161,7 @@ async def _pilot_ctrl_y():
         assert "cop" in blob  # copied... or copy failed hint
 
 
-def test_launch_mouse_default():
+def test_launch_disables_mouse():
     import sk.tui as tui_mod
     from textual.app import App
 
@@ -176,47 +176,7 @@ def test_launch_mouse_default():
         tui_mod.launch()
     finally:
         App.run = orig  # type: ignore
-    assert seen.get("mouse") is True  # clickable buttons + wheel; Shift selects
-
-
-def test_launch_no_mouse_flag():
-    import sk.tui as tui_mod
-    from textual.app import App
-
-    seen = {}
-
-    def fake_run(self, **kwargs):
-        seen.update(kwargs)
-
-    orig = App.run
-    App.run = fake_run  # type: ignore
-    try:
-        tui_mod.launch(mouse=False)
-    finally:
-        App.run = orig  # type: ignore
-    assert seen.get("mouse") is False
-
-
-def test_set_mouse_persists(monkeypatch, tmp_path):
-    import sk.config as _c
-    from sk.tui import SidekickTUI
-
-    monkeypatch.setattr(_c, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(_c, "CONFIG_PATH", tmp_path / "config.toml")
-    app = SidekickTUI()
-
-    class FakeDriver:
-        def _enable_mouse_support(self):
-            pass
-
-        def _disable_mouse_support(self):
-            pass
-
-    monkeypatch.setattr(app, "_driver", FakeDriver(), raising=False)
-    assert "native selection" in app.set_mouse(False)
-    assert _c.Config.load().mouse is False
-    assert "Shift selects" in app.set_mouse(True)
-    assert _c.Config.load().mouse is True
+    assert seen.get("mouse") is False  # native terminal select/copy
 
 
 async def _pilot_copy_input_selection(monkeypatch):
@@ -305,64 +265,15 @@ def test_ctrl_y_copies():
     _run(_pilot_ctrl_y())
 
 
-def test_set_mouse_fake_driver(monkeypatch):
-    from sk.tui import SidekickTUI
-
-    app = SidekickTUI()
-    calls: list[str] = []
-
-    class FakeDriver:
-        def _enable_mouse_support(self):
-            calls.append("on")
-
-        def _disable_mouse_support(self):
-            calls.append("off")
-
-    monkeypatch.setattr(app, "_driver", FakeDriver(), raising=False)
-    assert "native selection" in app.set_mouse(False)
-    assert app._mouse_on is False and calls == ["off"]
-    assert "click" in app.set_mouse(True)
-    assert app._mouse_on is True and calls == ["off", "on"]
-
-
-def test_set_mouse_no_driver(monkeypatch):
-    from sk.tui import SidekickTUI
-
-    app = SidekickTUI()
-    if hasattr(app, "_driver"):
-        monkeypatch.delattr(app, "_driver", raising=False)
-    assert "unsupported" in app.set_mouse(False)
-
-
-async def _pilot_mouse_toggle():
-    from sk.tui import SidekickTUI as _T
-
-    app = _T()
-    async with app.run_test() as pilot:
-        area = app.query_one("#chat-input")
-        area.focus()
-        area.text = "/mouse"
-        await pilot.pause()
-        await pilot.press("enter")
-        await pilot.pause()
-        await pilot.pause()
-        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
-        assert "mouse" in blob.lower()
-
-
-def test_pilot_mouse_toggle():
-    _run(_pilot_mouse_toggle())
-
-
-def test_slash_mouse_repl(tmp_path, monkeypatch):
+def test_slash_mouse_removed(tmp_path, monkeypatch):
     import sk.slash as slash
     import sk.store as store
     from sk.config import Config
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
-    cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0)
+    cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.2)
     out = slash.handle("/mouse", session="s", cfg=cfg, state={})
-    assert "natively" in out.text.lower()
+    assert "unknown command" in out.text.lower()
 
 
 async def _pilot_copy_selection(monkeypatch):
@@ -577,45 +488,15 @@ def _mock_voice(monkeypatch, text="hello from mic"):
 
 
 async def _pilot_mic_roundtrip(monkeypatch):
-    from textual.widgets import Button
-
     from sk.tui import SidekickTUI as _T
 
     _mock_voice(monkeypatch)
     app = _T()
     async with app.run_test() as pilot:
-        await pilot.click("#mic-btn")  # real click: mouse is on by default
+        app.action_mic()  # ctrl+t start (pill is display-only, not clickable)
         await pilot.pause()
         assert app.mic_state == "recording"
-        # stop via posted Pressed: repeated pilot.clicks don't re-fire
-        # headless (pilot mouse-state quirk, not app code).
-        btn = app.query_one("#mic-btn", Button)
-        app.post_message(Button.Pressed(btn))
-        for _ in range(30):
-            await pilot.pause()
-            if "hello from mic" in app.query_one("#chat-input").text:
-                break
-        assert "hello from mic" in app.query_one("#chat-input").text
-        assert app.mic_state == "idle"
-        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
-        assert "heard>" in blob
-
-
-async def _pilot_mic_no_stt(monkeypatch):
-    import sk.voice as _v
-    from sk.tui import SidekickTUI as _T
-
-    monkeypatch.setattr(_v, "check_mic", lambda: (True, "mic ready"))
-    monkeypatch.setattr(_v, "ensure_stt", lambda: (False, "faster-whisper not installed"))
-    app = _T()
-    async with app.run_test() as pilot:
-        await pilot.click("#mic-btn")  # real click: mouse is on by default
-        await pilot.pause()
-        assert app.mic_state == "recording"
-        # stop via posted Pressed: repeated pilot.clicks don't re-fire
-        # headless (pilot mouse-state quirk, not app code).
-        btn = app.query_one("#mic-btn", Button)
-        app.post_message(Button.Pressed(btn))
+        app.action_mic()  # ctrl+t stop
         for _ in range(30):
             await pilot.pause()
             if "hello from mic" in app.query_one("#chat-input").text:
@@ -647,3 +528,24 @@ def test_mic_roundtrip(monkeypatch):
 
 def test_mic_no_stt_hint(monkeypatch):
     _run(_pilot_mic_no_stt(monkeypatch))
+
+
+def test_mic_pill_not_clickable():
+    from textual.widgets import Button, Static
+
+    from sk.tui import SidekickTUI as _T
+
+    async def _go():
+        app = _T()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            pill = app.query_one("#mic-pill", Static)
+            assert not isinstance(pill, Button)
+            assert "ctrl+t" in str(pill.content).lower()
+            try:
+                app.query_one("#mic-btn")
+                assert False, "old clickable #mic-btn should be gone"
+            except Exception:
+                pass
+
+    _run(_go())
