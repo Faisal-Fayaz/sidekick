@@ -275,7 +275,9 @@ class SidekickTUI(App):
             cfg.save()
         except Exception:
             pass
-        return "mouse on: click + wheel (Shift selects) — saved" if on else "mouse off: native selection like sk chat — saved"
+        if on:
+            return "mouse on: click + wheel (Shift selects) — saved"
+        return "mouse off: native selection like sk chat — saved (wheel is dead here, scroll with ctrl+b / ctrl+f)"
 
     def action_mic(self) -> None:
         self._mic_toggle()
