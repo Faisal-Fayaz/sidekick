@@ -691,7 +691,7 @@ class SidekickTUI(App):
 
 
 def launch(model: str = "") -> None:
-    # Inline + no mouse tracking: the TUI lives in the normal scrollback, so
-    # selection, auto-scroll-on-drag, wheel and copy/paste behave exactly
-    # like a regular terminal. Nothing to configure.
-    SidekickTUI(model=model).run(inline=True, mouse=False)
+    # Fullscreen, no mouse tracking: visible-screen selection works natively
+    # like sk chat scrollback; scroll with ctrl+b/f, yank with /copy lines.
+    # (Inline mode was tried and produced blank screens — reverted.)
+    SidekickTUI(model=model).run(mouse=False)

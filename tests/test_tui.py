@@ -223,7 +223,7 @@ def test_ctrl_y_copies():
     _run(_pilot_ctrl_y())
 
 
-def test_launch_inline_no_mouse():
+def test_launch_fullscreen_no_mouse():
     import sk.tui as tui_mod
     from textual.app import App
 
@@ -238,7 +238,8 @@ def test_launch_inline_no_mouse():
         tui_mod.launch()
     finally:
         App.run = orig  # type: ignore
-    assert seen.get("inline") is True and seen.get("mouse") is False
+    assert seen.get("inline", False) is not True  # fullscreen proven; inline blanked screens
+    assert seen.get("mouse") is False  # native visible-screen selection
 
 
 async def _pilot_copy_selection(monkeypatch):
