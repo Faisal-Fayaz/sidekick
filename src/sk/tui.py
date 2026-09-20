@@ -203,9 +203,10 @@ class SidekickTUI(App):
     #mic-btn.recording { background: #5c1010; }
     """
 
-    def __init__(self, model: str = ""):
+    def __init__(self, model: str = "", mouse: bool = True):
         super().__init__()
         self.model_override = model
+        self._mouse_on = mouse
         self.state: dict = {"yolo": False}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
@@ -248,6 +249,25 @@ class SidekickTUI(App):
             _w(log, f"build {_code_version()} — restart the TUI after updates or you keep running old code.")
         except Exception:
             pass
+
+    def set_mouse(self, on: bool) -> str:
+        """Toggle terminal mouse tracking at runtime.
+
+        ON = clicks + wheel (select needs Shift). OFF = native selection
+        exactly like `sk chat` scrollback. No-op where the driver lacks it.
+        """
+        drv = getattr(self, "_driver", None)
+        try:
+            if on:
+                drv._enable_mouse_support()
+            else:
+                drv._disable_mouse_support()
+        except AttributeError:
+            return "mouse toggle unsupported by this driver"
+        except Exception as e:
+            return f"mouse toggle failed: {e}"
+        self._mouse_on = on
+        return "mouse on: click + wheel (Shift selects)" if on else "mouse off: native selection like sk chat"
 
     def action_mic(self) -> None:
         self._mic_toggle()
@@ -539,7 +559,9 @@ class SidekickTUI(App):
             return
         _role(log, "you", text)
         if text.startswith("/"):
-            # /model switches session model (and saves default)
+            if text.strip() == "/mouse":
+                _role(log, "sys", self.set_mouse(not self._mouse_on))
+                return
             if text.startswith("/model ") and text[7:].strip():
                 from .config import Config
                 from .slash import _resolve_model_name
@@ -689,5 +711,5 @@ class SidekickTUI(App):
 
 def launch(model: str = "", mouse: bool = True) -> None:
     # Mouse on: buttons clickable, wheel scrolls — like every other TUI.
-    # Hold Shift to select/copy text natively. --no-mouse disables it.
-    SidekickTUI(model=model).run(mouse=mouse)
+    # Hold Shift to select text. --no-mouse disables it.
+    SidekickTUI(model=model, mouse=mouse).run(mouse=mouse)

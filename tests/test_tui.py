@@ -259,6 +259,66 @@ def test_ctrl_y_copies():
     _run(_pilot_ctrl_y())
 
 
+def test_set_mouse_fake_driver(monkeypatch):
+    from sk.tui import SidekickTUI
+
+    app = SidekickTUI()
+    calls: list[str] = []
+
+    class FakeDriver:
+        def _enable_mouse_support(self):
+            calls.append("on")
+
+        def _disable_mouse_support(self):
+            calls.append("off")
+
+    monkeypatch.setattr(app, "_driver", FakeDriver(), raising=False)
+    assert "native selection" in app.set_mouse(False)
+    assert app._mouse_on is False and calls == ["off"]
+    assert "click" in app.set_mouse(True)
+    assert app._mouse_on is True and calls == ["off", "on"]
+
+
+def test_set_mouse_no_driver(monkeypatch):
+    from sk.tui import SidekickTUI
+
+    app = SidekickTUI()
+    if hasattr(app, "_driver"):
+        monkeypatch.delattr(app, "_driver", raising=False)
+    assert "unsupported" in app.set_mouse(False)
+
+
+async def _pilot_mouse_toggle():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "/mouse"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "mouse" in blob.lower()
+
+
+def test_pilot_mouse_toggle():
+    _run(_pilot_mouse_toggle())
+
+
+def test_slash_mouse_repl(tmp_path, monkeypatch):
+    import sk.slash as slash
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0)
+    out = slash.handle("/mouse", session="s", cfg=cfg, state={})
+    assert "natively" in out.text.lower()
+
+
 async def _pilot_copy_selection(monkeypatch):
     import sk.clip as _c
     from textual.geometry import Offset

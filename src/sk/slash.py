@@ -36,6 +36,7 @@ HELP_TEXT = """**slash commands**
 - `/skills` — list skill packs
 - `/copy [n]` — copy nth-last answer (default: last)
 - `/copy lines <n>` — copy last n lines of the last answer (for code blocks)
+- `/mouse` — TUI only: toggle mouse tracking (here: plain terminal already selects natively)
 - `/exit` `/quit` — leave
 Anything else is sent to the agent.
 Tip: paste with Ctrl+Shift+V (terminal). Mouse drag-select is terminal-dependent; `/copy lines` always works."""
@@ -197,6 +198,9 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
     if cmd in ("exit", "quit", "q"):
         return SlashOut(handled=True, quit=True)
+
+    if cmd == "mouse":
+        return SlashOut(handled=True, text="_Mouse tracking is a TUI setting — this REPL selects natively already. In `sk tui`, type `/mouse` to toggle._")
 
     if cmd == "copy":
         from .clip import backends_available, copy_text, install_hint
