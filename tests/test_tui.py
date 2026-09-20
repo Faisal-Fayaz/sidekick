@@ -388,6 +388,41 @@ def test_tui_approval_no(monkeypatch):
     _run(_pilot_approval_no(monkeypatch))
 
 
+async def _pilot_dash_yes_approves():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        import threading
+
+        ev = threading.Event()
+        # live pending as a real worker would leave it (worker clears it)
+        app._pending_approval = {
+            "question": "write_file -> /tmp/x",
+            "event": ev,
+            "answer": False,
+            "asked_at": 0,
+            "reply": "",
+            "token": object(),
+            "owner": threading.get_ident(),
+            "deadline": 9999999999.0,
+        }
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "--yes"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "approved" in blob
+        assert ev.is_set() and app._pending_approval["answer"] is True
+
+
+def test_dash_yes_approves():
+    _run(_pilot_dash_yes_approves())
+
+
 async def _pilot_stale_pending_ignored(monkeypatch):
     import threading
     import time as _t

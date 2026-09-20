@@ -433,7 +433,21 @@ class SidekickTUI(App):
         token = object()
         owner = threading.get_ident()
         deadline = _t.monotonic() + timeout + 30
-        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": _t.monotonic(), "reply": "", "token": token, "owner": owner, "deadline": deadline}
+        asked_at = _t.monotonic()
+        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": asked_at, "reply": "", "token": token, "owner": owner, "deadline": deadline}
+
+        def _log_outcome(result: str) -> None:
+            try:
+                import datetime as _dt
+
+                from .config import CONFIG_DIR
+
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                with open(CONFIG_DIR / "tui-errors.log", "a") as f:
+                    f.write(f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] approve: {name} -> {path} = {result} ({_t.monotonic() - asked_at:.0f}s)\n")
+            except Exception:
+                pass
+
         try:
             self.call_from_thread(self._ask_approval, name, path, preview, int(timeout))
         except Exception:
@@ -447,13 +461,16 @@ class SidekickTUI(App):
             else:
                 pending = None
         if expired:
+            _log_outcome("timeout-denied")
             try:
                 self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)")
             except Exception:
                 pass
             return False
         if pending is None:
+            _log_outcome("slot-stolen-denied")
             return False  # slot stolen/cleared concurrently: fail closed
+        _log_outcome("approved" if pending.get("answer") else f"denied reply={pending.get('reply', '')[:20]!r}")
         if not bool(pending.get("answer", False)):
             try:
                 self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", f"denied (you answered '{pending.get('reply', '')[:20]}')")
@@ -477,7 +494,7 @@ class SidekickTUI(App):
 
     def _ask_approval(self, name: str, path: str, preview: str, timeout: int = 300) -> None:
         log = self.query_one("#chat-log", RichLog)
-        _role(log, "warn", f"allow {name} -> {path}? [y/N] (type y or n, {timeout}s)")
+        _role(log, "warn", f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)")
         if preview:
             _w(log, f"  {preview}")
         try:
@@ -577,7 +594,7 @@ class SidekickTUI(App):
         # pending write approval eats the next NON-SLASH line: y/yes approves
         pending = self._live_pending()
         if pending is not None and not text.startswith("/"):
-            verdict = text.lower() in ("y", "yes", "yup", "ok", "okay", "sure", "approve")
+            verdict = text.lower() in ("y", "yes", "yup", "ok", "okay", "sure", "approve", "--yes", "-y")
             _role(log, "you", text)
             pending["answer"] = verdict
             pending["reply"] = text[:20]
