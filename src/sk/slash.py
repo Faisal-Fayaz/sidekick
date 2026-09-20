@@ -34,10 +34,11 @@ HELP_TEXT = """**slash commands**
 - `/history [n]` — recent shell commands
 - `/oops` — explain last failed shell command
 - `/skills` — list skill packs
-- `/copy [n]` — copy nth-last answer to clipboard (default: last)
+- `/copy [n]` — copy nth-last answer (default: last)
+- `/copy lines <n>` — copy last n lines of the last answer (for code blocks)
 - `/exit` `/quit` — leave
 Anything else is sent to the agent.
-Tip: paste with Ctrl+Shift+V (terminal). Hold Shift to select text with the mouse, bypassing the app."""
+Tip: paste with Ctrl+Shift+V (terminal). Mouse drag-select is terminal-dependent; `/copy lines` always works."""
 
 
 def _resolve_model_name(cfg, raw: str) -> str:
@@ -201,8 +202,26 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         from .clip import backends_available, copy_text, install_hint
         from .store import get_history
 
+        parts = arg.strip().split()
+        if parts and parts[0].lower() == "lines":
+            try:
+                n = int(parts[1]) if len(parts) > 1 else 10
+            except ValueError:
+                return SlashOut(handled=True, text="usage: `/copy lines <n>`")
+            answers = [m["content"] for m in get_history(session) if m["role"] == "assistant"]
+            if not answers:
+                return SlashOut(handled=True, text="_(no answers to copy yet)_")
+            tail = "\n".join(answers[-1].splitlines()[-max(1, n):])
+            if not tail.strip():
+                return SlashOut(handled=True, text="_(last answer is empty)_")
+            try:
+                method = copy_text(tail)
+            except Exception as e:
+                return SlashOut(handled=True, text=f"copy failed ({e}) — `{install_hint()}`")
+            extra = f" — `{install_hint()}` if paste comes up empty" if method == "osc52" and not backends_available() else ""
+            return SlashOut(handled=True, text=f"_copied last {max(1, n)} lines via {method}_{extra}")
         try:
-            n = int((arg.strip().split() or ["1"])[0])
+            n = int((parts or ["1"])[0])
         except ValueError:
             return SlashOut(handled=True, text="usage: `/copy [n]` — copies nth-last answer")
         answers = [m["content"] for m in get_history(session) if m["role"] == "assistant"]

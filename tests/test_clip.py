@@ -55,6 +55,25 @@ def test_slash_copy_warns_without_backends(tmp_path, monkeypatch):
     assert "osc52" in out.text and "xclip" in out.text
 
 
+def test_slash_copy_lines(tmp_path, monkeypatch):
+    import sk.clip as _c
+    import sk.slash as slash
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    seen: list[str] = []
+    monkeypatch.setattr(_c, "backends_available", lambda: ["xclip"])
+    monkeypatch.setattr(_c, "copy_text", lambda t: seen.append(t) or "xclip")
+    cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0)
+    store.save_message("s", "assistant", "l1\nl2\nl3\nl4")
+    out = slash.handle("/copy lines 2", session="s", cfg=cfg, state={})
+    assert seen == ["l3\nl4"] and "2 lines" in out.text
+    out = slash.handle("/copy lines", session="s", cfg=cfg, state={})
+    assert seen[-1] == "l1\nl2\nl3\nl4"  # default: whole tail
+    assert "no answers" in slash.handle("/copy lines 1", session="e", cfg=cfg, state={}).text.lower()
+
+
 def test_slash_copy(tmp_path, monkeypatch):
     import sk.slash as slash
     import sk.store as store
