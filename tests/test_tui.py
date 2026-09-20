@@ -519,7 +519,7 @@ def test_mount_shows_build():
         async with app.run_test() as pilot:
             await pilot.pause()
             blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
-            assert "build " in blob and "restart the TUI" in blob
+            assert "build " in blob and "sk version" in blob
 
     _run(_go())
 

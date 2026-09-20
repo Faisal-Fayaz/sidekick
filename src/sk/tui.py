@@ -246,7 +246,7 @@ class SidekickTUI(App):
         try:
             from .cli import _code_version
 
-            _w(log, f"build {_code_version()} — restart the TUI after updates or you keep running old code.")
+            _w(log, f"build {_code_version()} (`sk version` to compare after updates)")
         except Exception:
             pass
 
