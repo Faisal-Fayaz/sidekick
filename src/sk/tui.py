@@ -251,7 +251,7 @@ class SidekickTUI(App):
             pass
 
     def set_mouse(self, on: bool) -> str:
-        """Toggle terminal mouse tracking at runtime.
+        """Toggle terminal mouse tracking at runtime. Persisted like Hermes.
 
         ON = clicks + wheel (select needs Shift). OFF = native selection
         exactly like `sk chat` scrollback. No-op where the driver lacks it.
@@ -267,7 +267,15 @@ class SidekickTUI(App):
         except Exception as e:
             return f"mouse toggle failed: {e}"
         self._mouse_on = on
-        return "mouse on: click + wheel (Shift selects)" if on else "mouse off: native selection like sk chat"
+        try:
+            from .config import Config
+
+            cfg = Config.load()
+            cfg.mouse = on
+            cfg.save()
+        except Exception:
+            pass
+        return "mouse on: click + wheel (Shift selects) — saved" if on else "mouse off: native selection like sk chat — saved"
 
     def action_mic(self) -> None:
         self._mic_toggle()
@@ -524,6 +532,14 @@ class SidekickTUI(App):
         from .store import get_history
 
         log = self.query_one("#chat-log", RichLog)
+        # Hermes order: composer (input) selection first, then chat selection.
+        try:
+            drafted = (self.query_one("#chat-input", ChatArea).selected_text or "").strip()
+        except Exception:
+            drafted = ""
+        if drafted:
+            self._copy_out(drafted, "draft selection")
+            return
         selected = self._selected_text()
         if selected:
             self._copy_out(selected, "selection")
@@ -709,7 +725,14 @@ class SidekickTUI(App):
             _role(log, "sidekick", answer)
 
 
-def launch(model: str = "", mouse: bool = True) -> None:
+def launch(model: str = "", mouse: bool | None = None) -> None:
     # Mouse on: buttons clickable, wheel scrolls — like every other TUI.
-    # Hold Shift to select text. --no-mouse disables it.
+    # Hold Shift to select text. None = saved preference (set via /mouse).
+    if mouse is None:
+        try:
+            from .config import Config
+
+            mouse = Config.load().mouse
+        except Exception:
+            mouse = True
     SidekickTUI(model=model, mouse=mouse).run(mouse=mouse)

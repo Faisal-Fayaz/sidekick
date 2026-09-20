@@ -197,6 +197,52 @@ def test_launch_no_mouse_flag():
     assert seen.get("mouse") is False
 
 
+def test_set_mouse_persists(monkeypatch, tmp_path):
+    import sk.config as _c
+    from sk.tui import SidekickTUI
+
+    monkeypatch.setattr(_c, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(_c, "CONFIG_PATH", tmp_path / "config.toml")
+    app = SidekickTUI()
+
+    class FakeDriver:
+        def _enable_mouse_support(self):
+            pass
+
+        def _disable_mouse_support(self):
+            pass
+
+    monkeypatch.setattr(app, "_driver", FakeDriver(), raising=False)
+    assert "native selection" in app.set_mouse(False)
+    assert _c.Config.load().mouse is False
+    assert "Shift selects" in app.set_mouse(True)
+    assert _c.Config.load().mouse is True
+
+
+async def _pilot_copy_input_selection(monkeypatch):
+    import sk.clip as _c
+    from sk.tui import SidekickTUI as _T
+
+    copied: list[str] = []
+    monkeypatch.setattr(_c, "backends_available", lambda: ["xclip"])
+    monkeypatch.setattr(_c, "copy_text", lambda t: copied.append(t) or "xclip")
+    app = _T()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "draft words here"
+        area.select_all()
+        await pilot.pause()
+        assert area.selected_text.strip() == "draft words here"
+        app.action_copy_last()
+        await pilot.pause()
+        assert copied == ["draft words here"]
+
+
+def test_copy_input_selection(monkeypatch):
+    _run(_pilot_copy_input_selection(monkeypatch))
+
+
 def test_mic_crash_logged(tmp_path, monkeypatch):
     import sk.config as _c
     from sk.tui import log_error
@@ -536,6 +582,31 @@ async def _pilot_mic_roundtrip(monkeypatch):
     from sk.tui import SidekickTUI as _T
 
     _mock_voice(monkeypatch)
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.click("#mic-btn")  # real click: mouse is on by default
+        await pilot.pause()
+        assert app.mic_state == "recording"
+        # stop via posted Pressed: repeated pilot.clicks don't re-fire
+        # headless (pilot mouse-state quirk, not app code).
+        btn = app.query_one("#mic-btn", Button)
+        app.post_message(Button.Pressed(btn))
+        for _ in range(30):
+            await pilot.pause()
+            if "hello from mic" in app.query_one("#chat-input").text:
+                break
+        assert "hello from mic" in app.query_one("#chat-input").text
+        assert app.mic_state == "idle"
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "heard>" in blob
+
+
+async def _pilot_mic_no_stt(monkeypatch):
+    import sk.voice as _v
+    from sk.tui import SidekickTUI as _T
+
+    monkeypatch.setattr(_v, "check_mic", lambda: (True, "mic ready"))
+    monkeypatch.setattr(_v, "ensure_stt", lambda: (False, "faster-whisper not installed"))
     app = _T()
     async with app.run_test() as pilot:
         await pilot.click("#mic-btn")  # real click: mouse is on by default

@@ -979,13 +979,18 @@ def brief(
 @app.command()
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
-    no_mouse: bool = typer.Option(False, "--no-mouse", help="Disable mouse (native text selection without Shift)"),
+    mouse: str = typer.Option("", "--mouse", help="on|off, omit for saved preference"),
 ):
     """Fullscreen chat. Mouse on: click + wheel; hold Shift to select text."""
     from .tui import launch
 
     cfg = _cfg()
-    launch(_resolve_model(cfg, model), mouse=not no_mouse)
+    m: bool | None = None
+    if mouse.strip().lower() in ("on", "1", "true", "yes"):
+        m = True
+    elif mouse.strip().lower() in ("off", "0", "false", "no"):
+        m = False
+    launch(_resolve_model(cfg, model), mouse=m)
 
 
 @app.command()
