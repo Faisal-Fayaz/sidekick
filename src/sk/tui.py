@@ -435,6 +435,7 @@ class SidekickTUI(App):
         self.query_one("#chat-input", ChatArea).focus()
 
     def action_copy_last(self) -> None:
+        from .clip import backends_available, copy_text, install_hint
         from .store import get_history
 
         log = self.query_one("#chat-log", RichLog)
@@ -442,17 +443,20 @@ class SidekickTUI(App):
         if not answers:
             _w(log, f"[{_now()}] (no answers to copy yet)")
             return
-        try:
-            self.copy_to_clipboard(answers[-1])  # native OSC52, screen-safe
-            _w(log, f"[{_now()}] copied last answer (native clipboard)")
-        except Exception:
-            from .clip import copy_text
-
+        if backends_available():
+            # reliable path; copy_text returns before any stdout fallback
             try:
                 method = copy_text(answers[-1])
                 _w(log, f"[{_now()}] copied last answer via {method}")
-            except Exception as e2:
-                _w(log, f"[{_now()}] copy failed ({e2}) — `sudo apt install xclip`")
+            except Exception as e:
+                _role(log, "error", f"copy failed ({e})")
+            return
+        try:
+            self.copy_to_clipboard(answers[-1])  # driver-safe OSC52
+        except Exception as e:
+            _role(log, "error", f"copy failed ({e}) — {install_hint()}")
+            return
+        _role(log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty")
 
     @on(ChatArea.Send)
     def _send(self, ev: ChatArea.Send) -> None:

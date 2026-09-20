@@ -32,6 +32,29 @@ def test_empty_raises():
         clip.copy_text("")
 
 
+def test_backends_available(monkeypatch):
+    monkeypatch.setattr(clip.shutil, "which", lambda b: "/usr/bin/xclip" if b == "xclip" else None)
+    assert clip.backends_available() == ["xclip"]
+    monkeypatch.setattr(clip.shutil, "which", lambda b: None)
+    assert clip.backends_available() == []
+    assert "xclip" in clip.install_hint()
+
+
+def test_slash_copy_warns_without_backends(tmp_path, monkeypatch):
+    import sk.clip as _c
+    import sk.slash as slash
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr(_c, "backends_available", lambda: [])
+    monkeypatch.setattr(_c, "copy_text", lambda t: "osc52")
+    cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0)
+    store.save_message("s", "assistant", "ans")
+    out = slash.handle("/copy", session="s", cfg=cfg, state={})
+    assert "osc52" in out.text and "xclip" in out.text
+
+
 def test_slash_copy(tmp_path, monkeypatch):
     import sk.slash as slash
     import sk.store as store

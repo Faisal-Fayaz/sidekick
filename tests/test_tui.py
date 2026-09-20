@@ -259,6 +259,29 @@ def test_ctrl_y_copies():
     _run(_pilot_ctrl_y())
 
 
+async def _pilot_ctrl_y_warn(monkeypatch):
+    import sk.clip as _c
+    import sk.store as _s
+    from sk.tui import SidekickTUI as _T
+
+    monkeypatch.setattr(_c, "backends_available", lambda: [])
+    monkeypatch.setattr(_s, "get_history", lambda *a, **k: [{"role": "assistant", "content": "ans"}])
+    app = _T()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input")
+        area.focus()
+        await pilot.pause()
+        await pilot.press("ctrl+y")
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "xclip" in blob  # honest warning instead of fake success
+
+
+def test_ctrl_y_warns_without_backends(monkeypatch):
+    _run(_pilot_ctrl_y_warn(monkeypatch))
+
+
 def test_timestamps():
     _run(_pilot_timestamps())
 

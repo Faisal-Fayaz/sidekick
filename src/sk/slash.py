@@ -198,7 +198,7 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(handled=True, quit=True)
 
     if cmd == "copy":
-        from .clip import copy_text
+        from .clip import backends_available, copy_text, install_hint
         from .store import get_history
 
         try:
@@ -211,7 +211,8 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         try:
             method = copy_text(answers[-n])
         except Exception as e:
-            return SlashOut(handled=True, text=f"copy failed ({e}) — `sudo apt install xclip`")
-        return SlashOut(handled=True, text=f"_copied answer {-n if n > 1 else 'last'} via {method}_")
+            return SlashOut(handled=True, text=f"copy failed ({e}) — `{install_hint()}`")
+        extra = f" — `{install_hint()}` if paste comes up empty" if method == "osc52" and not backends_available() else ""
+        return SlashOut(handled=True, text=f"_copied answer {-n if n > 1 else 'last'} via {method}_{extra}")
 
     return SlashOut(handled=True, text=f"unknown command `/{cmd}` — try `/help`")
