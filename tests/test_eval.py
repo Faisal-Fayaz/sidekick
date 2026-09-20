@@ -194,7 +194,6 @@ def test_today_in_system_prompt(tmp_path, monkeypatch):
 
 def test_repeat_tool_uses_cache():
     from sk.agent import _run_tool_cached
-
     seen: dict[str, str] = {}
     calls: list[str] = []
 
@@ -276,4 +275,91 @@ def test_length_cut_continues_to_tools(monkeypatch, tmp_path):
 
     monkeypatch.setattr(agent, "_stream_chat", stop_once)
     assert agent.run_agent("summarize the logs", [], cfg) == "all done"
+    assert calls["n"] == 1
+
+
+def test_retryable_status():
+    from sk.agent import _retryable_status
+
+    assert _retryable_status(Exception("Error code: 429 ... Please retry in 5.94s")) == 5
+    assert _retryable_status(Exception("RESOURCE_EXHAUSTED")) == 5
+    assert _retryable_status(Exception("overloaded, try later")) == 5
+    assert _retryable_status(Exception("retry in 300s")) == 30  # capped
+    assert _retryable_status(Exception("Error code: 500 boom")) == 0
+    assert _retryable_status(Exception("Connection error")) == 0
+
+
+def test_create_retries_then_succeeds(monkeypatch):
+    import sk.agent as agent
+
+    calls = {"n": 0}
+    notes: list[str] = []
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise Exception("Error code: 429 ... Please retry in 0.1s")
+            return "STREAM-OK"
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    import time as _t
+
+    monkeypatch.setattr(_t, "sleep", lambda s: None)
+    out = agent._create_with_retry(FakeClient(), {}, tries=3, on_token=notes.append)
+    assert out == "STREAM-OK" and calls["n"] == 3
+    assert any("retrying" in n for n in notes)
+
+
+def test_create_gives_up(monkeypatch):
+    import time as _t
+
+    import sk.agent as agent
+
+    calls = {"n": 0}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls["n"] += 1
+            raise Exception("Error code: 429 busy")
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(_t, "sleep", lambda s: None)
+    import pytest
+
+    with pytest.raises(Exception, match="429"):
+        agent._create_with_retry(FakeClient(), {}, tries=2)
+    assert calls["n"] == 2
+
+
+def test_create_no_retry_on_fatal():
+    import sk.agent as agent
+
+    calls = {"n": 0}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls["n"] += 1
+            raise Exception("Error code: 401 bad key")
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    import pytest
+
+    with pytest.raises(Exception, match="401"):
+        agent._create_with_retry(FakeClient(), {})
     assert calls["n"] == 1

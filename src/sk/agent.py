@@ -351,6 +351,48 @@ class _Msg:
         self.finish = finish  # stop | length | tool_calls | ...
 
 
+def _retryable_status(exc: BaseException) -> int:
+    """Seconds to wait before retry, 0 = don't retry. Honors RetryInfo hints."""
+    import re
+
+    msg = str(exc)
+    # explicit server hint wins, whatever the code
+    m = re.search(r"retry\s*(?:in|after)?\s*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
+    if m:
+        try:
+            return max(1, min(30, int(float(m.group(1)))))
+        except Exception:
+            pass
+    code = getattr(exc, "status_code", 0) or 0
+    if code in (429, 503) or "429" in msg or "503" in msg or "overloaded" in msg.lower() or "rate limit" in msg.lower() or "RESOURCE_EXHAUSTED" in msg:
+        return 5
+    return 0
+
+
+def _create_with_retry(client, kwargs: dict, tries: int = 3, on_token=None) -> object:
+    """chat.completions.create with backoff on rate limits. Streams status via on_token."""
+    import time as _t
+
+    last: BaseException | None = None
+    for attempt in range(tries):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as e:
+            wait = _retryable_status(e)
+            last = e
+            if not wait or attempt == tries - 1:
+                raise
+            note = f"[rate limited, retrying in {wait}s...]"
+            if on_token is not None:
+                try:
+                    on_token(note)  # type: ignore
+                except Exception:
+                    pass
+            _t.sleep(wait)
+    assert last is not None
+    raise last
+
+
 def _stream_chat(client, model: str, messages: list[dict], tools, temperature: float, max_tokens: int, extra: dict, on_token=None, on_reasoning=None) -> _Msg:
     """Streaming chat.completions with tool accumulation.
 
@@ -363,9 +405,11 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
     finish = ""
     tc_buf: dict[int, dict] = {}  # idx -> {id, name, args}
     try:
-        stream = client.chat.completions.create(
-            model=model, messages=messages, tools=tools, tool_choice="auto" if tools else "none",  # type: ignore
-            temperature=temperature, max_tokens=max_tokens, stream=True, extra_body=extra,  # type: ignore
+        stream = _create_with_retry(
+            client,
+            dict(model=model, messages=messages, tools=tools, tool_choice="auto" if tools else "none",
+                 temperature=temperature, max_tokens=max_tokens, stream=True, extra_body=extra),
+            on_token=on_token,
         )
         for chunk in stream:
             try:
@@ -417,9 +461,11 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
                             buf["args"] = (buf["args"] or "") + a
     except Exception as e:
         # fallback to non-streaming on error
-        resp = client.chat.completions.create(
-            model=model, messages=messages, tools=tools, tool_choice="auto" if tools else "none",  # type: ignore
-            temperature=temperature, max_tokens=max_tokens, stream=False, extra_body=extra,  # type: ignore
+        resp = _create_with_retry(
+            client,
+            dict(model=model, messages=messages, tools=tools, tool_choice="auto" if tools else "none",
+                 temperature=temperature, max_tokens=max_tokens, stream=False, extra_body=extra),
+            on_token=on_token,
         )
         m = resp.choices[0].message
         return _Msg(m.content or "", getattr(m, "tool_calls", None), getattr(m, "reasoning", "") or "", str(getattr(resp.choices[0], "finish_reason", "") or ""))
