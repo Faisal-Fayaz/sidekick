@@ -29,6 +29,39 @@ def osc52_sequence(text: str) -> str:
     return f"\x1b]52;c;{b64}\x07"
 
 
+def _serve(argv: list[str], data: bytes) -> bool:
+    """Start a clipboard owner without waiting for it.
+
+    X11 owners must stay alive to serve pastes, so waiting (like
+    subprocess.run does) hangs forever on xclip, and -loops 1 exits
+    without serving at all. Spawn detached; a fast non-zero exit means
+    real failure (no X, bad display). DEVNULL avoids pipe inheritance
+    keeping any waiter alive.
+    """
+    try:
+        p = subprocess.Popen(
+            argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return False
+    try:
+        assert p.stdin is not None
+        p.stdin.write(data)
+        p.stdin.close()
+    except BrokenPipeError:
+        pass
+    except Exception:
+        return False
+    try:
+        rc = p.wait(timeout=0.5)
+        return rc == 0
+    except subprocess.TimeoutExpired:
+        return True  # still running = serving pastes
+
+
 def copy_text(text: str) -> str:
     """Copy text to clipboard. Returns method used: wl-copy|xclip|xsel|osc52.
 
@@ -37,20 +70,16 @@ def copy_text(text: str) -> str:
     """
     if not text:
         raise ValueError("nothing to copy")
-    for bin_name, args in (
-        ("wl-copy", []),
-        ("xclip", ["-selection", "clipboard"]),
-        ("xsel", ["--clipboard", "--input"]),
-    ):
-        if shutil.which(bin_name):
-            try:
-                subprocess.run(
-                    [bin_name, *args], input=text.encode("utf-8", errors="replace"),
-                    timeout=5, check=True, capture_output=True,
-                )
-                return bin_name
-            except Exception:
-                pass  # try next backend
+    data = text.encode("utf-8", errors="replace")
+    if shutil.which("wl-copy"):
+        if _serve(["wl-copy"], data):
+            return "wl-copy"
+    if shutil.which("xclip"):
+        if _serve(["xclip", "-selection", "clipboard"], data):
+            return "xclip"
+    if shutil.which("xsel"):
+        if _serve(["xsel", "--clipboard", "--input"], data):
+            return "xsel"
     # last resort: terminal handles it
     sys.stdout.write(osc52_sequence(text))
     sys.stdout.flush()

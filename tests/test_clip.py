@@ -12,17 +12,58 @@ def test_osc52_format():
 
 
 def test_prefers_wl_copy(monkeypatch):
-    calls = []
+    started: list[list[str]] = []
+
+    class P:
+        def __init__(self, argv, **k):
+            started.append(argv)
+            self.stdin = type("S", (), {"write": lambda self, d: None, "close": lambda self: None})()
+
+        def wait(self, timeout=None):
+            return 0
+
     monkeypatch.setattr(clip.shutil, "which", lambda b: "/usr/bin/wl-copy" if b == "wl-copy" else None)
-    monkeypatch.setattr(clip.subprocess, "run", lambda *a, **k: calls.append(a) or type("R", (), {})())
+    monkeypatch.setattr(clip.subprocess, "Popen", P)
     assert clip.copy_text("hello") == "wl-copy"
-    assert calls
+    assert started and started[0][0] == "wl-copy"
 
 
 def test_falls_through_to_osc52(monkeypatch, capsys):
     monkeypatch.setattr(clip.shutil, "which", lambda b: None)
     assert clip.copy_text("hello") == "osc52"
     assert "52;c;" in capsys.readouterr().out
+
+
+def test_xclip_detached_not_awaited(monkeypatch):
+    """xclip serves indefinitely: must spawn, never wait (the OSC52 bug)."""
+    waited: list[bool] = []
+
+    class P:
+        def __init__(self, argv, **k):
+            assert "-loops" not in argv  # no serve-limits; daemon serves on
+            self.stdin = type("S", (), {"write": lambda self, d: None, "close": lambda self: None})()
+
+        def wait(self, timeout=None):
+            waited.append(True)
+            raise clip.subprocess.TimeoutExpired(cmd="x", timeout=timeout)
+
+    monkeypatch.setattr(clip.shutil, "which", lambda b: "/usr/bin/xclip" if b == "xclip" else None)
+    monkeypatch.setattr(clip.subprocess, "Popen", P)
+    assert clip.copy_text("hello") == "xclip"
+    assert waited  # polled, then trusted as serving
+
+
+def test_dead_backend_falls_through(monkeypatch):
+    class P:
+        def __init__(self, *a, **k):
+            self.stdin = type("S", (), {"write": lambda self, d: None, "close": lambda self: None})()
+
+        def wait(self, timeout=None):
+            return 1  # fast non-zero = real failure
+
+    monkeypatch.setattr(clip.shutil, "which", lambda b: "/usr/bin/xclip")
+    monkeypatch.setattr(clip.subprocess, "Popen", P)
+    assert clip.copy_text("hello") == "osc52"
 
 
 def test_empty_raises():
