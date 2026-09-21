@@ -15,7 +15,7 @@ from .agent import get_client, run_agent
 from .config import Config
 from .store import get_history, save_message
 
-app = typer.Typer(add_completion=False, help="Sidekick - local terminal companion (Ollama)")
+app = typer.Typer(add_completion=True, help="Sidekick - local terminal companion (Ollama)")
 console = Console()
 
 

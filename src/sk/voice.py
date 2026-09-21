@@ -1,11 +1,14 @@
-"""Push-to-talk voice input: arecord capture + local faster-whisper STT.
+"""Push-to-talk voice input: cross-platform capture + local faster-whisper STT.
 
-No hard deps: arecord ships with the OS, faster-whisper installs on demand
-(`sk talk` asks first, ~800MB + ~75MB tiny model). Everything stays local.
+Capture backends: Linux -> arecord (ALSA), macOS -> sox (CoreAudio), fallback
+ffmpeg. No hard deps: arecord ships with the OS, sox/ffmpeg via brew; whisper
+installs on demand (`sk talk` asks first, ~800MB + ~75MB tiny model).
+Everything stays local.
 """
 
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -15,29 +18,77 @@ STT_MODEL_DEFAULT = "tiny"
 INSTALL_HINT = "run `sk talk --install` (downloads ~800MB deps + ~75MB model, stays offline after)"
 
 
+def detect_recorder() -> str | None:
+    """First available capture binary, preferring the OS-native one."""
+    order = ("sox", "ffmpeg", "arecord") if platform.system() == "Darwin" else ("arecord", "sox", "ffmpeg")
+    for tool in order:
+        if shutil.which(tool):
+            return tool
+    return None
+
+
+def recorder_install_hint() -> str:
+    return ("install arecord (`sudo apt install alsa-utils`) on Linux, "
+            "or sox/ffmpeg (`brew install sox`) on macOS")
+
+
+def _capture_start(rec: str, out_wav: str, device: str, rate: int) -> list[str]:
+    """Interactive capture argv (stop via SIGINT -> clean finalize)."""
+    if rec == "arecord":
+        return ["arecord", "-D", device, "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav]
+    if rec == "sox":
+        src = ["sox", "-t", "coreaudio", device] if device not in ("", "default") else ["sox", "-d"]
+        return src + ["-r", str(rate), "-c", "1", "-b", "16", "-t", "wav", out_wav]
+    if platform.system() == "Darwin":
+        dev = device if device not in ("", "default") else ":0"
+        src = ["ffmpeg", "-f", "avfoundation", "-i", dev]
+    else:
+        src = ["ffmpeg", "-f", "alsa", "-i", device or "default"]
+    return src + ["-ar", str(rate), "-ac", "1", "-y", out_wav]
+
+
+def _capture_once(rec: str, out_wav: str, device: str, rate: int, duration: int) -> list[str]:
+    """Fixed-duration capture argv."""
+    if rec == "arecord":
+        return ["arecord", "-D", device, "-d", str(duration), "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav]
+    if rec == "sox":
+        src = ["sox", "-t", "coreaudio", device] if device not in ("", "default") else ["sox", "-d"]
+        return src + ["-r", str(rate), "-c", "1", "-b", "16", "-t", "wav", out_wav, "trim", "0", str(duration)]
+    argv = _capture_start(rec, out_wav, device, rate)
+    argv.insert(-1, "-t")
+    argv.insert(-1, str(duration))
+    return argv
+
+
 def check_mic() -> tuple[bool, str]:
-    if shutil.which("arecord") is None:
-        return (False, "arecord not found — `sudo apt install alsa-utils`")
+    rec = detect_recorder()
+    if rec is None:
+        return (False, f"no audio recorder found — {recorder_install_hint()}")
+    if rec != "arecord":
+        return (True, f"mic ready ({rec})")  # sox/ffmpeg-able: treat binary presence as ready
     try:
         r = subprocess.run(["arecord", "-l"], capture_output=True, text=True, timeout=10)
         if "List of CAPTURE" in (r.stdout or ""):
             return (True, "mic ready")
-        return (False, "no capture devices listed")
+        return (False, "no capture devices listed (arecord -l found none)")
     except Exception as e:
         return (False, f"arecord probe failed: {e}")
 
 
 def start_recording(out_wav: str, device: str = "default", rate: int = 16000) -> subprocess.Popen:
-    """Start arecord in the background. Caller stops it (Enter) via stop_recording.
+    """Start the native recorder in the background. Caller stops it (Enter) via stop_recording.
 
-    arecord's stderr goes to <out_wav>.stderr.log so real failures (busy
+    Recorder stderr goes to <out_wav>.stderr.log so real failures (busy
     device, bad format) survive instead of vanishing into DEVNULL.
     """
+    rec = detect_recorder()
+    if rec is None:
+        raise RuntimeError(f"no audio recorder found — {recorder_install_hint()}")
     log_path = out_wav + ".stderr.log"
     log_fh = open(log_path, "wb")
     try:
         proc = subprocess.Popen(
-            ["arecord", "-D", device, "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav],
+            _capture_start(rec, out_wav, device, rate),
             stdout=subprocess.DEVNULL,
             stderr=log_fh,
         )
@@ -62,7 +113,7 @@ def _stderr_tail(proc: subprocess.Popen, wav_path: str, n: int = 300) -> str:
 def stop_recording(proc: subprocess.Popen, timeout: int = 5, wav_path: str = "") -> str | None:
     """Stop recorder gracefully. Returns None on success, error string otherwise.
 
-    NOTE: SIGTERM makes arecord exit 1 even on success ("Aborted by signal
+    NOTE: SIGTERM makes recorders exit 1 even on success ("Aborted by signal
     Terminated"), so we stop with SIGINT (clean finalize, exit 0) and accept
     rc==1 only when the wav file is valid.
     """
@@ -95,8 +146,8 @@ def stop_recording(proc: subprocess.Popen, timeout: int = 5, wav_path: str = "")
         except OSError:
             pass
     if detail:
-        return f"arecord exited {proc.returncode}: {detail}"
-    return f"arecord exited {proc.returncode}"
+        return f"recorder exited {proc.returncode}: {detail}"
+    return f"recorder exited {proc.returncode}"
 
 
 def ensure_stt() -> tuple[bool, str]:
@@ -165,9 +216,37 @@ def transcribe(wav_path: str, model_size: str = STT_MODEL_DEFAULT) -> str:
     return text
 
 
+def _wav_sample_stats(sampwidth: int, frames: bytes) -> tuple[int, int]:
+    """(peak, rms) equivalent of audioop.max/rms without stdlib audioop (removed in 3.13)."""
+    import struct
+
+    fmt_char = {1: "B", 2: "h", 4: "i"}.get(sampwidth)
+    if fmt_char is None:
+        raise ValueError(f"unsupported PCM width {sampwidth}")
+    # wav is little-endian; endianness must appear BEFORE the count in struct syntax
+    endian = "" if sampwidth == 1 else "<"
+    n = len(frames) // sampwidth
+    if n == 0:
+        return (0, 0)
+    peak = 0
+    sumsq = 0
+    step = 8192 * sampwidth
+    for off in range(0, len(frames), step):
+        block = frames[off:off + step]
+        vals = struct.unpack(f"{endian}{len(block) // sampwidth}{fmt_char}", block)
+        if sampwidth == 1:
+            vals = tuple(v - 128 for v in vals)
+        for v in vals:
+            a = v if v >= 0 else -v
+            if a > peak:
+                peak = a
+            sumsq += v * v
+    rms = int((sumsq / n) ** 0.5) if n else 0
+    return peak, rms
+
+
 def mic_level(duration: int = 3, device: str = "default") -> dict:
     """Record briefly and measure peak/RMS. Returns dict with verdict + hint."""
-    import audioop
     import math
     import wave
 
@@ -179,8 +258,7 @@ def mic_level(duration: int = 3, device: str = "default") -> dict:
     except Exception as e:
         return {"ok": False, "verdict": "unreadable", "hint": f"could not read recording: {e}"}
     try:
-        peak = audioop.max(frames, width)
-        rms = audioop.rms(frames, width)
+        peak, rms = _wav_sample_stats(width, frames)
     except Exception as e:
         return {"ok": False, "verdict": "unreadable", "hint": f"audio parse failed: {e}"}
     full = float(1 << (width * 8 - 1))
@@ -197,9 +275,12 @@ def mic_level(duration: int = 3, device: str = "default") -> dict:
 
 def record_once(duration: int, device: str = "default") -> Path:
     """Fixed-duration capture for tests/scripting. Returns wav path."""
+    rec = detect_recorder()
+    if rec is None:
+        raise RuntimeError(f"no audio recorder found — {recorder_install_hint()}")
     out = Path(tempfile.mkdtemp(prefix="sk-voice-")) / "in.wav"
     subprocess.run(
-        ["arecord", "-D", device, "-d", str(duration), "-r", "16000", "-f", "S16_LE", "-c", "1", "-t", "wav", str(out)],
+        _capture_once(rec, str(out), device, 16000, duration),
         capture_output=True,
         timeout=duration + 15,
         check=True,

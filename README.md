@@ -113,7 +113,7 @@ sk talk [-d SECS] [--stt-model base] [--device hw:2,0]  # Enter records, Enter s
 sk mic-test                                             # peak dB + silent/quiet/good verdict
 ```
 
-Capture via `arecord`, transcription via local faster-whisper int8, transcript lands editable in the prompt. In the TUI, `ctrl+t` (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted after each take.
+Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS), transcription via local faster-whisper int8, transcript lands editable in the prompt. In the TUI, `ctrl+t` (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted after each take.
 
 ## Providers (BYO key)
 

@@ -1,4 +1,4 @@
-"""Clipboard copy without hard deps. Order: wl-copy -> xclip -> xsel -> OSC52.
+"""Clipboard copy without hard deps. Order: wl-copy -> pbcopy (macOS) -> xclip -> xsel -> OSC52.
 
 Tool backends are reliable. OSC52 is a last resort: many terminals
 (gnome-terminal/VTE included) silently ignore it, so callers must warn
@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 
-TOOL_BACKENDS = ("wl-copy", "xclip", "xsel")
+TOOL_BACKENDS = ("wl-copy", "pbcopy", "xclip", "xsel")
 
 
 def backends_available() -> list[str]:
@@ -21,7 +21,7 @@ def backends_available() -> list[str]:
 
 
 def install_hint() -> str:
-    return "no clipboard helper found — `sudo apt install xclip`, then retry"
+    return "no clipboard helper found — `sudo apt install xclip` (Linux) or use pbcopy/OSC52 on macOS"
 
 
 def osc52_sequence(text: str) -> str:
@@ -74,6 +74,9 @@ def copy_text(text: str) -> str:
     if shutil.which("wl-copy"):
         if _serve(["wl-copy"], data):
             return "wl-copy"
+    if shutil.which("pbcopy"):
+        if _serve(["pbcopy"], data):
+            return "pbcopy"
     if shutil.which("xclip"):
         if _serve(["xclip", "-selection", "clipboard"], data):
             return "xclip"
