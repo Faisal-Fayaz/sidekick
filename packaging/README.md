@@ -1,26 +1,45 @@
 # Distribution notes
 
-`sidekick-agent` is first published to **PyPI**; every other channel builds from that.
+`sidekick-agent` is published to PyPI when code is **merged to `main`** of the
+canonical repository — **`Faisal01011/sidekick`** — and nothing else. Every
+other channel builds from the PyPI release.
 
 ## PyPI (primary)
 
-Built with `uv build` (hatchling backend) → sdist + wheel in `dist/`.
-
 ```bash
-make build && make check      # local: builds + twine check
-make publish                  # needs ~/.pypirc or TWINE creds (not stored here)
+make build && make check      # local: builds sdist+wheel + twine check
+make publish                  # manual PyPI upload (needs ~/.pypirc / TWINE creds)
 make publish-test             # → test.pypi.org
 ```
 
-Publishing to PyPI is a zero-token, tag-driven **GitHub Actions** workflow
-(`.github/workflows/release.yml`) using [trusted publishing].
+Automated publishing is credential-free and merge-driven
+(`.github/workflows/release.yml`):
 
-1. Bump `__version__` in `src/sk/__init__.py` (single source of truth).
-2. `git tag vX.Y.Z` and `git push origin vX.Y.Z`.
-3. One-time setup (any machine — done once on the account that owns PyPI):
-   - `https://pypi.org/manage/account/publishing/` → add publisher for
-     **Irfanwani/sidekick**, workflow `release.yml`, environment `pypi`.
-   - Same on `test.pypi.org` for the `testpypi` environment.
+1. In the PR that will become a release, bump `__version__` in
+   `src/sk/__init__.py` (single source of truth).
+2. Merge the PR into `main` → the release workflow runs **only** on
+   `Faisal01011/sidekick`, publishes the sdist+wheel to PyPI via [trusted publishing],
+   and creates a `v<version>` GitHub Release with the artifacts.
+3. The workflow is gated on `github.repository == 'Faisal01011/sidekick'`, so
+   merges/pushes in **forks can never publish** — and if it somehow ran there,
+   the OIDC token's `repo_owner` would fail PyPI's trusted-publisher check.
+4. If version `__version__` is already on PyPI, the workflow exits silently
+   (non-release merges are no-ops).
+
+### One-time trusted-publisher setup (PyPI account side)
+
+On the PyPI account that will own `sidekick-agent`, register a publishing
+source at <https://pypi.org/manage/account/publishing/>:
+
+- **Owner** `Faisal01011` · **Repository** `sidekick` · **Workflow** `release.yml`
+- **Environment** `pypi` · **Project** `sidekick-agent`
+
+Same on <https://test.pypi.org/manage/account/publishing/> for the `testpypi`
+environment (optional, for manual test runs).
+
+> The "Owner" must be the GitHub user who **owns the repo the workflow runs in**
+> (Faisal01011), not the person who pushes or registers. It matches the
+> `repo_owner` claim GitHub puts in the OIDC token.
 
 Install endpoints (see root README):
 `uv tool install sidekick-agent` · `pipx install sidekick-agent` · `pip install sidekick-agent` · `pip install sidekick-agent[voice]`

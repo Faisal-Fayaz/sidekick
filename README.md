@@ -78,13 +78,16 @@ Without `[voice]` you get everything except Talk/mic (installs on first use inst
 
 The published name is **`sidekick-agent`** (the `sidekick` name is taken on
 PyPI); the command stays `sk`. Version is a single source of truth in
-`src/sk/__init__.py`. Publishing is tag-driven and credential-free (GitHub
-Actions trusted publishing → PyPI) — details in [`packaging/README.md`](packaging/README.md).
+`src/sk/__init__.py`. Publishing is automatic and credential-free: when a PR
+is merged to `main` of the canonical repo
+[`Faisal01011/sidekick`](https://github.com/Faisal01011/sidekick) with a bumped
+`__version__`, GitHub Actions trusted-publishes to PyPI and opens a GitHub
+Release (forks can never publish) — details in [`packaging/README.md`](packaging/README.md).
 
 **From source (dev):**
 
 ```bash
-git clone https://github.com/Irfanwani/sidekick && cd sidekick
+git clone https://github.com/Faisal01011/sidekick && cd sidekick
 uv tool install -e ".[voice]"   # editable dev install; STT included
 sk doctor
 ```

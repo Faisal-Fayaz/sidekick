@@ -55,11 +55,11 @@ dev = [
 sk = "sk.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/Irfanwani/sidekick"
-Repository = "https://github.com/Irfanwani/sidekick"
-Issues = "https://github.com/Irfanwani/sidekick/issues"
-Documentation = "https://github.com/Irfanwani/sidekick/tree/main/README.md"
-Changelog = "https://github.com/Irfanwani/sidekick/releases"
+Homepage = "https://github.com/Faisal01011/sidekick"
+Repository = "https://github.com/Faisal01011/sidekick"
+Issues = "https://github.com/Faisal01011/sidekick/issues"
+Documentation = "https://github.com/Faisal01011/sidekick/tree/main/README.md"
+Changelog = "https://github.com/Faisal01011/sidekick/releases"
 
 [build-system]
 requires = ["hatchling"]
