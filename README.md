@@ -180,8 +180,7 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 ## Roadmap
 
-- [x] Voice input (local STT) · [x] Skills (superpowers) · [x] Sessions · [x] Providers/BYOK · [x] Eval harness
-- [ ] Spoken replies (offline TTS) · [ ] Native Anthropic provider · [ ] Daemon as a systemd service · [ ] `sk skills search`
+See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, `v0.2.0` / `v0.3.0` milestones, done list). It changes by pull request only.
 
 ## License
 
