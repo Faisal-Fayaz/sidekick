@@ -8,10 +8,26 @@ from pathlib import Path
 
 DB_PATH = Path.home() / ".sidekick" / "history.db"
 
+# Schema version, stamped via PRAGMA user_version. Bump when adding tables or
+# columns; add a _migrate_N_to_N+1() and wire it in _migrate(). v1 = current
+# tables (messages/memories/todos/shell_history + memories_fts).
+SCHEMA_VERSION = 1
 
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+
+def _get_version(conn: sqlite3.Connection) -> int:
+    try:
+        row = conn.execute("PRAGMA user_version").fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def _set_version(conn: sqlite3.Connection, v: int) -> None:
+    conn.execute(f"PRAGMA user_version = {int(v)}")
+
+
+def _migrate_0_to_1(conn: sqlite3.Connection) -> None:
+    """Fresh DB (or pre-versioning DB): create current tables. Idempotent."""
     conn.execute(
         """CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +69,27 @@ def _connect() -> sqlite3.Connection:
         conn.commit()
     except Exception:
         pass
+
+
+def _migrate(conn: sqlite3.Connection) -> int:
+    """Bring conn up to SCHEMA_VERSION. Returns final version. Never drops data."""
+    v = _get_version(conn)
+    if v > SCHEMA_VERSION:
+        # DB from a newer sidekick; leave untouched (forward-compat).
+        return v
+    if v < 1:
+        _migrate_0_to_1(conn)
+        v = 1
+    # future: if v < 2: _migrate_1_to_2(conn); v = 2
+    _set_version(conn, v)
+    conn.commit()
+    return v
+
+
+def _connect() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
+    _migrate(conn)
     conn.commit()
     return conn
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -51,14 +51,9 @@ HELP_TEXT = (
 
 
 def _resolve_model_name(cfg, raw: str) -> str:
-    from .config import provider_tier
+    from .config import resolve_alias
 
-    m = (raw or "").strip()
-    if m == "fast":
-        return provider_tier(cfg.provider, "fast", cfg.model)
-    if m == "smart":
-        return provider_tier(cfg.provider, "smart", cfg.model)
-    return m
+    return resolve_alias(cfg.provider, raw, cfg.model)
 
 
 def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
@@ -110,7 +105,7 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(handled=True, text=f"provider → `{p}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)")
 
     if cmd == "clear":
-        from .store import clear_session, new_session_id
+        from .store import new_session_id
 
         fresh = new_session_id(session.split("-")[0] if "-" in session else session)
         return SlashOut(handled=True, text=f"_fresh session `{fresh}`_", clear_view=True, switch_session=fresh)

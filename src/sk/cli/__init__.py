@@ -1,129 +1,32 @@
-"""CLI: sk chat / sk run / sk models / sk doctor / sk config"""
+"""CLI: sk chat / sk run / sk models / sk doctor / sk config
+
+Commands live here; shared pieces in .base (app/console/_cfg),
+.approvers (approval + streaming callbacks), .resolve (model aliases).
+All names below preserve the old `sk.cli.X` surface.
+"""
 
 from __future__ import annotations
 
 import time
-import uuid
 from pathlib import Path
 
 import typer
-from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .agent import get_client, run_agent
-from .config import Config
-from .store import get_history, save_message
+from sk.agent import run_agent
+from sk.config import Config
+from sk.store import get_history, save_message
 
-app = typer.Typer(add_completion=True, help="Sidekick - local terminal companion (Ollama)")
-console = Console()
+from .approvers import _make_approver, _make_approver_state, _make_on_token, _make_on_tool
+from .base import _cfg, app, console
+from .resolve import _resolve_model
 
-
-def _cfg() -> Config:
-    cfg = Config.load()
-    cfg.ensure_created()
-    return cfg
-
-
-def _make_approver(auto_yes: bool):
-    from .tools import APPROVAL_TOOLS
-
-    def approve(name: str, args: dict) -> bool:
-        if name not in APPROVAL_TOOLS:
-            return True
-        target = args.get("path", args.get("cmd", "?"))
-        preview = ""
-        if name == "write_file":
-            c = str(args.get("content", ""))
-            preview = c[:600] + ("... [truncated]" if len(c) > 600 else "")
-        elif name == "make_dir":
-            preview = "(new directory)"
-        elif name == "shell":
-            preview = f"$ {str(args.get('cmd', ''))[:600]}"
-        elif name == "delete_file":
-            preview = "(PERMANENT delete)"
-        else:
-            old = str(args.get("old_string", ""))[:300]
-            new = str(args.get("new_string", ""))[:300]
-            preview = f"OLD:\n{old}\nNEW:\n{new}"
-        console.print(Panel(f"[bold yellow]approval[/] {name} -> [cyan]{target}[/cyan]\n{preview}", expand=False))
-        if auto_yes:
-            console.print("[dim]--yes: auto-approved[/dim]")
-            return True
-        try:
-            return typer.confirm("Allow?", default=False)
-        except (EOFError, KeyboardInterrupt):
-            return False
-
-    return approve
-
-
-def _make_approver_state(state: dict):
-    """Like _make_approver but reads live state['yolo'] (for /yolo toggling)."""
-
-    def approve(name: str, args: dict) -> bool:
-        from .tools import APPROVAL_TOOLS
-
-        if name not in APPROVAL_TOOLS:
-            return True
-        if state.get("yolo"):
-            console.print(f"[dim]yolo: auto-approved {name} -> {args.get('path', '?')}[/dim]")
-            return True
-        return _make_approver(False)(name, args)
-
-    return approve
-
-
-def _make_on_tool():
-    def on_tool(name, args):
-        # newline first since tokens stream without newlines
-        console.print()
-        console.print(f"[dim]○ tool: {name} {args if name not in ('write_file',) else {'path': args.get('path')}}[/dim]")
-
-    return on_tool
-
-
-def _make_on_token():
-    import sys
-
-    state = {"n": 0}
-
-    def on_token(tok: str):
-        state["n"] += len(tok)
-        sys.stdout.write(tok)
-        sys.stdout.flush()
-
-    on_token.state = state  # type: ignore
-    return on_token
-
-
-def _resolve_model(cfg, model_opt: str, task: str = "") -> str:
-    """--model > SIDEKICK_MODEL > config. Supports fast/smart/auto aliases.
-
-    fast/smart resolve per provider (ollama: llama3.2:3b / qwen2.5-coder:7b).
-    auto = router picks a tier from task text (sk run default).
-    """
-    if model_opt:
-        from .config import provider_tier
-
-        m = model_opt.strip()
-        if m == "fast":
-            return provider_tier(cfg.provider, "fast", cfg.model)
-        if m == "smart":
-            return provider_tier(cfg.provider, "smart", cfg.model)
-        if m == "auto":
-            from .router import FAST_MODEL, SMART_MODEL, pick_model
-
-            picked, reason = pick_model(task, FAST_MODEL)
-            if cfg.provider in ("ollama", "lmstudio", "custom"):
-                console.print(f"[dim]router → {picked} ({reason})[/dim]")
-                return picked
-            tier = "smart" if picked == SMART_MODEL else "fast"
-            resolved = provider_tier(cfg.provider, tier, cfg.model)
-            console.print(f"[dim]router → {resolved} ({reason})[/dim]")
-            return resolved
-        return m
-    return cfg.model
+__all__ = [
+    "app", "console", "_cfg",
+    "_make_approver", "_make_approver_state", "_make_on_tool", "_make_on_token",
+    "_resolve_model",
+]
 
 
 @app.command()
@@ -135,7 +38,7 @@ def chat(
     cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
 ):
     """Interactive REPL: sk chat — try /help"""
-    from .store import latest_session, new_session_id
+    from sk.store import latest_session, new_session_id
 
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model)
@@ -161,7 +64,7 @@ def chat(
             break
 
         if user.startswith("/"):
-            from . import slash as _slash
+            from sk import slash as _slash
 
             out = _slash.handle(user, session=session, cfg=cfg, state=state)
             if out.quit:
@@ -216,7 +119,7 @@ def talk(
     import tempfile
     import time as _t
 
-    from . import voice as _voice
+    from sk import voice as _voice
 
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model)
@@ -240,7 +143,6 @@ def talk(
     approve = _make_approver_state(state)
     on_tool = _make_on_tool()
     on_token = _make_on_token()
-    import tempfile
 
     while True:
         try:
@@ -252,7 +154,7 @@ def talk(
             console.print("bye.")
             break
         if first.startswith("/") and first.lower() not in ("/quit",):
-            from . import slash as _slash
+            from sk import slash as _slash
 
             out = _slash.handle(first, session=session, cfg=cfg, state=state)
             if out.quit:
@@ -317,7 +219,7 @@ def mic_test(
     device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
 ):
     """Check mic levels: records, measures peak/RMS, tells you what to fix."""
-    from . import voice as _voice
+    from sk import voice as _voice
 
     console.print(f"[dim]recording {duration}s — speak normally...[/dim]")
     try:
@@ -342,7 +244,7 @@ def _code_version() -> str:
     except Exception:
         pass
     try:
-        from . import __version__
+        from sk import __version__
 
         return __version__
     except Exception:
@@ -392,7 +294,7 @@ def run(
 @app.command()
 def models():
     """List models for the current provider."""
-    from .auth import fetch_models
+    from sk.auth import fetch_models
 
     cfg = _cfg()
     try:
@@ -415,13 +317,13 @@ def models():
 @app.command()
 def doctor():
     """Check provider + model + config health."""
-    from .auth import provider_status
+    from sk.auth import provider_status
 
     cfg = _cfg()
     console.print(f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan] code=[cyan]{_code_version()}[/cyan]")
     ok, msg = provider_status(cfg)
     if ok and cfg.provider in ("ollama", "lmstudio"):
-        from .auth import fetch_models
+        from sk.auth import fetch_models
 
         try:
             names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
@@ -439,7 +341,7 @@ def doctor():
         if cfg.provider == "ollama":
             console.print("[dim]Run `ollama serve` in another terminal.[/dim]")
     # quick tool sanity
-    from .tools import tool_exec, tool_list_dir
+    from sk.tools import tool_exec
 
     console.print(f"[dim]tools sanity: {tool_exec('pwd')[:80]}[/dim]")
 
@@ -453,7 +355,7 @@ def config(
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
     """View/set config. Keys are chmod-600’d; env vars always win."""
-    from .config import PRESETS
+    from sk.config import PRESETS
 
     cfg = _cfg()
     changed = False
@@ -493,7 +395,7 @@ app.add_typer(auth_app, name="auth")
 
 
 def _pick_provider(default: str = "") -> str:
-    from .config import PRESETS
+    from sk.config import PRESETS
 
     names = list(PRESETS)
     if default and default in names:
@@ -526,8 +428,8 @@ def auth_add(
     key: str = typer.Option("", help="Key inline (hidden prompt if omitted)"),
 ):
     """Add a key: sk auth add groq (validates live before saving)."""
-    from .auth import validate_key
-    from .config import PRESETS
+    from sk.auth import validate_key
+    from sk.config import PRESETS
 
     cfg = _cfg()
     p = provider.strip().lower() or _pick_provider(cfg.provider)
@@ -555,7 +457,7 @@ def auth_add(
 @auth_app.command("list")
 def auth_list():
     """Show providers + masked key state."""
-    from .config import PRESETS
+    from sk.config import PRESETS
 
     cfg = _cfg()
     for n in PRESETS:
@@ -567,15 +469,15 @@ def auth_list():
 @auth_app.command("status")
 def auth_status(provider: str = typer.Argument("", help="Provider, omit for current")):
     """Validate reachability + key for a provider."""
-    from .auth import provider_status
+    from sk.auth import provider_status
 
     cfg = _cfg()
     if provider.strip():
-        from .config import PRESETS
+        from sk.config import PRESETS
 
         p = provider.strip().lower()
         if p not in PRESETS:
-            console.print(f"[red]unknown provider[/red]")
+            console.print("[red]unknown provider[/red]")
             raise typer.Exit(1)
         import copy
 
@@ -592,7 +494,7 @@ def auth_status(provider: str = typer.Argument("", help="Provider, omit for curr
 @auth_app.command("remove")
 def auth_remove(provider: str = typer.Argument("", help="Provider, omit for current")):
     """Forget a key (and reset model default)."""
-    from .config import PRESETS
+    from sk.config import PRESETS
 
     cfg = _cfg()
     p = (provider.strip().lower() or cfg.provider)
@@ -608,8 +510,8 @@ def auth_remove(provider: str = typer.Argument("", help="Provider, omit for curr
 @app.command()
 def model():
     """Interactive picker: provider → live model list → default."""
-    from .auth import chat_models, fetch_models
-    from .config import PRESETS
+    from sk.auth import chat_models, fetch_models
+    from sk.config import PRESETS
 
     cfg = _cfg()
     p = _pick_provider(cfg.provider)
@@ -637,7 +539,7 @@ def model():
 
 def _pick_model_name(p: str, names: list[str], cfg) -> str:
     """Numbered curated list, preset default first + Enter-to-accept."""
-    from .config import PRESETS
+    from sk.config import PRESETS
 
     if not names:
         console.print("[yellow]empty list.[/yellow]")
@@ -670,8 +572,8 @@ def _pick_model_name(p: str, names: list[str], cfg) -> str:
 
 def _connect_flow() -> Config:
     """Shared provider → key → validate → model flow. Returns saved cfg."""
-    from .auth import ping, validate_key
-    from .config import PRESETS
+    from sk.auth import validate_key
+    from sk.config import PRESETS
 
     cfg = _cfg()
     p = _pick_provider(cfg.provider)
@@ -690,7 +592,7 @@ def _connect_flow() -> Config:
         cfg.model = PRESETS[p]["model"]
         cfg.save()
         console.print("[green]key saved (chmod 600).[/green]")
-    from .auth import chat_models, fetch_models
+    from sk.auth import chat_models, fetch_models
 
     try:
         names = chat_models(fetch_models(p, base, cfg.effective_api_key()))
@@ -706,7 +608,7 @@ def _connect_flow() -> Config:
 @app.command()
 def connect():
     """Connect a provider: pick → key → model → ping. The one-command setup."""
-    from .auth import ping
+    from sk.auth import ping
 
     cfg = _connect_flow()
     console.print("[dim]ping...[/dim]")
@@ -720,7 +622,7 @@ def connect():
 @app.command()
 def setup():
     """Full setup: connect flow + shell hook. (For just keys: `sk connect`.)"""
-    from .auth import ping
+    from sk.auth import ping
 
     console.print(Panel("[bold]sidekick setup[/] — connect, then hook.", expand=False))
     cfg = _connect_flow()
@@ -740,7 +642,7 @@ def setup():
 @app.command()
 def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers fast model'")):
     """Save a memory: sk remember \"prefers qwen3:4b\" """
-    from .store import save_memory
+    from sk.store import save_memory
 
     console.print(f"[green]{save_memory(text)}[/green] {text[:120]}")
 
@@ -748,7 +650,7 @@ def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers f
 @app.command(name="recall")
 def recall_cmd(query: str = typer.Argument("", help="Search terms (empty = recent)")):
     """Search memories: sk recall \"model\" """
-    from .store import recall_memories
+    from sk.store import recall_memories
 
     hits = recall_memories(query, limit=10)
     if not hits:
@@ -761,7 +663,7 @@ def recall_cmd(query: str = typer.Argument("", help="Search terms (empty = recen
 @app.command(name="memories")
 def memories_cmd():
     """List all memories."""
-    from .store import list_memories
+    from sk.store import list_memories
 
     hits = list_memories(limit=50)
     if not hits:
@@ -774,7 +676,7 @@ def memories_cmd():
 @app.command()
 def forget(query: str = typer.Argument(..., help="Substring to delete")):
     """Delete matching memories: sk forget \"qwen\" """
-    from .store import forget_memory
+    from sk.store import forget_memory
 
     console.print(f"[yellow]{forget_memory(query)}[/yellow]")
 
@@ -786,7 +688,7 @@ app.add_typer(todo_app, name="todo")
 @todo_app.command("add")
 def todo_add(text: str = typer.Argument(..., help="Todo text")):
     """Add: sk todo add \"clean disk\" """
-    from .store import add_todo
+    from sk.store import add_todo
 
     console.print(f"[green]{add_todo(text)}[/green]")
 
@@ -794,7 +696,7 @@ def todo_add(text: str = typer.Argument(..., help="Todo text")):
 @todo_app.command("list")
 def todo_list(all: bool = typer.Option(False, "--all", help="Include done")):
     """List: sk todo list """
-    from .store import list_todos
+    from sk.store import list_todos
 
     rows = list_todos(open_only=not all)
     if not rows:
@@ -808,7 +710,7 @@ def todo_list(all: bool = typer.Option(False, "--all", help="Include done")):
 @todo_app.command("done")
 def todo_done(tid: int = typer.Argument(..., help="Todo id")):
     """Done: sk todo done 1 """
-    from .store import complete_todo
+    from sk.store import complete_todo
 
     console.print(f"[green]{complete_todo(tid)}[/green]")
 
@@ -816,7 +718,7 @@ def todo_done(tid: int = typer.Argument(..., help="Todo id")):
 @todo_app.command("clear")
 def todo_clear():
     """Clear done: sk todo clear """
-    from .store import clear_todos
+    from sk.store import clear_todos
 
     console.print(f"[yellow]{clear_todos()}[/yellow]")
 
@@ -854,7 +756,7 @@ def hook_log(
     cwd: str = typer.Option("", "--cwd", help="Working dir"),
 ):
     """Internal: called by shell hook. Not for manual use."""
-    from .store import log_shell
+    from sk.store import log_shell
 
     log_shell(cmd, cwd, exit)
 
@@ -862,7 +764,7 @@ def hook_log(
 @app.command()
 def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show")):
     """Show recent shell commands: sk history """
-    from .store import list_shell
+    from sk.store import list_shell
 
     rows = list_shell(limit=limit)
     if not rows:
@@ -879,7 +781,7 @@ def oops(
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable streaming"),
 ):
     """Explain last failed command: sk oops """
-    from .store import last_failed
+    from sk.store import last_failed
 
     fail = last_failed()
     if not fail:
@@ -888,9 +790,8 @@ def oops(
     _, cmd, cwd, rc = fail
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model)
-    from .store import get_history
-
-    from .agent import run_agent
+    from sk.agent import run_agent
+    from sk.store import get_history
 
     console.print(f"[dim]last failure (exit {rc}): {cmd} @ {cwd}[/dim]")
     console.print("[dim]working... (streams live)[/dim]")
@@ -952,7 +853,7 @@ def brief(
     """Morning digest: system + git + memories. Instant, no LLM unless --smart."""
     from rich.table import Table
 
-    from .brief import DEFAULT_PROJECTS, gather_brief
+    from sk.brief import DEFAULT_PROJECTS, gather_brief
 
     projs = DEFAULT_PROJECTS + list(project or [])
     data = gather_brief(projs)
@@ -1009,12 +910,12 @@ def brief(
     if smart:
         cfg = _cfg()
         cfg.model = _resolve_model(cfg, model)
-        from .agent import run_agent
-        from .store import get_history
+        from sk.agent import run_agent
+        from sk.store import get_history
 
         digest = f"SYSTEM:\n{sysinfo[:1500]}\nPROJECTS:\n{data['projects']}\nMEMORIES:\n{mems[:5]}"
         console.print("[dim]summarizing...[/dim]")
-        ans = run_agent(
+        run_agent(
             f"Give a 3-bullet morning brief from this digest. Flag disk>90%, dirty git repos, and what to work on first.\n{digest[:4000]}",
             get_history("default")[-5:],
             cfg,
@@ -1033,7 +934,7 @@ def tui(
     cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
 ):
     """Fullscreen chat (fresh session each launch unless --continue)."""
-    from .tui import launch
+    from sk.tui import launch
 
     cfg = _cfg()
     launch(_resolve_model(cfg, model), cont=cont)
@@ -1042,7 +943,7 @@ def tui(
 @app.command()
 def skills():
     """List skill packs in ~/.sidekick/skills/ (auto-loaded into prompt)."""
-    from .skills import SKILLS_DIR, list_skills, load_skills
+    from sk.skills import SKILLS_DIR, list_skills
 
     rows = list_skills()
     console.print(f"[dim]{SKILLS_DIR} — {len(rows)} packs[/dim]")
@@ -1057,7 +958,7 @@ def skills_install(
     force: bool = typer.Option(False, "--force", help="Re-clone if present"),
 ):
     """Install skill packs: sk skills-install superpowers"""
-    from .skills import install_preset
+    from sk.skills import install_preset
 
     console.print(f"[dim]installing {name}...[/dim]")
     out = install_preset(name, force=force)
@@ -1074,9 +975,8 @@ def daemon(
     disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
 ):
     """Watcher: disk + shell failures + dirty repos. Loop foreground; use --once for cron."""
-    import time
 
-    from .daemon import append_log, check_once, load_state, save_state
+    from sk.daemon import append_log, check_once, load_state, save_state
 
     def run_one() -> int:
         nudges, state = check_once(load_state(), disk_warn=disk_warn)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -52,9 +52,17 @@ def provider_tier(provider: str, tier: str, fallback: str) -> str:
     """Resolve fast/smart for a provider, falling back to the saved default."""
     return TIERS.get(provider, {}).get(tier, "") or fallback
 
-DEFAULTS = {
+
+def resolve_alias(provider: str, alias: str, fallback: str) -> str:
+    """Shared fast/smart alias resolver for CLI + slash. Returns fallback for unknown."""
+    m = (alias or "").strip()
+    if m in ("fast", "smart"):
+        return provider_tier(provider, m, fallback)
+    return m or fallback
+
+DEFAULTS: dict[str, str | int | float] = {
     "provider": "ollama",
-    "model": PRESETS["ollama"]["model"],
+    "model": str(PRESETS["ollama"]["model"]),
     "base_url": "",  # empty = preset default; set = override (or custom's URL)
     "api_key": "",
     "max_steps": 5,
@@ -64,12 +72,12 @@ DEFAULTS = {
 
 @dataclass
 class Config:
-    provider: str = DEFAULTS["provider"]
-    model: str = DEFAULTS["model"]
-    base_url: str = DEFAULTS["base_url"]  # override; "" = preset default
-    api_key: str = DEFAULTS["api_key"]
-    max_steps: int = DEFAULTS["max_steps"]
-    temperature: float = DEFAULTS["temperature"]
+    provider: str = str(DEFAULTS["provider"])
+    model: str = str(DEFAULTS["model"])
+    base_url: str = str(DEFAULTS["base_url"])  # override; "" = preset default
+    api_key: str = str(DEFAULTS["api_key"])
+    max_steps: int = int(DEFAULTS["max_steps"])
+    temperature: float = float(DEFAULTS["temperature"])
 
     def effective_base_url(self) -> str:
         if self.base_url.strip():
@@ -84,13 +92,13 @@ class Config:
         return preset["key"]
 
     @classmethod
-    def load(cls) -> "Config":
+    def load(cls) -> Config:
         provider = os.getenv("SIDEKICK_PROVIDER", "")
         model = os.getenv("SIDEKICK_MODEL", "")
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
         api_key = os.getenv("SIDEKICK_API_KEY", "")
 
-        file_vals: dict = {}
+        file_vals: dict[str, object] = {}
         if CONFIG_PATH.exists():
             try:
                 with open(CONFIG_PATH, "rb") as f:
@@ -98,7 +106,7 @@ class Config:
             except Exception:
                 file_vals = {}
 
-        prov = (provider or file_vals.get("provider", DEFAULTS["provider"])).strip().lower()
+        prov = str(provider or file_vals.get("provider", DEFAULTS["provider"])).strip().lower()
         if prov not in PRESETS:
             prov = "custom"
         return cls(
@@ -106,8 +114,8 @@ class Config:
             model=str(model or file_vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]),
             base_url=str(base_url or file_vals.get("base_url", "")),
             api_key=str(api_key or file_vals.get("api_key", "")),
-            max_steps=int(file_vals.get("max_steps", DEFAULTS["max_steps"])),
-            temperature=float(file_vals.get("temperature", DEFAULTS["temperature"])),
+            max_steps=int(str(file_vals.get("max_steps", DEFAULTS["max_steps"]))),
+            temperature=float(str(file_vals.get("temperature", DEFAULTS["temperature"]))),
         )
 
     def ensure_created(self) -> Path:

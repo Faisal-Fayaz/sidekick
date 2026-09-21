@@ -6,11 +6,31 @@ on:
   pull_request:
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ruff check (E/F/I/UP baseline, see pyproject [tool.ruff])
+        run: uvx ruff check src tests
+
+      - name: Mypy baseline (lenient, see pyproject [tool.mypy])
+        run: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py
+
+  test:
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +47,20 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests -q
+
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Check test-count badge matches collected tests
+        run: |
+          COUNT=$(uv run --with pytest pytest tests --collect-only -q 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)
+          echo "collected=$COUNT"
+          grep -q "tests-${COUNT}%20passing" README.md || (echo "README badge stale: expected tests-${COUNT} passing" && exit 1)
 
   build:
     runs-on: ubuntu-latest

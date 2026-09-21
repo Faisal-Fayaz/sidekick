@@ -24,7 +24,7 @@ def git_snapshot(path: str) -> dict:
     branch = _run(["git", "-C", p, "branch", "--show-current"])
     status = _run(["git", "-C", p, "status", "--porcelain"])
     log = _run(["git", "-C", p, "log", "--oneline", "-3"])
-    n_changed = len([l for l in status.splitlines() if l.strip()])
+    n_changed = len([ln for ln in status.splitlines() if ln.strip()])
     return {"path": path, "exists": True, "branch": branch or "(detached)", "changed": n_changed, "status": status[:800], "log": log[:800]}
 
 
@@ -59,7 +59,7 @@ def format_brief_text(data: dict) -> str:
         ll = line.lower()
         if line.startswith("CPU:") or line.startswith("GPU:") or "mem:" in ll or "/dev/nvme" in line or "OLLAMA MODELS" in line or "qwen" in line or "llama" in line or "NAME " in line:
             keep.append(line.strip())
-    out = [f"**brief** {data.get('when','')}", "", "**system**"] + [f"- {l}"[:120] for l in keep[:10]]
+    out = [f"**brief** {data.get('when','')}", "", "**system**"] + [f"- {ln}"[:120] for ln in keep[:10]]
     out += ["", "**projects**"]
     for s in data.get("projects", []):
         if not s.get("exists"):

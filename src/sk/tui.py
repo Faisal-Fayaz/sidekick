@@ -12,9 +12,9 @@ from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
 from textual.message import Message
 from textual.widgets import Footer, Header, Label, ListItem, ListView, RichLog, Static, TextArea
-from textual.containers import Horizontal
 
 
 def _w(log: RichLog, s: str, markup: bool = False) -> None:
@@ -124,7 +124,6 @@ class ChatLog(RichLog):
 
     def get_selection(self, selection) -> tuple[str, str] | None:
         try:
-            from textual.selection import Selection as _Sel
 
             text = "\n".join(ln.text for ln in self.lines)
             if not text.strip():
@@ -587,7 +586,6 @@ class SidekickTUI(App):
 
         from . import voice as _voice
 
-        log = self.query_one("#chat-log", RichLog)
         try:
             text = await asyncio.to_thread(_voice.transcribe, wav)
         except Exception as e:
@@ -1011,7 +1009,6 @@ class SidekickTUI(App):
             pass
 
     def _finish(self, answer: str, stats: str) -> None:
-        from rich.markdown import Markdown
 
         self._hide_live()
         self._stats = stats

@@ -30,7 +30,8 @@ def test_write_blocklist():
 
 
 def test_edit_unique():
-    import tempfile, os
+    import tempfile
+    import os
 
     with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".txt") as tf:
         tf.write("aaa aaa")

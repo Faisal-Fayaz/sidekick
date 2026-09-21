@@ -93,7 +93,7 @@ def load_skills(query: str = "", top: int = 8) -> str:
         if not packs:
             return "(no skills — add ~/.sidekick/skills/*.md or `sk skills-install superpowers`)"
         # relevance rank: local packs always first, then keyword overlap
-        keys = set(_keywords(query)) if _keywords and query else set()
+        keys = set(_keywords(query)) if callable(_keywords) and query else set()
 
         def score(p: tuple[str, str, Path]) -> tuple[int, str]:
             name, desc, f = p

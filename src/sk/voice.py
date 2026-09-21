@@ -104,7 +104,7 @@ def _stderr_tail(proc: subprocess.Popen, wav_path: str, n: int = 300) -> str:
     try:
         with open(path, "rb") as f:
             data = f.read()[-2000:].decode(errors="replace")
-        lines = [l for l in data.splitlines() if l.strip()]
+        lines = [ln for ln in data.splitlines() if ln.strip()]
         return "\n".join(lines[-4:])[-n:]
     except Exception:
         return ""

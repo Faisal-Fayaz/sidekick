@@ -12,7 +12,6 @@ from openai import OpenAI
 from .config import Config
 from .tools import APPROVAL_TOOLS, TOOLS_SCHEMA, dispatch_tool, tool_sysinfo
 
-
 SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
 You run on the user's machine via Ollama (OS: {os}).
 Rules:
@@ -30,7 +29,7 @@ Rules:
 - CALL tools, don't ask in prose: to write/create, emit the tool call immediately with a one-line announcement. The approval UI handles permission — a prose "shall I?" stalls forever. {approval_mode}
 - Never narrate a denial you did not receive: if no tool result says denied, you have NOT been denied. Past denials in history were UI states at the time, not policy. When in doubt, call the tool — do not pattern-match old refusals.
 - If a tool is blocked/denied, explain why and suggest an allowed alternative.
-- Recommend only Ollama models (qwen, llama, mistral, phi, gemma). Never recommend GPT-2/GPT-3.5/GPT-4/transformers for local run. VRAM truth: 3-4B fits 4GB VRAM easily and fast; 7-8B CAN run with partial CPU offload (you are qwen2.5-coder:7b doing it now) but slower, needs swap; 14B+ does NOT fit this box.
+- Recommend only Ollama models (qwen, llama, mistral, phi, gemma). Never recommend GPT-2/GPT-3.5/GPT-4/transformers for local run. VRAM truth: 3-4B fits 4GB VRAM easily and fast; 7-8B CAN run with partial CPU offload (you are {smart_model} doing it now) but slower, needs swap; 14B+ does NOT fit this box.
 - To use a tool, use native function calling. If that is unavailable, emit EXACTLY one fenced block: ```json {{"name": "sysinfo", "arguments": {{}}}}``` or {{"name": "list_dir", "arguments": {{"path": "~/neural-hangar"}}}} and nothing else.
 - Current working directory: {cwd} — HOME is {home}.
 - Today is {today}. Answer date/day questions from this, never tools or memory.
@@ -274,7 +273,6 @@ def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
 
     Returns list of (name, args). Only allows known tools.
     """
-    import re
 
     allowed = {"sysinfo", "list_dir", "read_file", "exec", "shell", "delete_file", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
     found: list[tuple[str, dict]] = []
@@ -416,7 +414,7 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
                  temperature=temperature, max_tokens=max_tokens, stream=True, extra_body=extra),
             on_token=on_token,
         )
-        for chunk in stream:
+        for chunk in stream:  # type: ignore[attr-defined]
             try:
                 choice = chunk.choices[0]
             except Exception:
@@ -464,7 +462,7 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
                             buf["name"] = (buf["name"] or "") + n
                         if a:
                             buf["args"] = (buf["args"] or "") + a
-    except Exception as e:
+    except Exception:
         # fallback to non-streaming on error
         resp = _create_with_retry(
             client,
@@ -472,8 +470,8 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
                  temperature=temperature, max_tokens=max_tokens, stream=False, extra_body=extra),
             on_token=on_token,
         )
-        m = resp.choices[0].message
-        return _Msg(m.content or "", getattr(m, "tool_calls", None), getattr(m, "reasoning", "") or "", str(getattr(resp.choices[0], "finish_reason", "") or ""))
+        m = resp.choices[0].message  # type: ignore[attr-defined]
+        return _Msg(m.content or "", getattr(m, "tool_calls", None), getattr(m, "reasoning", "") or "", str(getattr(resp.choices[0], "finish_reason", "") or ""))  # type: ignore[attr-defined]
     tool_calls = None
     if tc_buf:
         tool_calls = [_TC(b["id"] or f"call_{i}", b["name"], b["args"]) for i, b in sorted(tc_buf.items()) if b["name"]]
@@ -528,13 +526,20 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve
         if auto_approve
         else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
     )
+    try:
+        from .config import TIERS as _TIERS
+
+        smart_model = _TIERS.get("ollama", {}).get("smart", "qwen2.5-coder:7b")
+    except Exception:
+        smart_model = "qwen2.5-coder:7b"
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT.format(
             cwd=os.getcwd(),
             home=str(Path.home()),
             os=platform.system(),
             platform=platform.platform(),
-            sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today, approval_mode=approval_mode)},
+            sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today, approval_mode=approval_mode,
+            smart_model=smart_model)},
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
