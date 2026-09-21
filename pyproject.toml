@@ -7,6 +7,9 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 license-files = ["LICENSE"]
 authors = [
+    { name = "Faisal01011", email = "fai504438@gmail.com" },
+]
+maintainers = [
     { name = "Irfanwani", email = "irfanwani347@gmail.com" },
 ]
 keywords = [
