@@ -8,6 +8,7 @@ The short `## Roadmap` section in `README.md` is just a pointer here.
 > ([Faisal01011](https://github.com/Faisal01011) or
 > [Irfanwani](https://github.com/Irfanwani)) may propose; either may approve.
 > Keep `Now` to ≤4 items so it stays a real plan, not a wishlist.
+> Workflow details: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Vision
 
