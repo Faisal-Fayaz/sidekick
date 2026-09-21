@@ -46,8 +46,44 @@ async def _pilot_enter_submits(monkeypatch):
         await pilot.pause()
         await pilot.pause()
         blob = _blob(app)
-        assert "hello test" in blob and "thinking" in blob
+        assert "hello test" in blob and "ok done" in blob
         assert area.text == ""
+
+
+async def _pilot_thinking_animates(monkeypatch):
+    import threading as _th
+
+    import sk.agent as agent
+
+    started = _th.Event()
+    release = _th.Event()
+
+    def blocking_fake(*a, **k):
+        started.set()
+        release.wait(timeout=15)
+        return "eventual answer"
+
+    monkeypatch.setattr(agent, "run_agent", blocking_fake)
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input", ChatArea)
+        area.focus()
+        area.text = "slow question here"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            if started.is_set():
+                break
+        assert started.is_set()
+        live = app.query_one("#live")
+        assert "thinking" in live.text  # animated indicator before tokens
+        release.set()
+        for _ in range(30):
+            await pilot.pause()
+            if "eventual answer" in _blob(app):
+                break
+        assert "eventual answer" in _blob(app)
 
 
 async def _pilot_multiline():
@@ -197,6 +233,51 @@ def test_pilot_mount():
 
 def test_enter_submits(monkeypatch):
     _run(_pilot_enter_submits(monkeypatch))
+
+
+def test_thinking_animates(monkeypatch):
+    _run(_pilot_thinking_animates(monkeypatch))
+
+
+async def _pilot_help_overlay():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        panel = app.query_one("#help-panel")
+        await pilot.pause()
+        assert not panel.display
+        await pilot.press("f1")
+        await pilot.pause()
+        assert panel.display
+        blob = "\n".join(str(ln) for ln in panel.lines)
+        assert "ctrl+y" in blob and "/model" in blob
+        await pilot.press("f1")
+        await pilot.pause()
+        assert not panel.display
+        await pilot.press("f1")
+        await pilot.pause()
+        assert panel.display
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not panel.display
+
+
+def test_help_overlay():
+    _run(_pilot_help_overlay())
+
+
+def test_empty_state_hint():
+    from sk.tui import SidekickTUI as _T
+
+    async def _go():
+        app = _T()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+            assert "New here?" in blob  # isolated DB is always fresh
+
+    _run(_go())
 
 
 def test_ctrl_j_newline():
@@ -601,7 +682,15 @@ def test_approval_timeout_denies(monkeypatch):
     monkeypatch.setattr(app, "call_from_thread", lambda fn, *a, **k: fn(*a, **k))
     monkeypatch.setattr(_tmod, "_role", lambda log, role, body: posted.append(f"{role}:{body}"))
     monkeypatch.setattr(_tmod, "_w", lambda *a, **k: None)
-    monkeypatch.setattr(app, "query_one", lambda *a, **k: object())
+
+    class _Stub:
+        def write(self, item):
+            posted.append(f"write:{item}")
+
+        def focus(self):
+            posted.append("focus")
+
+    monkeypatch.setattr(app, "query_one", lambda *a, **k: _Stub())
     t0 = __import__("time").monotonic()
     assert app._approve("write_file", {"path": "/tmp/x"}) is False
     assert __import__("time").monotonic() - t0 < 30
@@ -619,6 +708,45 @@ def test_mount_shows_build():
             assert "build " in blob and "sk version" in blob
 
     _run(_go())
+
+
+async def _pilot_slash_complete():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input")
+        area.focus()
+        area.text = "/"
+        await pilot.pause()
+        await pilot.pause()
+        lst = app.query_one("#slash-list")
+        assert lst.display and len(lst.children) >= 10
+        area.text = "/mo"
+        await pilot.pause()
+        await pilot.pause()
+        kids = list(lst.children)
+        assert kids and app._slash_names
+        assert all(n.split()[0].startswith("mo") for n in app._slash_names)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert area.text.startswith("/model ")
+        # esc dismisses
+        area.text = "/x"
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not app.query_one("#slash-list").display
+        # plain text hides list
+        area.text = "hello"
+        await pilot.pause()
+        await pilot.pause()
+        assert not app.query_one("#slash-list").display
+
+
+def test_slash_complete():
+    _run(_pilot_slash_complete())
 
 
 async def _pilot_scroll_keys():

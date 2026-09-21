@@ -15,33 +15,39 @@ class SlashOut:
     switch_session: str = ""  # caller should adopt this session going forward
 
 
-HELP_TEXT = """**slash commands**
-- `/help` — this list
-- `/model [fast|smart|name]` — show or switch model (`sk model` for guided picker)
-- `/provider [name]` — show or switch provider (keys via `sk auth add`, never pasted here)
-- `/models` — list models on the current provider
-- `/clear` — start a fresh session (old one kept, see `/sessions`)
-- `/sessions [delete <n>]` — list past sessions, or delete one
-- `/resume <n>` — switch to a past session
-- `/yolo` — auto-approve file writes
-- `/confirm` — ask before file writes (default in TUI)
-- `/remember <fact>` — save a memory
-- `/recall [words]` — search memories
-- `/memories` — list all memories
-- `/forget <words>` — delete matching memories
-- `/todo add <text>` — add a todo
-- `/todo list` — open todos
-- `/todo done <id>` — complete a todo
-- `/todo clear` — clear done todos
-- `/brief` — morning digest (system + git + todos + memories)
-- `/history [n]` — recent shell commands
-- `/oops` — explain last failed shell command
-- `/skills` — list skill packs
-- `/copy [n]` — copy nth-last answer (default: last)
-- `/copy lines <n>` — copy last n lines of the last answer (for code blocks)
-- `/exit` `/quit` — leave
-Anything else is sent to the agent.
-Tip: paste with Ctrl+Shift+V (terminal). Mouse drag-select is terminal-dependent; `/copy lines` always works."""
+COMMANDS: list[tuple[str, str]] = [
+    ("help", "this list"),
+    ("model [fast|smart|name]", "show or switch model (`sk model` for guided picker)"),
+    ("provider [name]", "show or switch provider (keys via `sk auth add`, never pasted here)"),
+    ("models", "list models on the current provider"),
+    ("clear", "start a fresh session (old one kept, see `/sessions`)"),
+    ("sessions [delete <n>]", "list past sessions, or delete one"),
+    ("resume <n>", "switch to a past session"),
+    ("yolo", "auto-approve file writes"),
+    ("confirm", "ask before file writes (default in TUI)"),
+    ("remember <fact>", "save a memory"),
+    ("recall [words]", "search memories"),
+    ("memories", "list all memories"),
+    ("forget <words>", "delete matching memories"),
+    ("todo add <text>", "add a todo"),
+    ("todo list", "open todos"),
+    ("todo done <id>", "complete a todo"),
+    ("todo clear", "clear done todos"),
+    ("brief", "morning digest (system + git + todos + memories)"),
+    ("history [n]", "recent shell commands"),
+    ("oops", "explain last failed shell command"),
+    ("skills", "list skill packs"),
+    ("copy [n]", "copy nth-last answer (default: last)"),
+    ("copy lines <n>", "copy last n lines of the last answer (for code blocks)"),
+    ("exit", "leave (also `/quit`)"),
+]
+
+HELP_TEXT = (
+    "**slash commands**\n"
+    + "\n".join(f"- `/{name}` — {desc}" for name, desc in COMMANDS)
+    + "\nAnything else is sent to the agent.\n"
+    + "Tip: paste with Ctrl+Shift+V (terminal). Mouse drag-select is terminal-dependent; `/copy lines` always works."
+)
 
 
 def _resolve_model_name(cfg, raw: str) -> str:

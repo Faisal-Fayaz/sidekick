@@ -13,7 +13,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Footer, Header, RichLog, Static, TextArea
+from textual.widgets import Footer, Header, Label, ListItem, ListView, RichLog, Static, TextArea
 from textual.containers import Horizontal
 
 
@@ -63,6 +63,11 @@ def _line(when: str, role: str, body: str) -> Text:
 
 def _role(log: RichLog, role: str, body: str) -> None:
     log.write(_line(_now(), role, body))
+
+
+def _rule(log: RichLog) -> None:
+    t = Text("─" * 40, style="dim")
+    log.write(t)
 
 
 def _now() -> str:
@@ -150,6 +155,8 @@ class ChatArea(TextArea):
         Binding("ctrl+y", "copy_last", "copy last answer", priority=True, show=False),
         Binding("up", "hist_prev", "history", show=False),
         Binding("down", "hist_next", "history", show=False),
+        Binding("escape", "slash_dismiss", "dismiss", show=False),
+        Binding("tab", "slash_complete", "complete", show=False),
     ]
 
     class Send(Message):
@@ -163,11 +170,24 @@ class ChatArea(TextArea):
         self.hist_idx: int = -1  # -1 = not browsing
 
     def action_send(self) -> None:
+        if self.app.slash_complete_active(self.text):
+            self.app.slash_complete()
+            return
         text = self.text.strip()
         if text:
             self.hist_idx = -1
             self.post_message(ChatArea.Send(text))
         self.clear()
+
+    def action_slash_complete(self) -> None:
+        if not self.app.slash_complete_active():
+            self.insert("    ")
+            return
+
+    def action_slash_dismiss(self) -> None:
+        if self.app.close_help_if_open():
+            return
+        self.app.slash_dismiss()
 
     def action_copy_last(self) -> None:
         # TextArea binds ctrl+y to redo; this priority binding reclaims it.
@@ -190,6 +210,8 @@ class ChatArea(TextArea):
             pass
 
     def _browse(self, step: int) -> None:
+        if self.app.slash_navigate(step):
+            return
         if "\n" in self.text or not self.cmd_history:
             if step < 0:
                 self.action_cursor_up()
@@ -218,10 +240,14 @@ class SidekickTUI(App):
         ("ctrl+f", "scroll_log_down", "scroll down"),
         ("ctrl+home", "scroll_log_top", "top"),
         ("ctrl+end", "scroll_log_bottom", "bottom"),
+        ("f1", "toggle_help", "help"),
+        ("escape", "close_help", "close"),
     ]
     CSS = """
     RichLog { height: 1fr; border: solid #1d3327; }
     #live { height: auto; max-height: 10; border: solid #1d3327; display: none; }
+    #slash-list { height: auto; max-height: 8; border: solid #1d3327; display: none; }
+    #help-panel { height: auto; max-height: 14; border: solid #7c3aed; display: none; }
     #input-row { height: 5; }
     ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
     ChatArea:focus { border: solid #00ff9d; }
@@ -242,6 +268,8 @@ class SidekickTUI(App):
         self._live_n: int = 0
         self._stats: str = ""
         self._pending_approval = None
+        self._slash_names: list[str] = []
+        self._think_timer = None
         self._rec_proc = None
         self._rec_wav: str = ""
         self._rec_timer = None
@@ -254,10 +282,148 @@ class SidekickTUI(App):
         yield Header()
         yield ChatLog(id="chat-log", wrap=True, highlight=True)
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
+        yield ListView(id="slash-list")
+        yield RichLog(id="help-panel", wrap=True, highlight=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
             yield Static("ctrl+t\nto talk", id="mic-status")
         yield Footer()
+
+    def _help_text(self) -> str:
+        from .slash import COMMANDS
+
+        keys = [
+            "Enter send · ctrl+j / alt+enter newline · ↑/↓ history+autocomplete",
+            "ctrl+y copy · ctrl+t talk · ctrl+b/f scroll · ctrl+home/end jump",
+            "Esc closes this panel · F1 toggles it",
+        ]
+        cmds = [f"/{n} — {d}" for n, d in COMMANDS]
+        return "KEYS\n" + "\n".join(keys) + "\n\nCOMMANDS\n" + "\n".join(cmds)
+
+    def action_toggle_help(self) -> None:
+        try:
+            panel = self.query_one("#help-panel", RichLog)
+            if panel.display:
+                panel.styles.display = "none"
+                return
+            panel.clear()
+            panel.write(self._help_text())
+            panel.styles.display = "block"
+            panel.scroll_home(animate=False)
+        except Exception:
+            pass
+
+    def action_close_help(self) -> None:
+        self.close_help_if_open()
+
+    def close_help_if_open(self) -> bool:
+        """Hide the help panel if visible. Returns True when it did."""
+        try:
+            panel = self.query_one("#help-panel", RichLog)
+            if panel.display:
+                panel.styles.display = "none"
+                return True
+        except Exception:
+            pass
+        return False
+
+    # ---- slash autocomplete ----
+    def _slash_items(self, fragment: str) -> list[tuple[str, str]]:
+        from .slash import COMMANDS
+
+        frag = fragment.lower()
+        starts = [(n, d) for n, d in COMMANDS if n.split()[0].lower().startswith(frag)]
+        contains = [(n, d) for n, d in COMMANDS if frag and frag not in n.split()[0].lower() and frag in n.lower()]
+        return (starts + contains)[:12]
+
+    def slash_update(self, text: str) -> None:
+        """Refresh/hide the suggestion list from current input. Returns nothing."""
+        from .slash import COMMANDS
+
+        try:
+            lst = self.query_one("#slash-list", ListView)
+        except Exception:
+            return
+        first = (text.strip().split("\n")[0] if text else "")
+        if not first.startswith("/"):
+            lst.styles.display = "none"
+            return
+        token = first[1:].split()[0] if len(first) > 1 else ""
+        items = [(n, d) for n, d in COMMANDS[:12]] if not token else self._slash_items(token)
+        self._slash_names = [n for n, _ in items]
+        lst.clear()
+        for name, desc in items:
+            lst.append(ListItem(Label(f"/{name} — {desc}")))
+        lst.styles.display = "block" if items else "none"
+        if items:
+            try:
+                lst.index = 0
+            except Exception:
+                pass
+
+    def slash_visible(self) -> bool:
+        try:
+            lst = self.query_one("#slash-list", ListView)
+            return lst.display and bool(len(lst))
+        except Exception:
+            return False
+
+    def slash_complete_active(self, text: str = "") -> bool:
+        """True when Enter should complete instead of send: list visible with
+        a highlighted item that differs from what's already typed."""
+        try:
+            lst = self.query_one("#slash-list", ListView)
+            if not (lst.display and len(lst) and lst.highlighted_child is not None):
+                return False
+            names = getattr(self, "_slash_names", [])
+            idx = lst.index if lst.index is not None else 0
+            typed = (text or "").strip().split()
+            typed_cmd = typed[0][1:] if typed and typed[0].startswith("/") else ""
+            return bool(names) and names[min(idx, len(names) - 1)].split()[0] != typed_cmd
+        except Exception:
+            return False
+
+    def slash_complete(self) -> None:
+        try:
+            names = getattr(self, "_slash_names", [])
+            lst = self.query_one("#slash-list", ListView)
+            area = self.query_one("#chat-input", ChatArea)
+            idx = lst.index if lst.index is not None else 0
+            if not names:
+                return
+            name = names[min(idx, len(names) - 1)].split()[0]
+            rest = area.text.split(None, 1)
+            area.text = f"/{name} " + (rest[1] if len(rest) > 1 else "")
+            area.cursor_to_end()
+        except Exception:
+            pass
+        finally:
+            self.slash_dismiss()
+
+    def slash_dismiss(self) -> None:
+        try:
+            self.query_one("#slash-list", ListView).styles.display = "none"
+        except Exception:
+            pass
+
+    def slash_navigate(self, step: int) -> bool:
+        """Move highlight if list visible. Returns True when consumed."""
+        try:
+            lst = self.query_one("#slash-list", ListView)
+        except Exception:
+            return False
+        if not lst.display or not len(lst):
+            return False
+        try:
+            idx = lst.index if lst.index is not None else 0
+            lst.index = max(0, min(len(lst) - 1, idx + step))
+        except Exception:
+            pass
+        return True
+
+    @on(TextArea.Changed, "#chat-input")
+    def _slash_changed(self, ev: TextArea.Changed) -> None:
+        self.slash_update(ev.text_area.text)
 
     def on_mount(self) -> None:
         try:
@@ -294,6 +460,17 @@ class SidekickTUI(App):
             _w(log, f"build {_code_version()} (`sk version` to compare after updates)")
         except Exception:
             pass
+        if self._is_fresh():
+            _role(log, "", "New here? Try: `what files are in ~/` · `/model fast` for speed · `/help` for everything.")
+
+    @staticmethod
+    def _is_fresh() -> bool:
+        try:
+            from .store import list_sessions
+
+            return not list_sessions(limit=1)
+        except Exception:
+            return False
 
     def action_mic(self) -> None:
         self._mic_toggle()
@@ -451,8 +628,9 @@ class SidekickTUI(App):
         model = self.model_override or cfg.model
         mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""
+        prov = f"{cfg.provider} · " if cfg.provider not in ("ollama", "") else ""
         short = self.session[-13:] if len(self.session) > 16 else self.session
-        self.sub_title = f"{model} · {mode} · {short} · /help{tail}"
+        self.sub_title = f"{prov}{model} · {mode} · {short} · /help{tail}"
 
     def _approve(self, name: str, args: dict) -> bool:
         """Approval gate for worker threads. Reads auto-pass; writes either
@@ -540,8 +718,10 @@ class SidekickTUI(App):
         return pending
 
     def _ask_approval(self, name: str, path: str, preview: str, timeout: int = 300) -> None:
+        from rich.text import Text as _Text
+
         log = self.query_one("#chat-log", RichLog)
-        _role(log, "warn", f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)")
+        log.write(_Text(f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)", style="reverse bold yellow"))
         if preview:
             _w(log, f"  {preview}")
         try:
@@ -643,6 +823,7 @@ class SidekickTUI(App):
                 pass
             return
         _role(log, "you", text)
+        _rule(log)
         if text.startswith("/"):
             if text.startswith("/model ") and text[7:].strip():
                 from .config import Config
@@ -706,11 +887,42 @@ class SidekickTUI(App):
         self._live_parts = []
         self._live_reason = []
         self._live_n = 0
+        self._think_dots = 0
         self._turn_start = time.monotonic()
         try:
-            self.query_one("#live", TextArea).styles.display = "block"
+            live = self.query_one("#live", TextArea)
+            live.styles.display = "block"
+            live.text = "· thinking"
         except Exception:
             pass
+        try:
+            if self._think_timer is not None:
+                self._think_timer.stop()
+        except Exception:
+            pass
+        try:
+            self._think_timer = self.set_interval(0.4, self._think_tick)
+        except Exception:
+            self._think_timer = None
+
+    def _think_tick(self) -> None:
+        if self._live_n > 0:
+            self._stop_think_timer()
+            return
+        try:
+            self._think_dots = (self._think_dots + 1) % 4
+            live = self.query_one("#live", TextArea)
+            live.text = "· thinking" + "." * self._think_dots
+        except Exception:
+            pass
+
+    def _stop_think_timer(self) -> None:
+        try:
+            if self._think_timer is not None:
+                self._think_timer.stop()
+        except Exception:
+            pass
+        self._think_timer = None
 
     def _push_live(self) -> None:
         try:
@@ -736,8 +948,6 @@ class SidekickTUI(App):
         from .store import get_history, save_message
 
         log = self.query_one("#chat-log", RichLog)
-        if not show_as:
-            _role(log, "", "thinking...")
         cfg = Config.load()
         if self.model_override:
             cfg.model = self.model_override
@@ -792,6 +1002,7 @@ class SidekickTUI(App):
     def _hide_live(self) -> None:
         self._live_parts = []
         self._live_reason = []
+        self._stop_think_timer()
         try:
             live = self.query_one("#live", TextArea)
             live.clear()
@@ -811,6 +1022,7 @@ class SidekickTUI(App):
             log.write(Markdown(answer))
         except Exception:
             _role(log, "sidekick", answer)
+        _rule(log)
 
 
 def launch(model: str = "", session: str = "", cont: bool = False) -> None:
