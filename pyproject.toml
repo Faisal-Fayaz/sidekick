@@ -1,8 +1,38 @@
 [project]
-name = "sidekick"
-version = "0.1.0"
+name = "sidekick-agent"
+dynamic = ["version"]
 description = "Local-first terminal companion agent (Ollama-powered)"
+readme = "README.md"
 requires-python = ">=3.12"
+license = { file = "LICENSE" }
+license-files = ["LICENSE"]
+authors = [
+    { name = "Irfanwani", email = "irfanwani347@gmail.com" },
+]
+keywords = [
+    "cli",
+    "agent",
+    "ollama",
+    "llm",
+    "tui",
+    "terminal",
+    "local-first",
+    "voice",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Shells",
+    "Topic :: Terminals",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13.0",
@@ -14,13 +44,39 @@ dependencies = [
 
 [project.optional-dependencies]
 voice = ["faster-whisper"]  # local STT for `sk talk` + TUI mic; install on demand
+test = ["pytest>=8.0"]
+dev = [
+    "build>=1.2",
+    "twine>=5.0",
+    "pytest>=8.0",
+]
 
 [project.scripts]
 sk = "sk.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Irfanwani/sidekick"
+Repository = "https://github.com/Irfanwani/sidekick"
+Issues = "https://github.com/Irfanwani/sidekick/issues"
+Documentation = "https://github.com/Irfanwani/sidekick/tree/main/README.md"
+Changelog = "https://github.com/Irfanwani/sidekick/releases"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/sk/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/sk"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "tests",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]

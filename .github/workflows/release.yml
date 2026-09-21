@@ -1,0 +1,114 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which index to publish to (manual runs only)"
+        type: choice
+        default: testpypi
+        options: [testpypi, pypi]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match src/sk/__init__.py version
+        shell: bash
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          CODE_VERSION=$(sed -n 's/.*__version__ = "\(.*\)"/\1/p' src/sk/__init__.py)
+          if [ "$VERSION" != "$CODE_VERSION" ]; then
+            echo "tag v$VERSION != code version $CODE_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Verify metadata
+        run: uvx twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: github.event_name == 'push' || github.event.inputs.target == 'pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/sidekick-agent
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # Trusted publishing — zero stored credentials. Register this repo as a
+      # "publishing source" on PyPI: https://pypi.org/manage/account/publishing/
+      #   owner  : Irfanwani     repo  : sidekick
+      #   workflow: release.yml  environment: pypi
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  publish-test:
+    name: Publish to Test PyPI
+    needs: build
+    if: github.event.inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/sidekick-agent
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # Same trusted-publishing setup on Test PyPI (its own "publishing source").
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+
+  github-release:
+    name: GitHub Release (tag pushes only)
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

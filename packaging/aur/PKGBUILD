@@ -1,0 +1,34 @@
+# Maintainer: Irfanwani <irfanwani347@gmail.com>
+# Arch User Repository package for the sidekick-agent PyPI package.
+# Publish flow: bump version in src/sk/__init__.py, tag vX.Y.Z, build + upload to AUR.
+
+pkgname=python-sidekick-agent
+_pkgname=sidekick-agent
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Local-first terminal companion agent (Ollama-powered) — CLI 'sk'"
+arch=("any")
+url="https://github.com/Irfanwani/sidekick"
+license=("MIT")
+depends=(
+  "python"
+  "python-typer"
+  "python-rich"
+  "python-openai"
+  "python-dotenv"
+  "python-textual"
+  "python-httpx"
+)
+makedepends=("python-build" "python-installer" "python-wheel" "python-setuptools")
+optdepends=("python-faster-whisper: local voice transcription for 'sk talk'")
+source=("${_pkgname}-${pkgver}.tar.gz::https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/${_pkgname}/${_pkgname}-${pkgver}.tar.gz")
+sha256sums=("SKIP")
+
+build() {
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

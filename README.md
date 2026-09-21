@@ -58,13 +58,36 @@ heard> what files are in the sidekick repo
 ## Quickstart
 
 ```bash
-git clone https://github.com/Faisal01011/sidekick && cd sidekick
-uv tool install -e ".[voice]"   # global `sk` in ~/.local/bin, STT included
-sk doctor                        # checks provider + model
-sk tui                           # fullscreen chat — start here
+uv tool install sidekick-agent[voice]   # global `sk`, STT included
+sk doctor                                # checks provider + model
+sk tui                                   # fullscreen chat — start here
 ```
 
-Requires Python 3.12+. Without `[voice]` you get everything except Talk/mic (installs on first use instead). Local path needs Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed).
+No clone, no build — installs straight from PyPI. Requires Python 3.12+.
+Without `[voice]` you get everything except Talk/mic (installs on first use instead). Local path needs Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed).
+
+## Install
+
+| Channel | Command |
+|---|---|
+| PyPI / uv | `uv tool install sidekick-agent[voice]` |
+| PyPI / pipx | `pipx install sidekick-agent[voice]` |
+| PyPI / pip | `pip install sidekick-agent[voice]` |
+| AUR (Arch) | `yay -S python-sidekick-agent` |
+| conda-forge | `conda install -c conda-forge sidekick-agent` *(feedstock lives in a separate repo)* |
+
+The published name is **`sidekick-agent`** (the `sidekick` name is taken on
+PyPI); the command stays `sk`. Version is a single source of truth in
+`src/sk/__init__.py`. Publishing is tag-driven and credential-free (GitHub
+Actions trusted publishing → PyPI) — details in [`packaging/README.md`](packaging/README.md).
+
+**From source (dev):**
+
+```bash
+git clone https://github.com/Irfanwani/sidekick && cd sidekick
+uv tool install -e ".[voice]"   # editable dev install; STT included
+sk doctor
+```
 
 ## Chat
 
@@ -147,7 +170,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-.venv/bin/pytest tests -q   # 167 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 167 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
