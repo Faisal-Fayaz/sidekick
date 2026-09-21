@@ -44,8 +44,19 @@ GitHub milestone: [`v0.3.0`](https://github.com/Faisal01011/sidekick/milestones)
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
+Thesis: own the users cloud agents structurally can't serve
+(offline, regulated, no-API-bill) — don't chase their feature list.
 
-- (empty — propose via PR)
+- **Air-gapped install** — offline bundle (vendored wheels + model docs) for locked-down environments. The #1 enterprise gate.
+- **`sk audit`** — exportable log of every tool call, file touched, and byte sent where. Turns privacy from a vibe into an auditor's checkbox.
+- **Per-model capability profiles** — teach the router what each small model can/can't do (built on the eval harness) instead of hoping.
+- **Team memory + shared skills** — org-wide `SKILL.md` packs and memory with permissions. Where seats and revenue appear.
+- **Thin IDE extension** — VS Code client talking to the local daemon. Same offline brain, meets users where they live.
+- **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
+- **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
+- **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
+
+Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
 ## Done
 
