@@ -37,7 +37,7 @@ GitHub milestone: [`v0.2.0`](https://github.com/Faisal01011/sidekick/milestones)
 
 GitHub milestone: [`v0.3.0`](https://github.com/Faisal01011/sidekick/milestones).
 
-- [ ] Spoken replies (offline TTS) — voice input (`sk talk`, faster-whisper) is done; replies are still text-only.
+- [ ] `sk audit` — exportable compliance log (tool calls, files touched, network egress; `md|json`). Privacy as an auditor's checkbox; issue #10.
 - [ ] Native Anthropic provider — Claude reachable today only via OpenRouter; wrap the Anthropic-native API.
 - [ ] `mypy` cleanup — 16 pre-existing errors in `slash.py` / `tui.py` / `cli/__init__.py`, then tighten the CI baseline toward strict.
 
@@ -48,7 +48,6 @@ Thesis: own the users cloud agents structurally can't serve
 (offline, regulated, no-API-bill) — don't chase their feature list.
 
 - **Air-gapped install** — offline bundle (vendored wheels + model docs) for locked-down environments. The #1 enterprise gate.
-- **`sk audit`** — exportable log of every tool call, file touched, and byte sent where. Turns privacy from a vibe into an auditor's checkbox.
 - **Per-model capability profiles** — teach the router what each small model can/can't do (built on the eval harness) instead of hoping.
 - **Team memory + shared skills** — org-wide `SKILL.md` packs and memory with permissions. Where seats and revenue appear.
 - **Thin IDE extension** — VS Code client talking to the local daemon. Same offline brain, meets users where they live.
