@@ -24,7 +24,7 @@ def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
     """Return (binary, argv) if allowed, else error string."""
     for ch in BLOCKED_CHARS:
         if ch in cmd:
-            return f"Blocked: shell metachar '{ch}' not allowed in MVP (no chaining/redirect)."
+            return f"Blocked: shell metachar '{ch}' not allowed (no chaining/redirect)."
     try:
         argv = shlex.split(cmd)
     except ValueError as e:
@@ -38,7 +38,7 @@ def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
         return f"Blocked: '{binary_name}' not in allowlist {sorted(ALLOWED_BINARIES)}"
     if binary_name == "git":
         if len(argv) < 2 or argv[1] not in ALLOWED_GIT:
-            return f"Blocked: only git {sorted(ALLOWED_GIT)} allowed in MVP."
+            return f"Blocked: only git {sorted(ALLOWED_GIT)} allowed."
     if binary_name == "find":
         # prevent find -exec / -delete
         if "-exec" in argv or "-delete" in argv:
@@ -70,7 +70,7 @@ def tool_read_file(path: str, max_chars: int = 8000) -> str:
         if p.is_dir():
             return f"Error: {p} is a directory, use list_dir."
         if p.stat().st_size > 500_000:
-            return f"Error: file too large ({p.stat().st_size} bytes), refusing in MVP."
+            return f"Error: file too large ({p.stat().st_size} bytes), refusing."
         text = p.read_text(errors="replace")
         if len(text) > max_chars:
             text = text[:max_chars] + f"\n... [truncated {len(text) - max_chars} chars]"
@@ -155,7 +155,9 @@ def tool_delete_file(path: str) -> str:
 
 
 def tool_sysinfo() -> str:
-    """One-shot grounded hardware + Ollama snapshot. Fast, no chaining."""
+    """One-shot grounded hardware + Ollama snapshot. Fast, no chaining, cross-platform."""
+    import os
+    import platform
     import shutil
 
     def run(argv: list[str], timeout: int = 5) -> str:
@@ -169,19 +171,38 @@ def tool_sysinfo() -> str:
         except Exception as e:
             return f"(error: {e})"
 
-    mem = run(["free", "-h"])
-    # concise CPU line
-    cpu = run(["lscpu"])
-    cpu_line = "(unknown cpu)"
-    for line in cpu.splitlines():
-        if line.startswith("Model name:"):
-            cpu_line = line.split(":", 1)[1].strip()
-            break
-    try:
-        cores = run(["nproc"]).strip().split()[0]
-    except Exception:
-        cores = "?"
-    gpu = run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader"])
+    if platform.system() == "Darwin":
+        cpu_line = run(["sysctl", "-n", "machdep.cpu.brand_string"]) or "(unknown cpu)"
+        try:
+            cores = str(int(run(["sysctl", "-n", "hw.ncpu"])))
+        except Exception:
+            cores = "?"
+        try:
+            mem_bytes = int(run(["sysctl", "-n", "hw.memsize"]))
+            mem = f"MemTotal: {mem_bytes / (1024 ** 3):.1f} GiB (hw.memsize)"
+        except Exception:
+            mem = run(["sysctl", "-n", "hw.memsize"]) or "(unknown)"
+    else:
+        cpu_line = "(unknown cpu)"
+        for line in run(["lscpu"]).splitlines():
+            if line.startswith("Model name:"):
+                cpu_line = line.split(":", 1)[1].strip()
+                break
+        try:
+            cores = run(["nproc"]).strip().split()[0] or str(os.cpu_count() or "?")
+        except Exception:
+            cores = str(os.cpu_count() or "?")
+        mem = run(["free", "-h"])
+
+    if platform.system() == "Darwin":
+        gpu_out = run(["system_profiler", "SPDisplaysDataType", "-detailLevel", "mini"], timeout=8)
+        gpu = "\n".join(
+            ln.strip()[:200]
+            for ln in gpu_out.splitlines()
+            if "Chipset Model" in ln or ("Metal" in ln and ":" in ln)
+        ) or "GPU: (none detected)"
+    else:
+        gpu = run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader"])
     disk = run(["df", "-h", "/"])
     ollama_models = run(["ollama", "list"])
     # trim verbose outputs
@@ -230,26 +251,41 @@ WRITE_BLOCKLIST = (
 
 
 def _check_write_path(path: str) -> Path | str:
+    import tempfile
+
     try:
         p = Path(path).expanduser().resolve()
     except Exception as e:
         return f"Error: bad path: {e}"
+    # block both the literal entries and their resolved symlink targets
+    # (macOS resolves /etc -> /private/etc; tmp dirs live under /private too)
+    block_targets: list[Path] = []
     for blocked in WRITE_BLOCKLIST:
+        block_targets.append(blocked)
         try:
-            if p == blocked or blocked in p.parents or str(p).startswith(str(blocked)):
-                # careful: /usr contains /usr/lib etc; also block exact
+            block_targets.append(blocked.resolve())
+        except Exception:
+            pass
+    for blocked in block_targets:
+        try:
+            if p == blocked or blocked in p.parents:
                 return f"Error: writes to {p} are blocked (sensitive path {blocked})."
         except Exception:
             pass
-    # only allow writes under HOME or /tmp for MVP
+    # only allow writes under HOME or the system temp dir (incl. legacy /tmp)
     home = Path.home().resolve()
     try:
         is_home = p == home or home in p.parents
     except Exception:
         is_home = False
-    is_tmp = str(p).startswith("/tmp/")
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    is_tmp = p == tmp_root or tmp_root in p.parents
+    # /tmp is a symlink to /private/tmp on macOS and may differ from gettempdir()
+    if not is_tmp:
+        raw_tmp = str(p)
+        is_tmp = raw_tmp.startswith("/tmp/") or raw_tmp.startswith("/private/tmp/")
     if not (is_home or is_tmp):
-        return f"Error: MVP only allows writes under {home} or /tmp (got {p})."
+        return f"Error: writes are only allowed under {home} or {tmp_root} (got {p})."
     return p
 
 
@@ -274,7 +310,7 @@ def tool_write_file(path: str, content: str) -> str:
         return checked
     p: Path = checked
     if len(content) > 100_000:
-        return "Error: content too large (>100KB), refusing in MVP."
+        return "Error: content too large (>100KB), refusing."
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
@@ -296,7 +332,7 @@ def tool_edit_file(path: str, old_string: str, new_string: str) -> str:
         if not p.exists():
             return f"Error: {p} does not exist."
         if p.stat().st_size > 500_000:
-            return "Error: file too large to edit in MVP."
+            return "Error: file too large to edit."
         text = p.read_text(errors="replace")
         count = text.count(old_string)
         if count == 0:

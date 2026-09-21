@@ -51,8 +51,13 @@ def test_build_includes_live_sysinfo(tmp_path, monkeypatch):
 
 
 def test_build_local_facts_existing_dir(tmp_path, monkeypatch):
+    import sk.agent as agent
+
     _iso(tmp_path, monkeypatch)
-    msgs = build_messages("check ~/sidekick and tell me scope", [], _cfg())
+    (tmp_path / "sidekick").mkdir()
+    (tmp_path / "sidekick" / "pyproject.toml").write_text("[project]\n")
+    monkeypatch.setattr(agent.Path, "home", lambda: tmp_path)
+    msgs = agent.build_messages("check ~/sidekick and tell me scope", [], _cfg())
     user = msgs[-1]["content"]
     assert "AUTO LOCAL FACTS" in user and "pyproject.toml" in user
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 from pathlib import Path
 
 from openai import OpenAI
@@ -13,7 +14,7 @@ from .tools import APPROVAL_TOOLS, TOOLS_SCHEMA, dispatch_tool, tool_sysinfo
 
 
 SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
-You run on the user's Linux machine via Ollama.
+You run on the user's machine via Ollama (OS: {os}).
 Rules:
 - Be concise, terminal-friendly (short markdown, no fluff).
 - Prefer using tools: sysinfo, list_dir, read_file, exec (read-only), shell (any command, approval), write_file, edit_file, make_dir, delete_file, remember, recall, todo_add, todo_list, todo_done, read_url, web_search, skill.
@@ -23,7 +24,7 @@ Rules:
 - MEMORY: user facts are in SAVED MEMORIES below. Use them (e.g. preferred model, projects). If user says "remember X", call remember. If asked "what do you remember / my prefs", call recall.
 - TODOS: open todos are in OPEN TODOS below. If user says "add todo / my todos / done #N", use todo tools. Proactively offer next todo when asked "what next".
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
-- PATHS (mandatory): ~/X means /home/faisal/X, NOT ./X. If user asks about ~/neural-hangar, you MUST call list_dir with path "~/neural-hangar" (or "/home/faisal/neural-hangar"). Never answer "does not exist" from cwd listing. cwd is {cwd} but ~ is /home/faisal. Always try the exact path first.
+- PATHS (mandatory): ~/X means {home}/X, NOT ./X. If the user asks about a path under ~, you MUST call list_dir with that exact path (~/X). Never answer "does not exist" from cwd listing. cwd is {cwd} but ~ is {home}. Always try the exact path first.
 - exec is READ-ONLY (ls, df, free, git status, etc). Never claim you ran a blocked command.
 - WRITES need approval: write_file/edit_file/make_dir/delete_file/shell will ask the user. Announce what you will write + why before calling. Keep writes under HOME or /tmp, max 100KB. Never write to ~/.ssh, ~/.gnupg, /etc, /usr.
 - CALL tools, don't ask in prose: to write/create, emit the tool call immediately with a one-line announcement. The approval UI handles permission — a prose "shall I?" stalls forever. {approval_mode}
@@ -31,9 +32,9 @@ Rules:
 - If a tool is blocked/denied, explain why and suggest an allowed alternative.
 - Recommend only Ollama models (qwen, llama, mistral, phi, gemma). Never recommend GPT-2/GPT-3.5/GPT-4/transformers for local run. VRAM truth: 3-4B fits 4GB VRAM easily and fast; 7-8B CAN run with partial CPU offload (you are qwen2.5-coder:7b doing it now) but slower, needs swap; 14B+ does NOT fit this box.
 - To use a tool, use native function calling. If that is unavailable, emit EXACTLY one fenced block: ```json {{"name": "sysinfo", "arguments": {{}}}}``` or {{"name": "list_dir", "arguments": {{"path": "~/neural-hangar"}}}} and nothing else.
-- Current working directory: {cwd} — HOME is /home/faisal.
+- Current working directory: {cwd} — HOME is {home}.
 - Today is {today}. Answer date/day questions from this, never tools or memory.
-- OS: Linux.
+- OS: {os}. Platform: {platform}.
 REAL SYSTEM SNAPSHOT (do not re-guess, but still call sysinfo tool if user asks about their device so the trace shows grounding):
 {sysinfo}
 SAVED MEMORIES (use these, do not re-ask):
@@ -66,7 +67,7 @@ def _expand_at_refs(text: str) -> str:
 
 
 def _auto_local_context(text: str) -> str:
-    """Deterministic grounding: if user mentions ~/X or /home/faisal/X, list it + read package.json/README.
+    """Deterministic grounding: if user mentions ~/X or $HOME/X, list it + read package.json/README.
 
     This does NOT rely on the model calling tools — it injects facts so the model
     cannot hallucinate 'does not exist'.
@@ -75,10 +76,11 @@ def _auto_local_context(text: str) -> str:
 
     from .tools import tool_list_dir, tool_read_file
 
-    # find ~/foo/bar and /home/faisal/foo patterns
+    # find ~/foo/bar and $HOME/foo patterns
+    home = str(Path.home())
     paths: list[str] = []
     paths += re.findall(r"(~/[\w\-./~]+)", text)
-    paths += re.findall(r"(/home/faisal/[\w\-./]+)", text)
+    paths += re.findall(r"(" + re.escape(home) + r"/[\w\-./]+)", text)
     # dedupe, strip trailing punctuation
     seen: set[str] = set()
     uniq: list[str] = []
@@ -92,14 +94,16 @@ def _auto_local_context(text: str) -> str:
     chunks: list[str] = []
     for p in uniq[:3]:  # cap 3 paths
         try:
-            exp = str(Path(p).expanduser().resolve())
+            if p.startswith("~/"):
+                p = str(Path.home() / p[2:])  # resolve ~ against the real home
+            exp = str(Path(p).resolve())
         except Exception:
             continue
         listing = tool_list_dir(p)
         chunks.append(f"[path {p} -> {exp}]\n{listing[:1500]}")
         # if dir, try package.json + README.md for scope
         try:
-            base = Path(p).expanduser().resolve()
+            base = Path(p).resolve()
             if base.is_dir():
                 for fname in ("package.json", "README.md", "pyproject.toml", "requirements.txt"):
                     fp = base / fname
@@ -185,7 +189,7 @@ def _auto_search_context(text: str) -> str:
     else:
         low = text.lower()
         recency = re.search(r"\b(right now|latest|currently|up[- ]to[- ]date|this week|today|2026)\b", low)
-        local = re.search(r"~/|/home/faisal|my (device|machine|files?|todos?|projects?|prefs?)|can i run|do i (have|need)", low)
+        local = re.search(r"~/|" + re.escape(str(Path.home())) + r"|my (device|machine|files?|todos?|projects?|prefs?)|can i run|do i (have|need)", low)
         if recency and not local and len(text.split()) > 3:
             from .store import _keywords
 
@@ -525,7 +529,12 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve
         else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
     )
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(cwd=os.getcwd(), sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today, approval_mode=approval_mode)},
+        {"role": "system", "content": SYSTEM_PROMPT.format(
+            cwd=os.getcwd(),
+            home=str(Path.home()),
+            os=platform.system(),
+            platform=platform.platform(),
+            sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today, approval_mode=approval_mode)},
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
