@@ -608,7 +608,7 @@ def auth_remove(provider: str = typer.Argument("", help="Provider, omit for curr
 @app.command()
 def model():
     """Interactive picker: provider → live model list → default."""
-    from .auth import fetch_models
+    from .auth import chat_models, fetch_models
     from .config import PRESETS
 
     cfg = _cfg()
@@ -627,21 +627,7 @@ def model():
         cfg.save()
         console.print(f"[green]model set to {manual} (unvalidated)[/green]")
         return
-    if not names:
-        console.print("[yellow]empty list.[/yellow]")
-        raise typer.Exit(1)
-    console.print(f"Models on {p}:")
-    for i, n in enumerate(names[:30], 1):
-        console.print(f"  {i}. {n}{' ← current' if n == cfg.model and p == cfg.provider else ''}")
-    while True:
-        try:
-            raw = console.input(f"Pick [1-{min(len(names), 30)}] or id: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            raise typer.Exit(1)
-        pick = names[int(raw) - 1] if raw.isdigit() and 1 <= int(raw) <= min(len(names), 30) else raw
-        if pick:
-            break
-        console.print("[red]empty, try again[/red]")
+    pick = _pick_model_name(p, chat_models(names), cfg)
     cfg.provider, cfg.model = p, pick
     if p != "custom":
         cfg.base_url = ""
@@ -649,54 +635,106 @@ def model():
     console.print(f"[green]default → {p} / {pick}[/green]")
 
 
-@app.command()
-def setup():
-    """Guided setup: provider → key → validate → model → hook → test run."""
-    from .auth import provider_status
-
-    console.print(Panel("[bold]sidekick setup[/] — provider, key, model, hook, test.", expand=False))
-    cfg = _cfg()
-    p = _pick_provider(cfg.provider)
+def _pick_model_name(p: str, names: list[str], cfg) -> str:
+    """Numbered curated list, preset default first + Enter-to-accept."""
     from .config import PRESETS
 
-    cfg.provider = p
+    if not names:
+        console.print("[yellow]empty list.[/yellow]")
+        raise typer.Exit(1)
+    default = PRESETS.get(p, {}).get("model", "")
+    ordered = ([default] if default in names else []) + [n for n in names if n != default]
+    shown = ordered[:10]
+    console.print(f"Models on {p}:")
+    for i, n in enumerate(shown, 1):
+        tags = []
+        if n == default:
+            tags.append("recommended")
+        if n == cfg.model and p == cfg.provider:
+            tags.append("current")
+        tag = f" ({', '.join(tags)})" if tags else ""
+        console.print(f"  {i}. {n}{tag}")
+    if len(ordered) > len(shown):
+        console.print(f"  [dim]...{len(ordered) - len(shown)} more — or type any id[/dim]")
+    while True:
+        try:
+            raw = console.input(f"Pick [1-{len(shown)}, Enter={shown[0]}] or id: ").strip() or "1"
+        except (EOFError, KeyboardInterrupt):
+            raise typer.Exit(1)
+        if raw.isdigit() and 1 <= int(raw) <= len(shown):
+            return shown[int(raw) - 1]
+        if raw and not raw.isdigit():
+            return raw
+        console.print("[red]empty, try again[/red]")
+
+
+def _connect_flow() -> Config:
+    """Shared provider → key → validate → model flow. Returns saved cfg."""
+    from .auth import ping, validate_key
+    from .config import PRESETS
+
+    cfg = _cfg()
+    p = _pick_provider(cfg.provider)
+    base = PRESETS[p]["base_url"]
     if p in ("ollama", "lmstudio"):
-        cfg.model, cfg.base_url, cfg.api_key = PRESETS[p]["model"] or cfg.model, "", ""
+        cfg.provider, cfg.model, cfg.base_url, cfg.api_key = p, PRESETS[p]["model"] or cfg.model, "", ""
         cfg.save()
-        console.print(f"[green]local provider {p}, no key needed.[/green]")
+        console.print(f"[green]provider set to {p}, no key needed locally.[/green]")
     else:
         k = _ask_key()
-        ok, msg = provider_status(_cfg_with(cfg, api_key=k))
+        ok, msg = validate_key(p, base, k)
         console.print(f"[green]✓ {msg}[/green]" if ok else f"[red]✗ {msg}[/red]")
         if not ok:
             raise typer.Exit(1)
-        cfg.api_key, cfg.base_url = k, ""
+        cfg.provider, cfg.base_url, cfg.api_key = p, "", k
+        cfg.model = PRESETS[p]["model"]
         cfg.save()
         console.print("[green]key saved (chmod 600).[/green]")
-    console.print("[dim]now pick a model...[/dim]")
-    model()
-    cfg = _cfg()
+    from .auth import chat_models, fetch_models
+
+    try:
+        names = chat_models(fetch_models(p, base, cfg.effective_api_key()))
+    except Exception as e:
+        console.print(f"[red]cannot list models: {e}[/red]")
+        return cfg
+    if names:
+        cfg.model = _pick_model_name(p, names, cfg)
+        cfg.save()
+    return cfg
+
+
+@app.command()
+def connect():
+    """Connect a provider: pick → key → model → ping. The one-command setup."""
+    from .auth import ping
+
+    cfg = _connect_flow()
+    console.print("[dim]ping...[/dim]")
+    ok, msg = ping(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key(), cfg.model)
+    console.print(f"[green]✓ {cfg.provider} / {cfg.model} answers: {msg}[/green]" if ok else f"[red]✗ ping failed: {msg}[/red]")
+    if not ok:
+        raise typer.Exit(1)
+    console.print(Panel(f"[bold]connected[/]  provider=[cyan]{cfg.provider}[/]  model=[cyan]{cfg.model}[/]  key=[cyan]{Config.mask(cfg.effective_api_key())}[/]\nTry `sk tui`.", expand=False))
+
+
+@app.command()
+def setup():
+    """Full setup: connect flow + shell hook. (For just keys: `sk connect`.)"""
+    from .auth import ping
+
+    console.print(Panel("[bold]sidekick setup[/] — connect, then hook.", expand=False))
+    cfg = _connect_flow()
     try:
         if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
             hook_install(shell="", write=True)
     except (EOFError, KeyboardInterrupt):
         pass
-    console.print("[dim]test run...[/dim]")
-    try:
-        answer = run_agent("say hi in 5 words", [], _cfg(), approve=_make_approver(True), auto_approve=True)
-        console.print(Markdown((answer or "")[:500]))
-    except Exception as e:
-        console.print(f"[red]test run failed: {e}[/red]")
+    console.print("[dim]ping...[/dim]")
+    ok, msg = ping(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key(), cfg.model)
+    console.print(f"[green]✓ answers: {msg}[/green]" if ok else f"[red]✗ ping failed: {msg}[/red]")
+    if not ok:
         raise typer.Exit(1)
     console.print("[green]setup complete. Try `sk tui`.[/green]")
-
-
-def _cfg_with(cfg, api_key: str):
-    import copy
-
-    c = copy.copy(cfg)
-    c.api_key = api_key
-    return c
 
 
 @app.command()

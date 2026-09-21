@@ -92,14 +92,10 @@ Capture via `arecord`, transcription via local faster-whisper int8, transcript l
 ## Providers (BYO key)
 
 ```bash
-sk auth add groq            # hidden prompt, validates live before saving
-sk auth status              # per-provider reachability + key health
-sk auth list                # masked key overview
-sk model                    # guided picker: provider → live model list
-sk setup                    # wizard: provider → key → model → hook → test run
-sk config --provider openai --api-key sk-...   # scriptable alternative
-/provider groq              # same switch inside chat/TUI
+sk connect     # pick provider → paste key (hidden) → pick model → ping. Done.
 ```
+
+One guided flow: numbered provider list (local ones skip keys), live validation *before* anything saves, curated model list (TTS/image junk filtered, recommended pre-highlighted, Enter accepts), and a 5-token ping instead of a full agent turn. Advanced paths still work: `sk auth add/list/status/remove`, `sk model`, `sk setup` (connect + hook), `sk config --provider openai --api-key sk-...`, `/provider groq` inside chat.
 
 Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom`. Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. Note: true Anthropic-native API isn't wrapped — reach Claude via OpenRouter.
 

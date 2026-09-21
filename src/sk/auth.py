@@ -43,3 +43,36 @@ def provider_status(cfg) -> tuple[bool, str]:
     if cfg.provider not in ("ollama", "lmstudio") and not cfg.effective_api_key():
         return (False, "no API key — `sk auth add` or SIDEKICK_API_KEY")
     return validate_key(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
+
+
+NON_CHAT_HINTS = ("tts", "image", "transcribe", "live", "embedding", "vision-preview", "audio")
+
+
+def chat_models(names: list[str]) -> list[str]:
+    """Drop non-chat ids (tts/image/transcribe/live…), keep order, dedupe."""
+    out: list[str] = []
+    for n in names:
+        low = n.lower()
+        if any(h in low for h in NON_CHAT_HINTS):
+            continue
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def ping(provider: str, base_url: str, api_key: str, model: str, timeout: int = 30) -> tuple[bool, str]:
+    """One tiny completion to prove end-to-end works. No tools, no history."""
+    from openai import OpenAI
+
+    try:
+        client = OpenAI(base_url=base_url.rstrip("/"), api_key=api_key, timeout=timeout)
+        r = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "say hi"}],
+            max_tokens=5,
+            stream=False,
+        )
+        text = ((r.choices[0].message.content) or "").strip()
+        return (True, text[:100] or "(empty reply, but reachable)")
+    except Exception as e:
+        return (False, str(e)[:200])
