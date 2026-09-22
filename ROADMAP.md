@@ -61,6 +61,16 @@ Thesis: own the users cloud agents structurally can't serve
 - **Test-infra remainder** — pre-commit config, property-based allowlist/SSRF tests, coverage gates.
 - **Daemon remainder** — launchd unit (macOS) + desktop notifications with do-not-disturb.
 - **TUI overhaul** — `tui/` package split, then design system + reskin (tranche A), then layout restructure: status bar, sessions drawer, approval cards, streaming markdown (tranche B). Keymap changes allowed only with F1-overlay migration notes.
+- **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
+- **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
+- **Prompt caching** — cache the repeated system prompt (Anthropic + compatible APIs). 10x cheaper, faster agent turns.
+- **Model manager** — `sk models pull/prune` wrapping Ollama. Closes the loop `brief` opens when it warns disk is 90% full of old models.
+- **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked.
+- **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe.
+- **Scheduled tasks** — natural-language schedules for the daemon ("brief me every morning"). Stepping stone to daemon-as-teammate.
+- **Usage + cost stats** — `sk stats`: turns, tools, tokens, local-vs-cloud ratio with cost estimates. No-surprise-bills made visible.
+- **Session fork** — branch a session at any turn to explore alternatives without losing the thread. Small, power-user.
+- **Session allowlist** — per-session auto-approve list (`--allow`). Safety customization between yolo and per-prompt confirms.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
