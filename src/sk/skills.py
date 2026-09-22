@@ -154,6 +154,39 @@ def list_skills() -> list[tuple[str, int]]:
     return out
 
 
+def search_skills(query: str = "") -> list[tuple[str, str]]:
+    """Keyword search over pack name + description. Empty query returns all.
+
+    Returns [(name, description)] ranked best-first. Pure listing, no I/O
+    beyond reading the skills dir (via _packs).
+    """
+    try:
+        from .store import _keywords
+    except Exception:
+        _keywords = None  # type: ignore
+
+    packs = _packs()
+    q = (query or "").strip()
+    if not q:
+        return [(name, desc) for name, desc, _ in packs]
+    if callable(_keywords):
+        keys = [k.lower() for k in _keywords(q)]
+    else:
+        keys = [w.lower() for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2]
+    if not keys:
+        return [(name, desc) for name, desc, _ in packs]
+    scored: list[tuple[int, str, str]] = []
+    for name, desc, _ in packs:
+        nl, hay = name.lower(), f"{name} {desc}".lower()
+        s = sum(1 for k in keys if k in hay)
+        if any(k in nl for k in keys):
+            s += 1  # name match outranks description-only match
+        if s > 0:
+            scored.append((s, name, desc))
+    scored.sort(key=lambda r: (-r[0], r[1].lower()))
+    return [(name, desc) for _, name, desc in scored]
+
+
 def install_preset(name: str, force: bool = False) -> str:
     """Shallow-clone a preset repo (e.g. superpowers) into SKILLS_DIR."""
     import shutil
