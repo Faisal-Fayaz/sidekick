@@ -7,7 +7,7 @@ The short `## Roadmap` section in `README.md` is just a pointer here.
 > **Rule: this file changes by pull request only.** Either maintainer
 > ([Faisal01011](https://github.com/Faisal01011) or
 > [Irfanwani](https://github.com/Irfanwani)) may propose; either may approve.
-> Keep `Now` to ≤4 items so it stays a real plan, not a wishlist.
+> Keep each versioned section to ≤4 items so it stays a real plan, not a wishlist.
 > Workflow details: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Vision
@@ -24,15 +24,6 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Now → `v0.2.0`
-
-GitHub milestone: [`v0.2.0`](https://github.com/Faisal01011/sidekick/milestones).
-
-- [ ] `sk skills search` — search installed skill packs by keyword (packs exist, discovery doesn't).
-- [ ] Daemon as a systemd service — `sk daemon` runs foreground/`--once` today; add unit file + `sk daemon-install`.
-- [ ] Finish `commands/` split — commands still live in `cli/__init__.py` after the pure-move split (`cli/base.py`, `cli/approvers.py`, `cli/resolve.py` done); move command groups into `cli/commands/`.
-- [ ] `ruff format` pass (32 files) + re-enable the format gate in CI (dropped in the quality pass because the repo isn't format-clean yet).
-
 ## Next → `v0.3.0`
 
 GitHub milestone: [`v0.3.0`](https://github.com/Faisal01011/sidekick/milestones).
@@ -40,6 +31,15 @@ GitHub milestone: [`v0.3.0`](https://github.com/Faisal01011/sidekick/milestones)
 - [ ] `sk audit` — exportable compliance log (tool calls, files touched, network egress; `md|json`). Privacy as an auditor's checkbox; issue #10.
 - [ ] Native Anthropic provider — Claude reachable today only via OpenRouter; wrap the Anthropic-native API.
 - [ ] `mypy` cleanup — 16 pre-existing errors in `slash.py` / `tui.py` / `cli/__init__.py`, then tighten the CI baseline toward strict.
+
+## Queued → `v0.4.0` (Adoption: convert trust into users)
+
+GitHub milestone: [`v0.4.0`](https://github.com/Faisal01011/sidekick/milestones).
+
+- [ ] `sk init` wizard — guided first-run: detect hardware via `sysinfo`, recommend + pull the right Ollama model, verify with a ping. Kills setup friction, the #1 CLI killer.
+- [ ] Self-update — `sk upgrade` via uv/PyPI version check. Unblocks non-technical users from staying current.
+- [ ] Per-project config — `.sidekick.toml` per repo (project docs, memory namespace, approved commands) + `--cwd`. Drives daily team adoption.
+- [ ] `sk export` — dump any session to a portable Markdown transcript. Sharing, debugging, audit trail.
 
 ## Later
 
@@ -54,14 +54,10 @@ Thesis: own the users cloud agents structurally can't serve
 - **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
 - **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
 - **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
-- **`sk init` wizard** — guided first-run: detect hardware via `sysinfo`, recommend + pull the right Ollama model, verify with a ping. Kills setup friction, the #1 CLI killer.
 - **Session compaction** — summarize-and-trim long sessions so small-context local models don't degrade. Serves small-model-friendly directly.
 - **Scriptable runs** — `sk run --json` with stable exit codes for pipes and scripts. Unix-philosophy composability, zero new deps.
 - **Background runs** — `sk run --bg` with daemon + desktop notification on completion. Stepping stone to daemon-as-teammate.
-- **`sk export`** — dump any session to a portable Markdown transcript. Sharing, debugging, audit trail.
-- **Self-update** — `sk upgrade` via uv/PyPI version check. Unblocks non-technical users from staying current.
 - **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
-- **Per-project config** — `.sidekick.toml` per repo (project docs, memory namespace, approved commands) + `--cwd`. Drives daily team adoption.
 - **Plan-review step** — show the multi-tool plan, ask `[y/N]` before destructive/foreign actions. The make-or-break trust feature.
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
