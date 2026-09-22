@@ -24,6 +24,8 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 
 # OpenAI-compatible providers. Anything speaking /v1/chat/completions works,
 # including local servers (ollama, LM Studio, llama.cpp --server).
+# Exception: "anthropic" speaks the native Messages API (see anthropic_backend);
+# its base_url is the API root (paths appended by the backend, not /v1 here).
 PRESETS: dict[str, dict[str, str]] = {
     "ollama": {
         "base_url": "http://localhost:11434/v1",
@@ -62,6 +64,11 @@ PRESETS: dict[str, dict[str, str]] = {
         "key": "lm-studio",
         "model": "local-model",
     },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com",
+        "key": "",
+        "model": "claude-sonnet-5",
+    },
     "custom": {"base_url": "", "key": "", "model": ""},
 }
 
@@ -74,6 +81,7 @@ TIERS: dict[str, dict[str, str]] = {
     "deepseek": {"fast": "deepseek-chat", "smart": "deepseek-reasoner"},
     "google": {"fast": "models/gemini-3.6-flash", "smart": "models/gemini-3.8-flash"},
     "gemini": {"fast": "models/gemini-3.6-flash", "smart": "models/gemini-3.8-flash"},
+    "anthropic": {"fast": "claude-haiku-4-5", "smart": "claude-sonnet-5"},
 }
 
 

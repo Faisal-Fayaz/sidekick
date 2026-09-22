@@ -717,6 +717,20 @@ def run_agent(
             except Exception:
                 pass
         return quick
+    if cfg.provider == "anthropic":
+        from .anthropic_backend import run_anthropic_agent
+
+        return run_anthropic_agent(
+            user_msg,
+            history,
+            cfg,
+            on_tool=on_tool,
+            on_token=on_token,
+            approve=approve,
+            on_reasoning=on_reasoning,
+            auto_approve=auto_approve,
+            session=session,
+        )
     client = get_client(cfg)
     messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
     try:

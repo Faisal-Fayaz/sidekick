@@ -1,0 +1,248 @@
+"""Native Anthropic Messages API backend (non-streaming).
+
+Used when cfg.provider == "anthropic". The rest of the agent speaks OpenAI
+chat-completions, so this module translates at the boundary:
+
+- TOOLS_SCHEMA (OpenAI functions) -> Anthropic tools [{name, description, input_schema}]
+- OpenAI messages (system/user/assistant/tool roles) -> (system, messages)
+  with strict role alternation (consecutive same-role merged)
+- tool_use blocks -> existing _run_tool_cached (approval + audit preserved)
+
+Freshness: answers stream per-turn, not per-token (one on_token call with the
+full text). Same visible behavior otherwise: max_steps loop, approval gates,
+audit rows, session tagging.
+
+No new deps (httpx already required). Fully offline except the API calls.
+"""
+
+from __future__ import annotations
+
+from .auth import anthropic_headers
+
+
+def openai_tools_to_anthropic(openai_schema: list[dict]) -> list[dict]:
+    """Convert OpenAI function schemas to Anthropic tool definitions."""
+    out: list[dict] = []
+    for entry in openai_schema or []:
+        fn = entry.get("function", entry) if isinstance(entry, dict) else {}
+        if not isinstance(fn, dict) or not fn.get("name"):
+            continue
+        params = fn.get("parameters") or {"type": "object", "properties": {}}
+        out.append(
+            {
+                "name": fn["name"],
+                "description": fn.get("description", ""),
+                "input_schema": params,
+            }
+        )
+    return out
+
+
+def _blocks(content) -> list[dict]:
+    """Normalize message content to Anthropic content blocks."""
+    if content is None:
+        return []
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}] if content else []
+    if isinstance(content, list):
+        blocks: list[dict] = []
+        for part in content:
+            if isinstance(part, str):
+                if part:
+                    blocks.append({"type": "text", "text": part})
+            elif isinstance(part, dict):
+                if part.get("type") in ("text", "image"):
+                    blocks.append(part)
+                elif "text" in part:
+                    blocks.append({"type": "text", "text": str(part["text"])})
+        return blocks
+    return [{"type": "text", "text": str(content)}]
+
+
+def openai_messages_to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]:
+    """Split system prompt out; enforce alternating user/assistant roles.
+
+    - system role -> joined system string (Anthropic takes it as a param)
+    - assistant tool_calls -> tool_use blocks appended after any text
+    - tool role -> user message carrying tool_result blocks
+    - consecutive same-role messages merged (Anthropic rejects repeats)
+    - leading non-user messages dropped (Anthropic requires user-first)
+    """
+    import json
+
+    system_parts: list[str] = []
+    converted: list[tuple[str, list[dict]]] = []
+    auto_n = 0
+    for m in messages or []:
+        role = m.get("role", "user")
+        if role == "system":
+            if m.get("content"):
+                system_parts.append(str(m["content"]))
+            continue
+        if role == "assistant" and m.get("tool_calls"):
+            blocks = _blocks(m.get("content"))
+            for tc in m["tool_calls"] or []:
+                fn = (tc.get("function", {}) or {}) if isinstance(tc, dict) else {}
+                tc_id = tc.get("id", f"call_{auto_n}") if isinstance(tc, dict) else f"call_{auto_n}"
+                auto_n += 1
+                name = fn.get("name", "") if isinstance(fn, dict) else ""
+                raw_args = (fn.get("arguments", {}) or {}) if isinstance(fn, dict) else {}
+                try:
+                    args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+                except Exception:
+                    args = {}
+                blocks.append({"type": "tool_use", "id": tc_id, "name": name, "input": args})
+            converted.append(("assistant", blocks or [{"type": "text", "text": ""}]))
+        elif role == "tool":
+            tc_id = m.get("tool_call_id", f"call_{auto_n}")
+            auto_n += 1
+            converted.append(
+                (
+                    "user",
+                    [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc_id,
+                            "content": str(m.get("content", "")),
+                        }
+                    ],
+                )
+            )
+        elif role == "assistant":
+            converted.append(
+                ("assistant", _blocks(m.get("content")) or [{"type": "text", "text": ""}])
+            )
+        else:
+            converted.append(("user", _blocks(m.get("content")) or [{"type": "text", "text": ""}]))
+    # merge consecutive same-role + drop leading non-user
+    merged: list[tuple[str, list[dict]]] = []
+    for role, blocks in converted:
+        if merged and merged[-1][0] == role:
+            merged[-1][1].extend(blocks)
+        else:
+            merged.append((role, blocks))
+    while merged and merged[0][0] != "user":
+        merged.pop(0)
+    return ("\n\n".join(system_parts), [{"role": r, "content": b} for r, b in merged])
+
+
+def _post(base_url: str, api_key: str, payload: dict, timeout: float = 300.0) -> dict:
+    """POST /v1/messages. Honors Retry-After on 429/529 (2 retries). Returns decoded body."""
+    import time
+
+    import httpx
+
+    url = f"{(base_url or '').rstrip('/')}/v1/messages"
+    last_err = "unknown error"
+    for attempt in range(3):
+        try:
+            r = httpx.post(url, headers=anthropic_headers(api_key), json=payload, timeout=timeout)
+            if r.status_code in (429, 529) and attempt < 2:
+                wait = 5
+                try:
+                    wait = max(1, min(30, int(float(r.headers.get("retry-after", 5)))))
+                except Exception:
+                    pass
+                time.sleep(wait)
+                continue
+            if r.status_code >= 400:
+                try:
+                    err = r.json().get("error", {})
+                    last_err = f"HTTP {r.status_code}: {err.get('message', r.text[:200])}"
+                except Exception:
+                    last_err = f"HTTP {r.status_code}: {r.text[:200]}"
+                r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            if "HTTP " in str(e) or attempt >= 2:
+                raise RuntimeError(last_err if "HTTP " in last_err else str(e)[:300]) from e
+            last_err = str(e)[:300]
+            time.sleep(5)
+    raise RuntimeError(last_err)
+
+
+def run_anthropic_agent(
+    user_msg: str,
+    history: list[dict],
+    cfg,
+    on_tool=None,
+    on_token=None,
+    approve=None,
+    on_reasoning=None,
+    auto_approve: bool = False,
+    session: str = "",
+) -> str:
+    """One agent turn over the native Messages API. Same contract as run_agent."""
+    from .agent import _provider_host, _run_tool_cached, build_messages
+    from .store import log_tool_run
+    from .tools import TOOLS_SCHEMA
+
+    _ = on_reasoning  # thinking blocks not requested in v1; sink kept for signature parity
+    session = session or ""
+    try:
+        log_tool_run(
+            session,
+            "llm_call",
+            cfg.model,
+            approved=True,
+            provider=cfg.provider,
+            host=_provider_host(cfg),
+        )
+    except Exception:
+        pass
+    system, messages = openai_messages_to_anthropic(
+        build_messages(user_msg, history, cfg, auto_approve)
+    )
+    tools = openai_tools_to_anthropic(TOOLS_SCHEMA)
+    max_tokens = 800
+    seen: dict[str, str] = {}
+    final_text = ""
+
+    for _ in range(max(1, cfg.max_steps)):
+        payload: dict = {
+            "model": cfg.model,
+            "max_tokens": max_tokens,
+            "temperature": cfg.temperature,
+            "messages": messages,
+        }
+        if system.strip():
+            payload["system"] = system
+        if tools:
+            payload["tools"] = tools
+        try:
+            resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), payload)
+        except Exception as e:
+            return f"Error talking to anthropic ({cfg.effective_base_url()} model={cfg.model}): {e}"
+        blocks = resp.get("content", []) if isinstance(resp, dict) else []
+        texts = [
+            b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
+        text = "".join(texts).strip()
+        if text and on_token is not None:
+            try:
+                on_token(text)
+            except Exception:
+                pass
+        if not uses:
+            return text or "(empty)"
+        # tool turn: append assistant tool_use + dispatch each, then continue
+        messages.append({"role": "assistant", "content": blocks})
+        for u in uses:
+            name = u.get("name", "")
+            args = u.get("input", {}) if isinstance(u.get("input"), dict) else {}
+            result, _ = _run_tool_cached(name, args, approve, on_tool, seen, session, cfg)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": u.get("id", ""),
+                            "content": result[:6000],
+                        }
+                    ],
+                }
+            )
+        final_text = text
+    return final_text or "(max steps reached)"

@@ -119,7 +119,7 @@ def config(
     model: str = typer.Option("", help="Set model, e.g. --model qwen3:4b"),
     provider: str = typer.Option(
         "",
-        help="Set provider: ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom",
+        help="Set provider: ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|custom",
     ),
     api_key: str = typer.Option("", help="Set API key (or use SIDEKICK_API_KEY env)"),
     base_url: str = typer.Option(

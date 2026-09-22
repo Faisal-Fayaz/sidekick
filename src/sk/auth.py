@@ -6,6 +6,17 @@ output. Keys never enter prompt context.
 
 from __future__ import annotations
 
+ANTHROPIC_VERSION = "2023-06-01"
+
+
+def anthropic_headers(api_key: str) -> dict[str, str]:
+    """Native Messages API headers. Key never leaves this dict."""
+    return {
+        "x-api-key": api_key or "",
+        "anthropic-version": ANTHROPIC_VERSION,
+        "content-type": "application/json",
+    }
+
 
 def fetch_models(provider: str, base_url: str, api_key: str, timeout: int = 15) -> list[str]:
     """Live model ids. Ollama/LM Studio via /api/tags, clouds via /v1/models."""
@@ -14,6 +25,10 @@ def fetch_models(provider: str, base_url: str, api_key: str, timeout: int = 15) 
     base = (base_url or "").rstrip("/")
     if not base:
         raise RuntimeError("no base URL (set provider first)")
+    if provider == "anthropic":
+        r = httpx.get(f"{base}/v1/models", headers=anthropic_headers(api_key), timeout=timeout)
+        r.raise_for_status()
+        return [m["id"] for m in r.json().get("data", [])]
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     if provider in ("ollama", "lmstudio"):
         r = httpx.get(f"{base.removesuffix('/v1')}/api/tags", timeout=min(timeout, 8))
@@ -64,6 +79,8 @@ def ping(
     provider: str, base_url: str, api_key: str, model: str, timeout: int = 30
 ) -> tuple[bool, str]:
     """One tiny completion to prove end-to-end works. No tools, no history."""
+    if provider == "anthropic":
+        return _ping_anthropic(base_url, api_key, model, timeout)
     from openai import OpenAI
 
     try:
@@ -75,6 +92,29 @@ def ping(
             stream=False,
         )
         text = ((r.choices[0].message.content) or "").strip()
+        return (True, text[:100] or "(empty reply, but reachable)")
+    except Exception as e:
+        return (False, str(e)[:200])
+
+
+def _ping_anthropic(base_url: str, api_key: str, model: str, timeout: int) -> tuple[bool, str]:
+    """Same proof over the native Messages API (no SDK dep)."""
+    import httpx
+
+    try:
+        r = httpx.post(
+            f"{(base_url or '').rstrip('/')}/v1/messages",
+            headers=anthropic_headers(api_key),
+            json={
+                "model": model,
+                "max_tokens": 5,
+                "messages": [{"role": "user", "content": "say hi"}],
+            },
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        texts = [b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text"]
+        text = "".join(texts).strip()
         return (True, text[:100] or "(empty reply, but reachable)")
     except Exception as e:
         return (False, str(e)[:200])
