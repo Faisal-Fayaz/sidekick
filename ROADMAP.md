@@ -24,15 +24,6 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Queued → `v0.4.0` (Adoption: convert trust into users)
-
-GitHub milestone: [`v0.4.0`](https://github.com/Faisal01011/sidekick/milestones).
-
-- [ ] `sk init` wizard — guided first-run: detect hardware via `sysinfo`, recommend + pull the right Ollama model, verify with a ping. Kills setup friction, the #1 CLI killer.
-- [ ] Self-update — `sk upgrade` via uv/PyPI version check. Unblocks non-technical users from staying current.
-- [ ] Per-project config — `.sidekick.toml` per repo (project docs, memory namespace, approved commands) + `--cwd`. Drives daily team adoption.
-- [ ] `sk export` — dump any session to a portable Markdown transcript. Sharing, debugging, audit trail.
-
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
@@ -88,6 +79,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.4.0` — per-project `.sidekick.toml` + memory namespaces (schema v3), `sk export` transcripts, `sk upgrade` self-update, `sk init` wizard, macOS cwd-discovery test fix.
 - `v0.3.0` — `sk audit` + `tool_runs` schema v2, native Anthropic provider, mypy cleanup + tighter baseline, connect picker fix, API error surfacing, bare-`sk` TUI default, `tui/` split.
 - `v0.1.2` — release-job fix (checkout before tagging).
 - `v0.2.0` — skills search, systemd `daemon-install`, `commands/` split, format gate.
