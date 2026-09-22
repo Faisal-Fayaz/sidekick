@@ -1,8 +1,12 @@
 """CLI package: app + shared pieces + command registration (split from sk/cli.py).
 
 Commands live in .commands/ (imported for side-effect registration).
+Bare `sk` (no subcommand) launches the fullscreen TUI — the primary way in.
+`sk chat` remains as the plain-text fallback surface.
 All names below preserve the old `sk.cli.X` surface.
 """
+
+import typer
 
 from .approvers import _make_approver, _make_approver_state, _make_on_token, _make_on_tool
 from .base import _cfg, app, console
@@ -33,3 +37,12 @@ __all__ = [
 
 if __name__ == "__main__":
     app()
+
+
+@app.callback(invoke_without_command=True)
+def _default(ctx: typer.Context) -> None:
+    """Bare `sk` launches the fullscreen TUI (same as `sk tui`)."""
+    if ctx.invoked_subcommand is None:
+        from sk.tui import launch
+
+        launch()
