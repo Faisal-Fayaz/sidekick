@@ -224,10 +224,12 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         if sub == "add" and rest.strip():
             return SlashOut(handled=True, text=add_todo(rest.strip()[:500]))
         if sub in ("list", "ls", ""):
-            rows = list_todos(open_only=True)
+            todo_rows = list_todos(open_only=True)
             return SlashOut(
                 handled=True,
-                text="\n".join(f"○ #{i} {t}" for i, t, _ in rows) if rows else "_(no open todos)_",
+                text="\n".join(f"○ #{i} {t}" for i, t, _ in todo_rows)
+                if todo_rows
+                else "_(no open todos)_",
             )
         if sub == "done" and rest.strip():
             try:
@@ -250,10 +252,12 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             n = 15
         from .store import list_shell
 
-        rows = list_shell(limit=max(1, min(n, 50)))
-        if not rows:
+        hist_rows = list_shell(limit=max(1, min(n, 50)))
+        if not hist_rows:
             return SlashOut(handled=True, text="_(no shell history — run `sk hook-install`)_")
-        lines = [f"{'✗' + str(rc) if rc else '✓'} `{c[:100]}`" for _, c, _, rc in reversed(rows)]
+        lines = [
+            f"{'✗' + str(rc) if rc else '✓'} `{c[:100]}`" for _, c, _, rc in reversed(hist_rows)
+        ]
         return SlashOut(handled=True, text="\n".join(lines))
 
     if cmd == "oops":
@@ -272,8 +276,8 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if cmd == "skills":
         from .skills import SKILLS_DIR, list_skills
 
-        rows = list_skills()
-        lines = [f"- **{n}** ({s}b)" for n, s in rows]
+        skill_rows = list_skills()
+        lines = [f"- **{n}** ({s}b)" for n, s in skill_rows]
         return SlashOut(
             handled=True, text=f"`{SKILLS_DIR}`\n" + ("\n".join(lines) if lines else "(none)")
         )

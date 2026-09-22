@@ -137,9 +137,9 @@ def talk(
         console.print(
             "[dim]installing faster-whisper into sidekick's env (one time, ~800MB)...[/dim]"
         )
-        ok, out = _voice.install_stt()
+        ok, install_msg = _voice.install_stt()
         if not ok:
-            console.print(f"[red]{out}[/red]")
+            console.print(f"[red]{install_msg}[/red]")
             raise typer.Exit(1)
         console.print("[dim]installed.[/dim]")
     state = {"yolo": yes}

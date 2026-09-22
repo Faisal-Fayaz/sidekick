@@ -82,5 +82,5 @@ def _make_on_token():
         sys.stdout.write(tok)
         sys.stdout.flush()
 
-    on_token.state = state  # type: ignore
+    on_token.state = state
     return on_token

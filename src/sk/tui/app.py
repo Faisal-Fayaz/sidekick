@@ -51,7 +51,7 @@ class SidekickTUI(App):
         self._live_reason: list[str] = []
         self._live_n: int = 0
         self._stats: str = ""
-        self._pending_approval = None
+        self._pending_approval: dict[str, object] | None = None
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -485,11 +485,9 @@ class SidekickTUI(App):
             expired = not event.wait(timeout=timeout)
         finally:
             # never leave a stale slot: only clear if still ours
-            if (
-                getattr(self, "_pending_approval", None) is not None
-                and self._pending_approval.get("token") is token
-            ):
-                pending, self._pending_approval = self._pending_approval, None
+            slot = getattr(self, "_pending_approval", None)
+            if slot is not None and slot.get("token") is token:
+                pending, self._pending_approval = slot, None
             else:
                 pending = None
         if expired:
@@ -633,7 +631,7 @@ class SidekickTUI(App):
                     pending["event"].set()  # release worker; deny by default
                 except Exception:
                     pass
-                self._pending_approval = None
+            self._pending_approval = None
             _role(log, "sys", "bye.")
             self.exit()
             return

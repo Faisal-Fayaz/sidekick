@@ -25,8 +25,8 @@ jobs:
       - name: Ruff format check
         run: uvx ruff format --check src tests
 
-      - name: Mypy baseline (lenient, see pyproject [tool.mypy])
-        run: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py
+      - name: Mypy baseline (see pyproject [tool.mypy])
+        run: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/
 
   test:
     runs-on: ${{ matrix.os }}

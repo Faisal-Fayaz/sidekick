@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import re
 
-try:
-    from .config import TIERS
-except Exception:  # pragma: no cover - import cycle guard in tests
-    TIERS = {}  # type: ignore[assignment]
+from .config import TIERS
 
 FAST_MODEL = TIERS.get("ollama", {}).get("fast", "llama3.2:3b") if TIERS else "llama3.2:3b"
 SMART_MODEL = (

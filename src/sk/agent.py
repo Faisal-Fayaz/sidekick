@@ -352,7 +352,7 @@ def _run_tool_cached(
     seen[key] = result
     if on_tool is not None:
         try:
-            on_tool(name, args)  # type: ignore
+            on_tool(name, args)
         except Exception:
             pass
     return (result, False)
@@ -430,7 +430,7 @@ def _create_with_retry(client, kwargs: dict, tries: int = 3, on_token=None) -> o
             note = f"[rate limited, retrying in {wait}s...]"
             if on_token is not None:
                 try:
-                    on_token(note)  # type: ignore
+                    on_token(note)
                 except Exception:
                     pass
             _t.sleep(wait)
@@ -493,7 +493,7 @@ def _stream_chat(
                 acc_reason += r if isinstance(r, str) else str(r)
                 if _on_r is not None:
                     try:
-                        _on_r(r if isinstance(r, str) else str(r))  # type: ignore
+                        _on_r(r if isinstance(r, str) else str(r))
                     except Exception:
                         pass
             c = getattr(delta, "content", None)
@@ -503,7 +503,7 @@ def _stream_chat(
                 acc_text += c
                 if on_token is not None:
                     try:
-                        on_token(c)  # type: ignore
+                        on_token(c)
                     except Exception:
                         pass
             tcs = getattr(delta, "tool_calls", None)

@@ -65,10 +65,11 @@ class ChatArea(TextArea):
         self.hist_idx: int = -1  # -1 = not browsing
 
     def action_send(self) -> None:
-        if self.app.slash_complete_active(self.text):
+        text: str = self.text  # type: ignore[has-type]  # TextArea reactive
+        if self.app.slash_complete_active(text):
             self.app.slash_complete()
             return
-        text = self.text.strip()
+        text = text.strip()
         if text:
             self.hist_idx = -1
             self.post_message(ChatArea.Send(text))
@@ -97,17 +98,20 @@ class ChatArea(TextArea):
             _save_history(self.cmd_history)
 
     def cursor_to_end(self) -> None:
-        lines = self.text.split("\n")
+        text: str = self.text  # type: ignore[has-type]  # TextArea reactive
+        lines = text.split("\n")
         end = (len(lines) - 1, len(lines[-1]))
         try:
-            self.selection = type(self.selection)(end, end)
+            sel = self.selection  # type: ignore[has-type]  # TextArea reactive
+            self.selection = type(sel)(end, end)
         except Exception:
             pass
 
     def _browse(self, step: int) -> None:
         if self.app.slash_navigate(step):
             return
-        if "\n" in self.text or not self.cmd_history:
+        text: str = self.text  # type: ignore[has-type]  # TextArea reactive
+        if "\n" in text or not self.cmd_history:
             if step < 0:
                 self.action_cursor_up()
             else:
