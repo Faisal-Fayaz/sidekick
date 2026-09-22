@@ -297,6 +297,42 @@ def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show"))
 
 
 @app.command()
+def export(
+    session: str = typer.Argument("", help="Session id (omit for latest)"),
+    out: str = typer.Option("", "--out", help="Write to file instead of stdout"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing --out file"),
+):
+    """Export a session transcript as Markdown: sk export [SESSION] [--out f.md]"""
+    from pathlib import Path
+
+    from sk.store import export_session, latest_session, render_transcript
+
+    name = session.strip() or latest_session()
+    if not name:
+        console.print("[red]no sessions yet — chat first, then export.[/red]")
+        raise typer.Exit(1)
+    events = export_session(name)
+    if not events:
+        console.print(f"[red]no such session '{name}' — see /sessions.[/red]")
+        raise typer.Exit(1)
+    text = render_transcript(name, events)
+    if not out.strip():
+        console.print(text)
+        return
+    dest = Path(out).expanduser()
+    if dest.exists() and not force:
+        console.print(f"[red]{dest} exists — pass --force to overwrite.[/red]")
+        raise typer.Exit(1)
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text)
+    except Exception as e:
+        console.print(f"[red]cannot write {dest}: {e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]exported {name} → {dest}[/green]")
+
+
+@app.command()
 def audit(
     session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
     format: str = typer.Option("md", "--format", "-f", help="md or json"),

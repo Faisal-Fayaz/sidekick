@@ -582,3 +582,80 @@ def is_local_traffic(provider: str, host: str) -> bool:
         except (ValueError, IndexError):
             pass
     return False
+
+
+def export_session(session: str) -> list[dict]:
+    """Full event stream for one session, oldest-first. [] if unknown/empty.
+
+    Merges chat messages (role/content/ts) with audit tool runs
+    (tool/target/approved/provider/host/ts), sorted by timestamp.
+    Pure reads; no network.
+    """
+    if not (session or "").strip():
+        return []
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT role, content, ts FROM messages WHERE session=? ORDER BY id ASC",
+            (session,),
+        )
+        events = [
+            {"kind": "msg", "role": r, "content": c, "ts": t or 0} for r, c, t in cur.fetchall()
+        ]
+        cur = conn.execute(
+            "SELECT tool, target, approved, provider, host, ok, ts"
+            " FROM tool_runs WHERE session=? ORDER BY id ASC",
+            (session,),
+        )
+        for tool, target, approved, provider, host, ok, ts in cur.fetchall():
+            events.append(
+                {
+                    "kind": "tool",
+                    "tool": tool,
+                    "target": target,
+                    "approved": approved,
+                    "provider": provider,
+                    "host": host,
+                    "ok": ok,
+                    "ts": ts or 0,
+                }
+            )
+        events.sort(key=lambda e: e["ts"])
+        return events
+    finally:
+        conn.close()
+
+
+def render_transcript(session: str, events: list[dict]) -> str:
+    """Render an export_session() stream as portable Markdown."""
+    import datetime as _dt
+
+    turns = sum(1 for e in events if e["kind"] == "msg" and e["role"] == "user")
+    tools = sum(1 for e in events if e["kind"] == "tool")
+    exported = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"# Session `{session}` — {turns} turns, {tools} tool calls",
+        f"_Exported {exported}_",
+        "",
+    ]
+    for e in events:
+        ts = _dt.datetime.fromtimestamp(e["ts"]).strftime("%m-%d %H:%M") if e["ts"] else "--"
+        if e["kind"] == "msg":
+            lines.append(f"## [{ts}] {e['role']}")
+            lines.append(e["content"] or "(empty)")
+        else:
+            if not e["approved"]:
+                mark = "DENIED"
+            elif not e["ok"]:
+                mark = "✗ failed"
+            else:
+                mark = "✓"
+            where = (
+                "local"
+                if is_local_traffic(e["provider"], e["host"])
+                else f"{e['provider']}@{e['host']}"
+            )
+            lines.append(f"## [{ts}] tool `{e['tool']}` {mark} ({where})")
+            lines.append(f"`{e['target'][:200]}`" if e["target"] else "(no target)")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
