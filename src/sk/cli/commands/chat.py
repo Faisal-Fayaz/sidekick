@@ -38,7 +38,7 @@ def chat(
             expand=False,
         )
     )
-    approve = _make_approver_state(state)
+    approve = _make_approver_state(state, cfg.approved_commands)
     on_tool = _make_on_tool()
     on_token = None if no_stream else _make_on_token()
     while True:
@@ -150,7 +150,7 @@ def talk(
             expand=False,
         )
     )
-    approve = _make_approver_state(state)
+    approve = _make_approver_state(state, cfg.approved_commands)
     on_tool = _make_on_tool()
     on_token = _make_on_token()
 

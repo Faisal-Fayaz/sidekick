@@ -48,11 +48,43 @@ OPEN TODOS:
 {todos}
 SKILLS (follow these packs when relevant):
 {skills}
+PROJECT DOCS (repo conventions from .sidekick.toml — follow them):
+{projdocs}
 """
 
 
 def get_client(cfg: Config) -> OpenAI:
     return OpenAI(base_url=cfg.effective_base_url(), api_key=cfg.effective_api_key(), timeout=300.0)
+
+
+def _project_docs_block(cfg: Config) -> str:
+    """Render project docs (AGENTS.md et al) for the system prompt. Capped, never raises."""
+    docs = list(getattr(cfg, "project_docs", None) or [])
+    root = str(getattr(cfg, "project_root", "") or "")
+    if not docs or not root:
+        return "(none)"
+    parts: list[str] = []
+    budget = 3000
+    try:
+        root_resolved = Path(root).expanduser().resolve()
+    except Exception:
+        return "(none)"
+    for rel in docs[:8]:
+        try:
+            p = (root_resolved / rel).expanduser().resolve()
+            if root_resolved not in p.parents and p != root_resolved:
+                continue  # escape attempt (../../..) — skip
+            if not p.is_file() or p.stat().st_size > 100_000:
+                continue
+            text = p.read_text(errors="replace").strip()[:budget]
+            if text:
+                parts.append(f"[{rel}]\n{text}")
+                budget -= len(text)
+                if budget <= 0:
+                    break
+        except Exception:
+            continue
+    return "\n\n".join(parts) if parts else "(none)"
 
 
 def _expand_at_refs(text: str) -> str:
@@ -650,6 +682,7 @@ def build_messages(
         skill_block = "(none)"
     if len(mem_block) > 1500:
         mem_block = mem_block[:1500] + "\n... [truncated]"
+    proj_block = _project_docs_block(cfg)
     from datetime import datetime as _dt
 
     today = _dt.now().strftime("%A, %Y-%m-%d")
@@ -676,6 +709,7 @@ def build_messages(
                 memories=mem_block,
                 todos=todo_block,
                 skills=skill_block,
+                projdocs=proj_block,
                 today=today,
                 approval_mode=approval_mode,
                 smart_model=smart_model,

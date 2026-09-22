@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ..base import app, console
+from ..base import _cfg, app, console
 
 
 @app.command()
@@ -12,6 +12,7 @@ def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers f
     """Save a memory: sk remember \"prefers qwen3:4b\""""
     from sk.store import save_memory
 
+    _cfg()  # establish project namespace default
     console.print(f"[green]{save_memory(text)}[/green] {text[:120]}")
 
 
@@ -20,6 +21,7 @@ def recall_cmd(query: str = typer.Argument("", help="Search terms (empty = recen
     """Search memories: sk recall \"model\""""
     from sk.store import recall_memories
 
+    _cfg()  # establish project namespace default
     hits = recall_memories(query, limit=10)
     if not hits:
         console.print('[yellow](no memories yet — try `sk remember "..."`)[/yellow]')
@@ -33,6 +35,7 @@ def memories_cmd():
     """List all memories."""
     from sk.store import list_memories
 
+    _cfg()  # establish project namespace default
     hits = list_memories(limit=50)
     if not hits:
         console.print("[yellow](no memories yet)[/yellow]")
@@ -46,6 +49,7 @@ def forget(query: str = typer.Argument(..., help="Substring to delete")):
     """Delete matching memories: sk forget \"qwen\""""
     from sk.store import forget_memory
 
+    _cfg()  # establish project namespace default
     console.print(f"[yellow]{forget_memory(query)}[/yellow]")
 
 

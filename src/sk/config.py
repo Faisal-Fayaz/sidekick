@@ -22,6 +22,62 @@ except ImportError:
 CONFIG_DIR = Path.home() / ".sidekick"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
+PROJECT_FILENAME = ".sidekick.toml"
+# Keys a project file may never set: traffic diverters. A hostile repo could
+# otherwise point your prompts (incl. memories) at its own server.
+PROJECT_BLOCKED_KEYS = ("api_key", "base_url")
+
+
+def find_project_file(start: str | Path = "") -> Path | None:
+    """Nearest .sidekick.toml walking up from start (default: cwd). None if absent."""
+    cur = Path(start or os.getcwd()).expanduser().resolve()
+    for _ in [cur, *cur.parents]:
+        candidate = cur / PROJECT_FILENAME
+        try:
+            if candidate.is_file():
+                return candidate
+        except Exception:
+            pass
+        parent = cur.parent
+        if parent == cur:
+            break
+        cur = parent
+    return None
+
+
+def load_project_values(path: str | Path | None) -> tuple[dict[str, object], list[str]]:
+    """Parse a project file. Returns (values, warnings). Never raises."""
+    warnings: list[str] = []
+    if not path:
+        return ({}, warnings)
+    try:
+        with open(path, "rb") as f:
+            raw = tomllib.load(f)
+    except Exception as e:
+        return ({}, [f"ignoring unreadable {path}: {e}"])
+    if not isinstance(raw, dict):
+        return ({}, [f"ignoring malformed {path}: top level must be a table"])
+    vals: dict[str, object] = {}
+    for key in ("provider", "model", "max_steps", "temperature"):
+        if key in raw:
+            vals[key] = raw[key]
+    for key in PROJECT_BLOCKED_KEYS:
+        if key in raw:
+            warnings.append(f"ignoring {key} in {path} (global config or env only)")
+    proj = raw.get("project", {})
+    if isinstance(proj, dict):
+        docs = proj.get("docs", [])
+        if isinstance(docs, list):
+            vals["project_docs"] = [str(d) for d in docs if str(d).strip()]
+        ns = proj.get("memory_namespace", "")
+        if str(ns).strip():
+            vals["memory_namespace"] = str(ns).strip()
+        cmds = proj.get("approved_commands", [])
+        if isinstance(cmds, list):
+            vals["approved_commands"] = [str(c) for c in cmds if str(c).strip()]
+    return (vals, warnings)
+
+
 # OpenAI-compatible providers. Anything speaking /v1/chat/completions works,
 # including local servers (ollama, LM Studio, llama.cpp --server).
 # Exception: "anthropic" speaks the native Messages API (see anthropic_backend);
@@ -98,6 +154,25 @@ def resolve_alias(provider: str, alias: str, fallback: str) -> str:
     return m or fallback
 
 
+def is_project_approved(name: str, args: dict, approved_commands: tuple[str, ...]) -> bool:
+    """True if a shell command matches the project approved_commands list.
+
+    Exact match, or the entry is a prefix ending at a word boundary
+    ("pytest -q" covers "pytest -q tests/x" but not "pytest -qz").
+    Shell tool only; writes always ask.
+    """
+    if name != "shell" or not approved_commands:
+        return False
+    cmd = str((args or {}).get("cmd", "")).strip()
+    for entry in approved_commands:
+        e = entry.strip()
+        if not e:
+            continue
+        if cmd == e or cmd.startswith(e + " ") or cmd.startswith(e + "\t"):
+            return True
+    return False
+
+
 DEFAULTS: dict[str, str | int | float] = {
     "provider": "ollama",
     "model": str(PRESETS["ollama"]["model"]),
@@ -116,6 +191,12 @@ class Config:
     api_key: str = str(DEFAULTS["api_key"])
     max_steps: int = int(DEFAULTS["max_steps"])
     temperature: float = float(DEFAULTS["temperature"])
+    # project layer (from .sidekick.toml; empty when outside a project)
+    project_root: str = ""
+    project_docs: tuple[str, ...] = ()
+    memory_namespace: str = ""
+    approved_commands: tuple[str, ...] = ()
+    project_warnings: tuple[str, ...] = ()
 
     def effective_base_url(self) -> str:
         if self.base_url.strip():
@@ -130,7 +211,12 @@ class Config:
         return preset["key"]
 
     @classmethod
-    def load(cls) -> Config:
+    def load(cls, cwd: str = "") -> Config:
+        """Precedence: env > project file (.sidekick.toml upward from cwd) > global file.
+
+        Sensitive keys (api_key, base_url) never come from project files.
+        Also publishes the memory namespace for store scoping (see store docs).
+        """
         provider = os.getenv("SIDEKICK_PROVIDER", "")
         model = os.getenv("SIDEKICK_MODEL", "")
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
@@ -144,19 +230,42 @@ class Config:
             except Exception:
                 file_vals = {}
 
-        prov = str(provider or file_vals.get("provider", DEFAULTS["provider"])).strip().lower()
+        project_file = find_project_file(cwd or os.getcwd())
+        project_vals, project_warnings = load_project_values(project_file)
+        vals: dict[str, object] = dict(file_vals)
+        vals.update(project_vals)
+
+        prov = str(provider or vals.get("provider", DEFAULTS["provider"])).strip().lower()
         if prov not in PRESETS:
             prov = "custom"
-        return cls(
+        cfg = cls(
             provider=prov,
             model=str(
-                model or file_vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]
+                model or vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]
             ),
-            base_url=str(base_url or file_vals.get("base_url", "")),
-            api_key=str(api_key or file_vals.get("api_key", "")),
-            max_steps=int(str(file_vals.get("max_steps", DEFAULTS["max_steps"]))),
-            temperature=float(str(file_vals.get("temperature", DEFAULTS["temperature"]))),
+            base_url=str(base_url or vals.get("base_url", "")),
+            api_key=str(api_key or vals.get("api_key", "")),
+            max_steps=int(str(vals.get("max_steps", DEFAULTS["max_steps"]))),
+            temperature=float(str(vals.get("temperature", DEFAULTS["temperature"]))),
+            project_root=str(project_file.parent) if project_file else "",
+            project_docs=tuple(vals.get("project_docs", [])),  # type: ignore[arg-type]
+            memory_namespace=str(vals.get("memory_namespace", "")),
+            approved_commands=tuple(vals.get("approved_commands", [])),  # type: ignore[arg-type]
+            project_warnings=tuple(project_warnings),
         )
+        try:
+            from .store import set_default_namespace
+
+            set_default_namespace(cfg.memory_namespace)
+        except Exception:
+            pass
+        return cfg
+
+    def project_note(self) -> str:
+        """One-liner for `sk config --show`: which project layer (if any) applies."""
+        if not self.project_root:
+            return ""
+        return f"project: {self.project_root} ({PROJECT_FILENAME})"
 
     def ensure_created(self) -> Path:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)

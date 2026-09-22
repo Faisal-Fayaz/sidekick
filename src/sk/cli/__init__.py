@@ -40,8 +40,15 @@ if __name__ == "__main__":
 
 
 @app.callback(invoke_without_command=True)
-def _default(ctx: typer.Context) -> None:
+def _default(
+    ctx: typer.Context,
+    cwd: str = typer.Option("", "--cwd", help="Run as if in this directory"),
+) -> None:
     """Bare `sk` launches the fullscreen TUI (same as `sk tui`)."""
+    if cwd.strip():
+        import os
+
+        os.chdir(os.path.expanduser(cwd.strip()))
     if ctx.invoked_subcommand is None:
         from sk.tui import launch
 

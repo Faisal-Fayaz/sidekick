@@ -418,6 +418,7 @@ class SidekickTUI(App):
         from sk.config import Config
 
         cfg = Config.load()
+        self._cfg = cfg
         model = self.model_override or cfg.model
         mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""
@@ -438,6 +439,12 @@ class SidekickTUI(App):
             return True
         if bool(self.state.get("yolo")):
             return True
+        cfg = getattr(self, "_cfg", None)
+        if cfg is not None:
+            from sk.config import is_project_approved
+
+            if is_project_approved(name, args, cfg.approved_commands):
+                return True
         path = args.get("path", args.get("cmd", "?"))
         preview = str(args.get("content", ""))[:200] if name == "write_file" else ""
         if name == "edit_file":

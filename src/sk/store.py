@@ -9,10 +9,37 @@ from pathlib import Path
 DB_PATH = Path.home() / ".sidekick" / "history.db"
 
 # Schema version, stamped via PRAGMA user_version. Bump when adding tables or
-# columns; add a _migrate_N_to_N+1() and wire it in _migrate(). v1 = current
-# tables (messages/memories/todos/shell_history + memories_fts).
+# columns; add a _migrate_N_to_N+1() and wire it in _migrate().
+# v1 = base tables (messages/memories/todos/shell_history + memories_fts).
 # v2 = tool_runs audit log (session, tool, target, approved, provider, host).
-SCHEMA_VERSION = 2
+# v3 = memories.namespace for per-project scoping (Config.load publishes it).
+SCHEMA_VERSION = 3
+
+# Process-wide memory namespace, published by Config.load() from the active
+# project file (or "" outside projects). Callers may pass an explicit
+# namespace instead; None means "use this default".
+_default_namespace: str = ""
+
+
+def set_default_namespace(ns: str) -> None:
+    """Set the process memory namespace (called by Config.load). Test-safe."""
+    global _default_namespace
+    _default_namespace = (ns or "").strip()
+
+
+def _resolve_namespace(namespace: str | None) -> str:
+    return _default_namespace if namespace is None else (namespace or "").strip()
+
+
+def _ns_clause(namespace: str, alias: str = "") -> tuple[str, tuple[str, ...]]:
+    """Visibility: global namespace sees only global; a project sees global + its own.
+
+    alias must match the query's table alias ("" for unaliased FROM memories).
+    """
+    col = f"{alias}.namespace" if alias else "namespace"
+    if namespace:
+        return (f"({col} = '' OR {col} = ?)", (namespace,))
+    return (f"{col} = ''", ())
 
 
 def _get_version(conn: sqlite3.Connection) -> int:
@@ -86,6 +113,9 @@ def _migrate(conn: sqlite3.Connection) -> int:
     if v < 2:
         _migrate_1_to_2(conn)
         v = 2
+    if v < 3:
+        _migrate_2_to_3(conn)
+        v = 3
     _set_version(conn, v)
     conn.commit()
     return v
@@ -106,6 +136,13 @@ def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
             ts REAL NOT NULL
         )"""
     )
+
+
+def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
+    """v3: memories.namespace for per-project scoping. Existing rows stay global."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()]
+    if "namespace" not in cols:
+        conn.execute("ALTER TABLE memories ADD COLUMN namespace TEXT NOT NULL DEFAULT ''")
 
 
 def _connect() -> sqlite3.Connection:
@@ -210,16 +247,18 @@ def get_history(session: str, limit: int = 20) -> list[dict]:
         conn.close()
 
 
-def save_memory(content: str) -> str:
+def save_memory(content: str, namespace: str | None = None) -> str:
     content = content.strip()
     if not content:
         return "Empty, nothing saved."
     if len(content) > 2000:
         return "Too long (>2000 chars), keep memories short."
+    ns = _resolve_namespace(namespace)
     conn = _connect()
     try:
         cur = conn.execute(
-            "INSERT OR IGNORE INTO memories (content, ts) VALUES (?, ?)", (content, time.time())
+            "INSERT OR IGNORE INTO memories (content, namespace, ts) VALUES (?, ?, ?)",
+            (content, ns, time.time()),
         )
         if cur.rowcount:
             try:
@@ -275,20 +314,27 @@ def _fts_query(keys: list[str]) -> str:
     return " AND ".join(f'"{t}"*' for t in toks)
 
 
-def recall_memories(query: str, limit: int = 5) -> list[str]:
+def recall_memories(query: str, limit: int = 5, namespace: str | None = None) -> list[str]:
+    ns = _resolve_namespace(namespace)
+    scope, params = _ns_clause(ns)
     conn = _connect()
     try:
         keys = _keywords(query)
         if not keys:
-            cur = conn.execute("SELECT content FROM memories ORDER BY id DESC LIMIT ?", (limit,))
+            cur = conn.execute(
+                f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",
+                (*params, limit),
+            )
             return [r[0] for r in cur.fetchall()]
-        # 1) FTS5 ranked (prefix, typo-tolerant)
+        # 1) FTS5 ranked (prefix, typo-tolerant), joined for namespace scope
         try:
             fq = _fts_query(keys)
             if fq:
+                fts_scope, fts_params = _ns_clause(ns, alias="m")
                 cur = conn.execute(
-                    "SELECT content FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT ?",
-                    (fq, limit),
+                    "SELECT m.content FROM memories_fts f JOIN memories m ON m.id = f.rowid"
+                    f" WHERE f.memories_fts MATCH ? AND {fts_scope} ORDER BY rank LIMIT ?",
+                    (fq, *fts_params, limit),
                 )
                 rows = [r[0] for r in cur.fetchall()]
                 if rows:
@@ -296,7 +342,9 @@ def recall_memories(query: str, limit: int = 5) -> list[str]:
         except Exception:
             pass
         # 2) substring-score fallback (old behavior)
-        cur = conn.execute("SELECT content FROM memories ORDER BY id DESC LIMIT 100")
+        cur = conn.execute(
+            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT 100", params
+        )
         rows = [r[0] for r in cur.fetchall()]
         scored: list[tuple[int, str]] = []
         for c in rows:
@@ -313,19 +361,26 @@ def recall_memories(query: str, limit: int = 5) -> list[str]:
         conn.close()
 
 
-def list_memories(limit: int = 50) -> list[str]:
+def list_memories(limit: int = 50, namespace: str | None = None) -> list[str]:
+    ns = _resolve_namespace(namespace)
+    scope, params = _ns_clause(ns)
     conn = _connect()
     try:
-        cur = conn.execute("SELECT content FROM memories ORDER BY id DESC LIMIT ?", (limit,))
+        cur = conn.execute(
+            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",
+            (*params, limit),
+        )
         return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
 
 
-def forget_memory(query: str) -> str:
+def forget_memory(query: str, namespace: str | None = None) -> str:
+    ns = _resolve_namespace(namespace)
+    scope, params = _ns_clause(ns)
     conn = _connect()
     try:
-        cur = conn.execute("SELECT id, content FROM memories")
+        cur = conn.execute(f"SELECT id, content FROM memories WHERE {scope}", params)
         rows = cur.fetchall()
         ql = query.lower()
         killed = 0

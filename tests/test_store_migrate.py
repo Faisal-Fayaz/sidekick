@@ -20,7 +20,7 @@ def test_fresh_db_stamped_current(tmp_path, monkeypatch):
     conn = store._connect()
     conn.close()
     assert _version(db) == store.SCHEMA_VERSION
-    assert store.SCHEMA_VERSION == 2
+    assert store.SCHEMA_VERSION == 3
 
 
 def test_preversioning_db_upgrades_preserving_data(tmp_path, monkeypatch):
@@ -66,7 +66,30 @@ def test_v1_to_v2_adds_tool_runs_preserving_data(tmp_path, monkeypatch):
     assert store.recall_memories("fast") == ["prefers fast"]
     rows = store.list_tool_runs("s")
     assert len(rows) == 1 and rows[0]["tool"] == "list_dir"
-    assert _version(db) == 2
+    assert _version(db) == store.SCHEMA_VERSION
+
+
+def test_v2_to_v3_adds_namespace_preserving_data(tmp_path, monkeypatch):
+    db = tmp_path / "history.db"
+    monkeypatch.setattr(store, "DB_PATH", db)
+    # simulate a true v2 db: old-schema memories (no namespace column), stamped v2
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE memories (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT UNIQUE, ts REAL)"
+    )
+    conn.execute("INSERT INTO memories (content, ts) VALUES ('old fact', 1.0)")
+    conn.execute("CREATE VIRTUAL TABLE memories_fts USING fts5(content)")
+    conn.execute("INSERT INTO memories_fts(rowid, content) SELECT id, content FROM memories")
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+
+    assert store.recall_memories("old fact") == ["old fact"]  # migrated, still global
+    store.set_default_namespace("proj")
+    store.save_memory("new fact")
+    assert set(store.recall_memories("fact")) == {"old fact", "new fact"}
+    store.set_default_namespace("")
+    assert _version(db) == 3
 
 
 def test_newer_db_left_untouched(tmp_path, monkeypatch):

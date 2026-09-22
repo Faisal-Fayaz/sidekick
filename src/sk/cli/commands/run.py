@@ -29,7 +29,7 @@ def run(
     console.print(f"[dim]task: {task}  model: {cfg.model} ({mode})[/dim]")
     save_message(session, "user", task)
 
-    approve = _make_approver(yes)
+    approve = _make_approver(yes, cfg.approved_commands)
     on_tool = _make_on_tool()
     on_token = None if no_stream else _make_on_token()
 

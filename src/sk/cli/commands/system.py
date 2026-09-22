@@ -163,6 +163,10 @@ def config(
         console.print(
             f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}"
         )
+        if cfg.project_note():
+            console.print(f"[dim]{cfg.project_note()}[/dim]")
+        for w in cfg.project_warnings:
+            console.print(f"[yellow]! {w}[/yellow]")
 
 
 @app.command()
@@ -363,7 +367,7 @@ def oops(
             cfg,
             on_tool=_make_on_tool(),
             on_token=on_token,
-            approve=_make_approver(True),
+            approve=_make_approver(True, cfg.approved_commands),
             auto_approve=True,
             session="oops",
         )
@@ -418,6 +422,7 @@ def brief(
 
     from sk.brief import DEFAULT_PROJECTS, gather_brief
 
+    _cfg()  # establish project namespace default for memories
     projs = DEFAULT_PROJECTS + list(project or [])
     data = gather_brief(projs)
     console.print(Panel(f"[bold]sidekick brief[/]  {data['when']}", expand=False))
@@ -498,7 +503,7 @@ def brief(
             cfg,
             on_tool=_make_on_tool(),
             on_token=_make_on_token(),
-            approve=_make_approver(True),
+            approve=_make_approver(True, cfg.approved_commands),
             auto_approve=True,
             session="default",
         )

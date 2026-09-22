@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-219%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-235%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,7 +53,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 219-test suite incl. prompt-regression evals | ✅ | rare |
+| 235-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
@@ -171,7 +171,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 219 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 235 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
@@ -179,6 +179,8 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 ## Config
 
 `~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`. Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
+
+**Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may set `provider`, `model`, `max_steps`, `temperature`, plus a `[project]` table (`docs` files injected into the prompt, `memory_namespace`, `approved_commands` for `shell`). `api_key`/`base_url` are *never* read from project files (global/env only) — `sk config --show` prints the active project and any ignored keys. `sk --cwd PATH` runs any command as if in that directory.
 
 ## Roadmap
 
