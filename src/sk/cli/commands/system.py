@@ -293,6 +293,51 @@ def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show"))
 
 
 @app.command()
+def audit(
+    session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
+    format: str = typer.Option("md", "--format", "-f", help="md or json"),
+    limit: int = typer.Option(200, "--limit", "-n", help="Rows to show"),
+):
+    """Compliance log: tool runs with approve/deny + local-vs-egress. Fully offline."""
+    import datetime as _dt
+    import json as _json
+
+    from sk.store import is_local_traffic, list_tool_runs
+
+    rows = list_tool_runs(session=session.strip(), limit=max(1, min(limit, 1000)))
+    if format.strip().lower().startswith("json"):
+        console.print(_json.dumps(rows, indent=2, default=str))
+        return
+    scope = f"session `{session}`" if session.strip() else "all sessions"
+    if not rows:
+        console.print(f"[dim](no tool runs logged for {scope} yet — run something first)[/dim]")
+        return
+    egress = sum(1 for r in rows if not is_local_traffic(r["provider"], r["host"]))
+    console.print(
+        f"[bold]audit[/] {scope} — {len(rows)} runs, "
+        f"[green]{len(rows) - egress} local[/green] / "
+        f"[yellow]{egress} egress[/yellow]"
+    )
+    for r in reversed(rows):
+        ts = _dt.datetime.fromtimestamp(r["ts"]).strftime("%m-%d %H:%M")
+        if not r["approved"]:
+            mark = "[red]DENIED[/red]"
+        elif not r["ok"]:
+            mark = "[red]✗[/red]"
+        else:
+            mark = "[green]✓[/green]"
+        where = (
+            "[green]local[/green]"
+            if is_local_traffic(r["provider"], r["host"])
+            else (f"[yellow]→ {r['provider'] or '?'}@{r['host'] or '?'}[/yellow]")
+        )
+        console.print(
+            f"[dim]{ts}[/dim] {mark} [cyan]{r['tool']}[/cyan] {r['target'][:100]}  {where}"
+            + (f" [dim]({r['session']})[/dim]" if not session.strip() else "")
+        )
+
+
+@app.command()
 def oops(
     model: str = typer.Option("", help="Model override or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable streaming"),
@@ -320,6 +365,7 @@ def oops(
             on_token=on_token,
             approve=_make_approver(True),
             auto_approve=True,
+            session="oops",
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -454,6 +500,7 @@ def brief(
             on_token=_make_on_token(),
             approve=_make_approver(True),
             auto_approve=True,
+            session="default",
         )
         console.print()
         console.print("[dim]--- done ---[/dim]")

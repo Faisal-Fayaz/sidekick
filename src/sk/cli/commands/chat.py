@@ -89,6 +89,7 @@ def chat(
                 on_token=on_token,
                 approve=approve,
                 auto_approve=bool(state.get("yolo")),
+                session=session,
             )
         except Exception as e:
             console.print(
@@ -216,6 +217,7 @@ def talk(
                 on_token=on_token,
                 approve=approve,
                 auto_approve=bool(state.get("yolo")),
+                session=session,
             )
             console.print(f"[dim]({_t.monotonic() - t0:.0f}s)[/dim]")
         except Exception as e:

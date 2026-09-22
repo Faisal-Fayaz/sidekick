@@ -805,17 +805,23 @@ class SidekickTUI(App):
                 pass
 
         try:
-            answer = await asyncio.to_thread(
-                run_agent,
-                text,
-                hist,
-                cfg,
-                on_tool,
-                None,
-                self._approve,
-                on_reasoning,
-                bool(self.state.get("yolo")),
-            )
+            from sk.agent import audit_session
+
+            token = audit_session.set(self.session)
+            try:
+                answer = await asyncio.to_thread(
+                    run_agent,
+                    text,
+                    hist,
+                    cfg,
+                    on_tool,
+                    None,
+                    self._approve,
+                    on_reasoning,
+                    bool(self.state.get("yolo")),
+                )
+            finally:
+                audit_session.reset(token)
         except Exception as e:
             log_error("answer", e)
             try:

@@ -11,7 +11,8 @@ DB_PATH = Path.home() / ".sidekick" / "history.db"
 # Schema version, stamped via PRAGMA user_version. Bump when adding tables or
 # columns; add a _migrate_N_to_N+1() and wire it in _migrate(). v1 = current
 # tables (messages/memories/todos/shell_history + memories_fts).
-SCHEMA_VERSION = 1
+# v2 = tool_runs audit log (session, tool, target, approved, provider, host).
+SCHEMA_VERSION = 2
 
 
 def _get_version(conn: sqlite3.Connection) -> int:
@@ -82,10 +83,29 @@ def _migrate(conn: sqlite3.Connection) -> int:
     if v < 1:
         _migrate_0_to_1(conn)
         v = 1
-    # future: if v < 2: _migrate_1_to_2(conn); v = 2
+    if v < 2:
+        _migrate_1_to_2(conn)
+        v = 2
     _set_version(conn, v)
     conn.commit()
     return v
+
+
+def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
+    """v2: tool_runs audit log. Idempotent; existing rows untouched."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS tool_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session TEXT NOT NULL DEFAULT '',
+            tool TEXT NOT NULL,
+            target TEXT NOT NULL DEFAULT '',
+            approved INTEGER NOT NULL DEFAULT 1,
+            provider TEXT NOT NULL DEFAULT '',
+            host TEXT NOT NULL DEFAULT '',
+            ok INTEGER NOT NULL DEFAULT 1,
+            ts REAL NOT NULL
+        )"""
+    )
 
 
 def _connect() -> sqlite3.Connection:
@@ -427,3 +447,83 @@ def last_failed() -> tuple[int, str, str, int] | None:
         return (row[0], row[1], row[2], row[3]) if row else None
     finally:
         conn.close()
+
+
+def log_tool_run(
+    session: str,
+    tool: str,
+    target: str = "",
+    approved: bool = True,
+    provider: str = "",
+    host: str = "",
+    ok: bool = True,
+) -> None:
+    """Append one audit row. Best-effort: never raises (audit must not break runs)."""
+    try:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session or "",
+                    tool,
+                    (target or "")[:500],
+                    1 if approved else 0,
+                    provider or "",
+                    host or "",
+                    1 if ok else 0,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+            conn.execute(
+                "DELETE FROM tool_runs WHERE id NOT IN"
+                " (SELECT id FROM tool_runs ORDER BY id DESC LIMIT 5000)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def list_tool_runs(session: str = "", limit: int = 200) -> list[dict]:
+    """Audit rows, newest first. Empty session = all sessions."""
+    conn = _connect()
+    try:
+        if session:
+            cur = conn.execute(
+                "SELECT session, tool, target, approved, provider, host, ok, ts"
+                " FROM tool_runs WHERE session=? ORDER BY id DESC LIMIT ?",
+                (session, limit),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT session, tool, target, approved, provider, host, ok, ts"
+                " FROM tool_runs ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+        keys = ("session", "tool", "target", "approved", "provider", "host", "ok", "ts")
+        return [dict(zip(keys, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def is_local_traffic(provider: str, host: str) -> bool:
+    """True if the traffic stayed on this machine. Pure string checks, no DNS."""
+    if (provider or "").strip().lower() in ("ollama", "lmstudio"):
+        return True
+    h = (host or "").strip().lower().split(":")[0]
+    if h in ("localhost", "127.0.0.1", "::1", ""):
+        return True
+    if h.startswith(("192.168.", "10.")):
+        return True
+    if h.startswith("172."):
+        try:
+            second = int(h.split(".")[1])
+            if 16 <= second <= 31:
+                return True
+        except (ValueError, IndexError):
+            pass
+    return False

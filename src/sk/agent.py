@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 import os
 import platform
+from contextvars import ContextVar
 from pathlib import Path
 
 from openai import OpenAI
 
 from .config import Config
 from .tools import APPROVAL_TOOLS, TOOLS_SCHEMA, dispatch_tool, tool_sysinfo
+
+# Audit session tag. Direct callers pass session= to run_agent; the TUI
+# dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
+# so it sets this instead (to_thread propagates the context into the worker).
+audit_session: ContextVar[str] = ContextVar("sk_audit_session", default="")
 
 SYSTEM_PROMPT = """You are Sidekick, a local-first terminal companion.
 You run on the user's machine via Ollama (OS: {os}).
@@ -338,8 +344,18 @@ def _tool_target(name: str, args: dict) -> str:
     return f"{name}|{json.dumps(args, sort_keys=True)[:300]}"
 
 
+def _provider_host(cfg) -> str:
+    """Hostname of the provider endpoint. Pure parse, no network."""
+    from urllib.parse import urlparse
+
+    try:
+        return urlparse(cfg.effective_base_url()).hostname or ""
+    except Exception:
+        return ""
+
+
 def _run_tool_cached(
-    name: str, args: dict, approve, on_tool, seen: dict[str, str]
+    name: str, args: dict, approve, on_tool, seen: dict[str, str], session: str = "", cfg=None
 ) -> tuple[str, bool]:
     """Execute unless this exact target already ran this turn. Returns (result, repeated)."""
     key = _tool_target(name, args)
@@ -348,7 +364,9 @@ def _run_tool_cached(
             f"[cached — already ran above]\n{seen[key][:2000]}\nSynthesize the final answer now. Do not call more tools.",
             True,
         )
-    result, _ = _gated_dispatch(name, args, approve)
+    provider = getattr(cfg, "provider", "") if cfg is not None else ""
+    host = _provider_host(cfg) if cfg is not None else ""
+    result, _ = _gated_dispatch(name, args, approve, session=session, provider=provider, host=host)
     seen[key] = result
     if on_tool is not None:
         try:
@@ -358,19 +376,35 @@ def _run_tool_cached(
     return (result, False)
 
 
-def _gated_dispatch(name: str, args: dict, approve: object = None) -> tuple[str, bool]:
+def _gated_dispatch(
+    name: str,
+    args: dict,
+    approve: object = None,
+    session: str = "",
+    provider: str = "",
+    host: str = "",
+) -> tuple[str, bool]:
     """Run dispatch_tool with approval gate. Returns (result, approved)."""
+    from .store import log_tool_run
+
+    target = _tool_target(name, args)
     if name in APPROVAL_TOOLS and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
         except Exception:
             ok = False
         if not ok:
+            log_tool_run(
+                session, name, target, approved=False, provider=provider, host=host, ok=False
+            )
             return (
                 f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.",
                 False,
             )
-    return (dispatch_tool(name, args), True)
+    result = dispatch_tool(name, args)
+    failed = result.startswith("Error") or "blocked" in result[:60].lower()
+    log_tool_run(session, name, target, approved=True, provider=provider, host=host, ok=not failed)
+    return (result, True)
 
 
 class _TC:
@@ -662,6 +696,7 @@ def run_agent(
     approve: object = None,
     on_reasoning: object = None,
     auto_approve: bool = False,
+    session: str = "",
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
@@ -670,7 +705,10 @@ def run_agent(
     on_reasoning(chunk) receives thinking deltas separately when given.
     auto_approve only changes the prompt line (tool gating is the caller's
     approve callback); pass True when --yes/yolo so the model calls directly.
+    session tags audit rows (tool_runs) for `sk audit`. Empty session falls
+    back to the audit_session context var (used by the TUI worker path).
     """
+    session = session or audit_session.get()
     quick = _quick_reply(user_msg)
     if quick is not None:
         if on_token is not None:
@@ -681,6 +719,19 @@ def run_agent(
         return quick
     client = get_client(cfg)
     messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
+    try:
+        from .store import log_tool_run
+
+        log_tool_run(
+            session,
+            "llm_call",
+            cfg.model,
+            approved=True,
+            provider=cfg.provider,
+            host=_provider_host(cfg),
+        )
+    except Exception:
+        pass
 
     final_text = ""
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
@@ -718,7 +769,7 @@ def run_agent(
             messages.append({"role": "assistant", "content": msg_text})
             combined: list[str] = []
             for tname, targs in text_tools[:4]:  # cap 4 per turn
-                result, _ = _run_tool_cached(tname, targs, approve, on_tool, seen)
+                result, _ = _run_tool_cached(tname, targs, approve, on_tool, seen, session, cfg)
                 combined.append(f"[tool {tname} result]\n{result}")
             messages.append(
                 {
@@ -764,7 +815,7 @@ def run_agent(
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            result, _ = _run_tool_cached(name, args, approve, on_tool, seen)
+            result, _ = _run_tool_cached(name, args, approve, on_tool, seen, session, cfg)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
         # after tools, loop to let model synthesize (next iteration)

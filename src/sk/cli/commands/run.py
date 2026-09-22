@@ -43,6 +43,7 @@ def run(
             on_token=on_token,
             approve=approve,
             auto_approve=yes,
+            session=session,
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
