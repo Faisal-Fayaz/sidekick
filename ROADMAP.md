@@ -61,6 +61,7 @@ Thesis: own the users cloud agents structurally can't serve
 - **`sk export`** — dump any session to a portable Markdown transcript. Sharing, debugging, audit trail.
 - **Self-update** — `sk upgrade` via uv/PyPI version check. Unblocks non-technical users from staying current.
 - **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
+- **TUI overhaul** — `tui/` package split, then design system + reskin (tranche A), then layout restructure: status bar, sessions drawer, approval cards, streaming markdown (tranche B). Keymap changes allowed only with F1-overlay migration notes.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 

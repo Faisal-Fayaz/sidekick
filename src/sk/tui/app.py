@@ -1,246 +1,18 @@
-"""Hermes-style single chat view. Everything via /commands — type /help.
-
-Enter sends, ctrl+j newline, up/down history, ctrl+y copies last answer.
-"""
+"""TUI SidekickTUI application shell (split from sk/tui.py, pure move)."""
 
 from __future__ import annotations
 
 import time
 
 from rich.markdown import Markdown
-from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.message import Message
 from textual.widgets import Footer, Header, Label, ListItem, ListView, RichLog, Static, TextArea
 
-
-def _w(log: RichLog, s: str, markup: bool = False) -> None:
-    """Write to log. markup=True only for our own chrome (no user/model brackets)."""
-    log.write(Text.from_markup(s) if markup else Text(s))
-
-
-def log_error(where: str, exc: BaseException) -> None:
-    """Persist TUI errors where the user can't copy them. Best effort."""
-    import traceback
-
-    from .config import CONFIG_DIR
-
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_DIR / "tui-errors.log", "a") as f:
-            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {where}: {exc!r}\n")
-            f.write(traceback.format_exc()[-2000:] + "\n")
-    except Exception:
-        pass
-
-
-ROLE_STYLES = {
-    "you": "bold green",
-    "sidekick": "bold cyan",
-    "tool": "dim",
-    "sys": "dim",
-    "warn": "bold yellow",
-    "error": "bold red",
-}
-
-
-def _line(when: str, role: str, body: str) -> Text:
-    """Role-colored chat line: dim timestamp, colored `role>`, neutral body.
-
-    Bodies stay neutral on purpose — brackets and code copy cleanly and the
-    role color alone carries who-is-who.
-    """
-    t = Text()
-    t.append(f"[{when}] ", style="dim")
-    if role:
-        t.append(f"{role}> ", style=ROLE_STYLES.get(role, ""))
-    t.append(body)
-    return t
-
-
-def _role(log: RichLog, role: str, body: str) -> None:
-    log.write(_line(_now(), role, body))
-
-
-def _rule(log: RichLog) -> None:
-    t = Text("─" * 40, style="dim")
-    log.write(t)
-
-
-def _now() -> str:
-    return time.strftime("%H:%M")
-
-
-# Words that approve a pending write. Keep in sync with the prompt line.
-# Multi-word entries match when the whole line starts with them ("go ahead
-# and write it" counts; "yeah but not there" does not — strict startswith).
-AFFIRMATIVE_EXACT = (
-    "y",
-    "yes",
-    "yup",
-    "ok",
-    "okay",
-    "sure",
-    "approve",
-    "--yes",
-    "-y",
-    "yeah",
-    "yep",
-    "yepp",
-    "aye",
-)
-AFFIRMATIVE_PREFIX = ("go ahead", "do it", "yes please", "please do")
-
-
-def is_affirmative(text: str) -> bool:
-    t = (text or "").strip().lower()
-    if t in AFFIRMATIVE_EXACT:
-        return True
-    return any(t.startswith(p) for p in AFFIRMATIVE_PREFIX)
-
-
-def _load_history() -> list[str]:
-    import json
-
-    from .config import CONFIG_DIR
-
-    try:
-        items = json.loads((CONFIG_DIR / "input_history").read_text())
-        return [str(x) for x in items if str(x).strip()][:100]
-    except Exception:
-        return []
-
-
-def _save_history(items: list[str]) -> None:
-    import json
-
-    from .config import CONFIG_DIR
-
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        (CONFIG_DIR / "input_history").write_text(json.dumps(items[-100:]))
-    except Exception:
-        pass
-
-
-class ChatLog(RichLog):
-    """Chat history with working mouse-drag text selection.
-
-    Stock RichLog renders RichVisual, which the base get_selection() can't
-    extract text from — so drag-selection in it copies nothing. We extract
-    from the stored line texts instead.
-    """
-
-    ALLOW_SELECT = True
-
-    def get_selection(self, selection) -> tuple[str, str] | None:
-        try:
-            text = "\n".join(ln.text for ln in self.lines)
-            if not text.strip():
-                return None
-            extracted = selection.extract(text) if hasattr(selection, "extract") else ""
-            return (extracted, "\n") if extracted else None
-        except Exception:
-            return None
-
-    def on_mouse_up(self, event) -> None:
-        if getattr(event, "button", 1) != 1:
-            return
-        app = self.app
-        if hasattr(app, "_copy_selection_if_any"):
-            try:
-                app.call_after_refresh(app._copy_selection_if_any)
-            except Exception:
-                app._copy_selection_if_any()
-
-
-class ChatArea(TextArea):
-    """Multiline input: Enter sends, ctrl+j / alt+enter newline, up/down history."""
-
-    BINDINGS = [
-        Binding("enter", "send", "send", priority=True, show=False),
-        Binding("ctrl+j", "newline", "newline", show=False),
-        Binding("alt+enter", "newline", "newline", show=False),
-        Binding("ctrl+y", "copy_last", "copy last answer", priority=True, show=False),
-        Binding("up", "hist_prev", "history", show=False),
-        Binding("down", "hist_next", "history", show=False),
-        Binding("escape", "slash_dismiss", "dismiss", show=False),
-        Binding("tab", "slash_complete", "complete", show=False),
-    ]
-
-    class Send(Message):
-        def __init__(self, text: str) -> None:
-            super().__init__()
-            self.text = text
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.cmd_history: list[str] = []
-        self.hist_idx: int = -1  # -1 = not browsing
-
-    def action_send(self) -> None:
-        if self.app.slash_complete_active(self.text):
-            self.app.slash_complete()
-            return
-        text = self.text.strip()
-        if text:
-            self.hist_idx = -1
-            self.post_message(ChatArea.Send(text))
-        self.clear()
-
-    def action_slash_complete(self) -> None:
-        if not self.app.slash_complete_active():
-            self.insert("    ")
-            return
-
-    def action_slash_dismiss(self) -> None:
-        if self.app.close_help_if_open():
-            return
-        self.app.slash_dismiss()
-
-    def action_copy_last(self) -> None:
-        # TextArea binds ctrl+y to redo; this priority binding reclaims it.
-        self.app.action_copy_last()
-
-    def action_newline(self) -> None:
-        self.insert("\n")
-
-    def push_history(self, text: str) -> None:
-        if text and (not self.cmd_history or self.cmd_history[-1] != text):
-            self.cmd_history.append(text)
-            _save_history(self.cmd_history)
-
-    def cursor_to_end(self) -> None:
-        lines = self.text.split("\n")
-        end = (len(lines) - 1, len(lines[-1]))
-        try:
-            self.selection = type(self.selection)(end, end)
-        except Exception:
-            pass
-
-    def _browse(self, step: int) -> None:
-        if self.app.slash_navigate(step):
-            return
-        if "\n" in self.text or not self.cmd_history:
-            if step < 0:
-                self.action_cursor_up()
-            else:
-                self.action_cursor_down()
-            return
-        if self.hist_idx == -1:
-            self.hist_idx = len(self.cmd_history) if step < 0 else -1
-        self.hist_idx = max(-1, min(len(self.cmd_history) - 1, self.hist_idx + step))
-        self.text = self.cmd_history[self.hist_idx] if self.hist_idx >= 0 else ""
-        self.cursor_to_end()
-
-    def action_hist_prev(self) -> None:
-        self._browse(-1)
-
-    def action_hist_next(self) -> None:
-        self._browse(1)
+from .helpers import _load_history, _now, _role, _rule, _w, is_affirmative, log_error
+from .theme import install_sidekick_theme
+from .widgets import ChatArea, ChatLog
 
 
 class SidekickTUI(App):
@@ -270,7 +42,7 @@ class SidekickTUI(App):
     def __init__(self, model: str = "", session: str = ""):
         super().__init__()
         self.model_override = model
-        from .store import new_session_id
+        from sk.store import new_session_id
 
         self.session = session or new_session_id("tui")
         self._continued = bool(session)
@@ -302,7 +74,7 @@ class SidekickTUI(App):
         yield Footer()
 
     def _help_text(self) -> str:
-        from .slash import COMMANDS
+        from sk.slash import COMMANDS
 
         keys = [
             "Enter send · ctrl+j / alt+enter newline · ↑/↓ history+autocomplete",
@@ -341,7 +113,7 @@ class SidekickTUI(App):
 
     # ---- slash autocomplete ----
     def _slash_items(self, fragment: str) -> list[tuple[str, str]]:
-        from .slash import COMMANDS
+        from sk.slash import COMMANDS
 
         frag = fragment.lower()
         starts = [(n, d) for n, d in COMMANDS if n.split()[0].lower().startswith(frag)]
@@ -354,7 +126,7 @@ class SidekickTUI(App):
 
     def slash_update(self, text: str) -> None:
         """Refresh/hide the suggestion list from current input. Returns nothing."""
-        from .slash import COMMANDS
+        from sk.slash import COMMANDS
 
         try:
             lst = self.query_one("#slash-list", ListView)
@@ -442,23 +214,7 @@ class SidekickTUI(App):
         self.slash_update(ev.text_area.text)
 
     def on_mount(self) -> None:
-        try:
-            from textual.theme import Theme
-
-            self.register_theme(
-                Theme(
-                    name="sidekick",
-                    primary="#00ff9d",
-                    secondary="#7c3aed",
-                    accent="#ffb000",
-                    background="#0b0f0c",
-                    surface="#111613",
-                    panel="#111613",
-                )
-            )
-            self.theme = "sidekick"
-        except Exception:
-            pass
+        install_sidekick_theme(self)
         area = self.query_one("#chat-input", ChatArea)
         area.cmd_history = _load_history()
         area.focus()
@@ -469,7 +225,7 @@ class SidekickTUI(App):
             "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).",
         )
         if self._continued:
-            from .store import get_history
+            from sk.store import get_history
 
             _role(log, "sys", f"continued `{self.session}`")
             for m in get_history(self.session)[-10:]:
@@ -484,7 +240,7 @@ class SidekickTUI(App):
                     except Exception:
                         _role(log, "sidekick", m["content"][:1500])
         try:
-            from .cli import _code_version
+            from sk.cli import _code_version
 
             _w(log, f"build {_code_version()} (`sk version` to compare after updates)")
         except Exception:
@@ -499,7 +255,7 @@ class SidekickTUI(App):
     @staticmethod
     def _is_fresh() -> bool:
         try:
-            from .store import list_sessions
+            from sk.store import list_sessions
 
             return not list_sessions(limit=1)
         except Exception:
@@ -550,7 +306,7 @@ class SidekickTUI(App):
     def _mic_toggle(self) -> None:
         import time as _t
 
-        from . import voice as _voice
+        from sk import voice as _voice
 
         log = self.query_one("#chat-log", RichLog)
         try:
@@ -598,7 +354,7 @@ class SidekickTUI(App):
             pass
 
     def _mic_stop(self) -> None:
-        from . import voice as _voice
+        from sk import voice as _voice
 
         log = self.query_one("#chat-log", RichLog)
         proc, self._rec_proc = self._rec_proc, None
@@ -623,7 +379,7 @@ class SidekickTUI(App):
     async def _do_transcribe(self, wav: str) -> None:
         import asyncio
 
-        from . import voice as _voice
+        from sk import voice as _voice
 
         try:
             text = await asyncio.to_thread(_voice.transcribe, wav)
@@ -659,7 +415,7 @@ class SidekickTUI(App):
         _role(log, "", f"heard> {text[:200]} (edit + Enter to send)")
 
     def _sub(self) -> None:
-        from .config import Config
+        from sk.config import Config
 
         cfg = Config.load()
         model = self.model_override or cfg.model
@@ -676,7 +432,7 @@ class SidekickTUI(App):
         import threading
         import time as _t
 
-        from .tools import APPROVAL_TOOLS
+        from sk.tools import APPROVAL_TOOLS
 
         if name not in APPROVAL_TOOLS:
             return True
@@ -711,7 +467,7 @@ class SidekickTUI(App):
             try:
                 import datetime as _dt
 
-                from .config import CONFIG_DIR
+                from sk.config import CONFIG_DIR
 
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 with open(CONFIG_DIR / "tui-errors.log", "a") as f:
@@ -818,7 +574,7 @@ class SidekickTUI(App):
 
     def _copy_out(self, text: str, what: str) -> None:
         """Copy via reliable backends, OSC52 fallback with honest warning."""
-        from .clip import backends_available, copy_text, install_hint
+        from sk.clip import backends_available, copy_text, install_hint
 
         log = self.query_one("#chat-log", RichLog)
         if backends_available():
@@ -838,7 +594,7 @@ class SidekickTUI(App):
         )
 
     def action_copy_last(self) -> None:
-        from .store import get_history
+        from sk.store import get_history
 
         log = self.query_one("#chat-log", RichLog)
         # Hermes order: composer (input) selection first, then chat selection.
@@ -861,7 +617,7 @@ class SidekickTUI(App):
 
     @on(ChatArea.Send)
     def _send(self, ev: ChatArea.Send) -> None:
-        from . import slash
+        from sk import slash
 
         text = ev.text.strip()
         if not text:
@@ -900,8 +656,8 @@ class SidekickTUI(App):
         _rule(log)
         if text.startswith("/"):
             if text.startswith("/model ") and text[7:].strip():
-                from .config import Config
-                from .slash import _resolve_model_name
+                from sk.config import Config
+                from sk.slash import _resolve_model_name
 
                 name = _resolve_model_name(Config.load(), text[7:].strip())
                 self.model_override = name
@@ -914,7 +670,7 @@ class SidekickTUI(App):
                 _role(log, "sys", f"model → `{name}`")
                 self._sub()
                 return
-            from .config import Config
+            from sk.config import Config
 
             cfg = Config.load()
             if self.model_override:
@@ -924,7 +680,7 @@ class SidekickTUI(App):
                 self.exit()
                 return
             if out.switch_session:
-                from .store import get_history as _gh
+                from sk.store import get_history as _gh
 
                 self.session = out.switch_session
                 self._sub()
@@ -1017,9 +773,9 @@ class SidekickTUI(App):
     async def _answer(self, text: str, show_as: str = "") -> None:
         import asyncio
 
-        from .agent import run_agent
-        from .config import Config
-        from .store import get_history, save_message
+        from sk.agent import run_agent
+        from sk.config import Config
+        from sk.store import get_history, save_message
 
         log = self.query_one("#chat-log", RichLog)
         cfg = Config.load()
@@ -1104,14 +860,3 @@ class SidekickTUI(App):
         except Exception:
             _role(log, "sidekick", answer)
         _rule(log)
-
-
-def launch(model: str = "", session: str = "", cont: bool = False) -> None:
-    # Mouse tracking on: drag-select in the log auto-copies on release,
-    # clicks and wheel work like every other TUI. Hold Shift to select
-    # natively at terminal level.
-    if cont and not session:
-        from .store import latest_session
-
-        session = latest_session("tui")
-    SidekickTUI(model=model, session=session).run(mouse=True)
