@@ -61,6 +61,17 @@ Thesis: own the users cloud agents structurally can't serve
 - **`sk export`** — dump any session to a portable Markdown transcript. Sharing, debugging, audit trail.
 - **Self-update** — `sk upgrade` via uv/PyPI version check. Unblocks non-technical users from staying current.
 - **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
+- **Per-project config** — `.sidekick.toml` per repo (project docs, memory namespace, approved commands) + `--cwd`. Drives daily team adoption.
+- **Plan-review step** — show the multi-tool plan, ask `[y/N]` before destructive/foreign actions. The make-or-break trust feature.
+- **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
+- **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
+- **Parallel tool calls** — run independent reads concurrently (~2–3x latency win on grounded answers).
+- **MCP server** — wrap the 17 tools + safety policy for Claude Desktop, Copilots, IDEs. Biggest single leverage point.
+- **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
+- **Keyring + spend caps** — OS keyring backend with file fallback; per-session cost display for BYO-key users.
+- **Opt-in crash telemetry** — no data by default, explicit flag only.
+- **Test-infra remainder** — pre-commit config, property-based allowlist/SSRF tests, coverage gates.
+- **Daemon remainder** — launchd unit (macOS) + desktop notifications with do-not-disturb.
 - **TUI overhaul** — `tui/` package split, then design system + reskin (tranche A), then layout restructure: status bar, sessions drawer, approval cards, streaming markdown (tranche B). Keymap changes allowed only with F1-overlay migration notes.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
@@ -70,6 +81,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
 - `v0.1.2` — release-job fix (checkout before tagging).
+- `v0.2.0` — skills search, systemd `daemon-install`, `commands/` split, format gate.
 - `v0.1.1` — PyPI trusted publishing (`sidekick-agent`), AUR + conda-forge notes.
 - Voice input (local STT) · Skills (superpowers) · Sessions · Providers/BYOK · Eval harness.
 - Quality pass: security regression suite, lint/type CI (3.12–3.14 × ubuntu/macos), single-source model map, `tools/` + `cli/` package splits, DB `user_version` migrations.

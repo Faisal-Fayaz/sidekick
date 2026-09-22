@@ -7,9 +7,11 @@ How to pick up work and get it merged. The shared plan lives in
 
 1. Browse [open issues](https://github.com/Faisal01011/sidekick/issues) —
    they're grouped by [milestones](https://github.com/Faisal01011/sidekick/milestones)
-   (`v0.2.0` = now, `v0.3.0` = next).
+   (`v0.3.0` = now; later work parks as bullets in `ROADMAP.md`).
 2. Comment on the issue so we don't duplicate effort, then work from a
    branch (`feature/<what>` or `fix/<what>`).
+3. Starting work? Assign the issue to yourself *before* coding — the
+   assignee field is the lock between maintainers. Unassign if you stop.
 3. Want something not listed? Open an issue first (or a PR against
    `ROADMAP.md` — the plan changes by PR, either maintainer may approve).
 
