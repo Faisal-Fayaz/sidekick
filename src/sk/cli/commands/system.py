@@ -56,6 +56,48 @@ def version():
 
 
 @app.command()
+def upgrade(
+    check: bool = typer.Option(False, "--check", help="Only report, do not upgrade"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Self-update from PyPI: sk upgrade [--check] [--yes]"""
+    from sk import __version__ as current
+    from sk.upgrade import detect_installer, is_newer, pypi_latest_version, upgrade_package
+
+    try:
+        latest = pypi_latest_version()
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    if not is_newer(latest, current):
+        console.print(f"[green]already current at {current}[/green]")
+        return
+    console.print(f"[yellow]update available: {current} → {latest}[/yellow]")
+    if check:
+        console.print("[dim]--check: not upgrading.[/dim]")
+        return
+    installer = detect_installer()
+    if installer == "dev":
+        console.print("[red]editable dev install — upgrade with git pull + reinstall.[/red]")
+        raise typer.Exit(1)
+    if not yes:
+        try:
+            if not typer.confirm(f"Upgrade via {installer}?", default=False):
+                console.print("aborted.")
+                return
+        except (EOFError, KeyboardInterrupt, OSError):
+            console.print("\naborted.")
+            return
+    console.print(f"[dim]upgrading via {installer}...[/dim]")
+    ok, out = upgrade_package(installer)
+    console.print(f"[green]{out}[/green]" if ok else f"[red]{out}[/red]")
+    if ok:
+        console.print(f"[dim]restart sk to use {latest} (this process is still {current}).[/dim]")
+    else:
+        raise typer.Exit(1)
+
+
+@app.command()
 def models():
     """List models for the current provider."""
     from sk.auth import fetch_models
