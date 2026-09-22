@@ -11,6 +11,96 @@ from pathlib import Path
 STATE_PATH = Path.home() / ".sidekick" / "daemon.json"
 NUDGES_LOG = Path.home() / ".sidekick" / "nudges.log"
 
+UNIT_NAME = "sidekick-daemon.service"
+
+
+def unit_path() -> Path:
+    """Destination of the user-level systemd unit."""
+    return Path.home() / ".config" / "systemd" / "user" / UNIT_NAME
+
+
+def sk_bin() -> str:
+    """How the unit should invoke sidekick: `sk` on PATH, else `python -m sk`."""
+    import shutil
+    import sys
+
+    found = shutil.which("sk")
+    if found:
+        return found
+    return f"{sys.executable} -m sk"
+
+
+def unit_text(interval: int = 300, disk_warn: int = 90) -> str:
+    """Render sidekick-daemon.service. Pure function, safe to unit test."""
+    return f"""[Unit]
+Description=Sidekick background watcher (disk, shell failures, dirty repos)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={sk_bin()} daemon --interval {int(interval)} --disk-warn {int(disk_warn)}
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+"""
+
+
+def has_systemd() -> bool:
+    """True when user-level systemd is available (Linux with systemd)."""
+    import shutil
+
+    if shutil.which("systemctl") is None:
+        return False
+    return Path("/run/systemd/system").exists()
+
+
+def _systemctl(*args: str) -> tuple[bool, str]:
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", *args], capture_output=True, text=True, timeout=30
+        )
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        return (r.returncode == 0, out or "ok")
+    except Exception as e:
+        return (False, str(e))
+
+
+def install_unit(interval: int = 300, disk_warn: int = 90, path: Path | None = None) -> str:
+    """Write unit + daemon-reload + enable --now. Returns human message."""
+    if not has_systemd():
+        return "No user systemd found (need Linux + systemctl). On macOS, run `sk daemon --once` from cron instead."
+    dest = path or unit_path()
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(unit_text(interval, disk_warn))
+    except Exception as e:
+        return f"Error writing {dest}: {e}"
+    ok, msg = _systemctl("daemon-reload")
+    if not ok:
+        return f"Installed {dest} but daemon-reload failed: {msg}"
+    ok, msg = _systemctl("enable", "--now", UNIT_NAME)
+    if not ok:
+        return f"Installed {dest} but enable failed: {msg} — start it with `systemctl --user start {UNIT_NAME}`"
+    return f"Installed + started {dest} (checks every {interval}s). Status: `systemctl --user status {UNIT_NAME}`"
+
+
+def remove_unit(path: Path | None = None) -> str:
+    """Stop + disable + delete the unit. Returns human message."""
+    if not has_systemd():
+        return "No user systemd found — nothing to remove."
+    dest = path or unit_path()
+    _systemctl("disable", "--now", UNIT_NAME)
+    try:
+        if dest.exists():
+            dest.unlink()
+    except Exception as e:
+        return f"Error removing {dest}: {e}"
+    _systemctl("daemon-reload")
+    return f"Removed {dest}."
+
 
 def load_state() -> dict:
     try:

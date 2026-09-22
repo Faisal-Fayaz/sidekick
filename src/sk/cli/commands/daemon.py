@@ -42,3 +42,21 @@ def daemon(
             time.sleep(interval)
     except KeyboardInterrupt:
         console.print("\nstopped.")
+
+
+@app.command(name="daemon-install")
+def daemon_install(
+    interval: int = typer.Option(300, "--interval", help="Seconds between checks"),
+    disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
+):
+    """Install the watcher as a user systemd service (Linux)."""
+    from sk.daemon import UNIT_NAME, install_unit
+
+    out = install_unit(interval=interval, disk_warn=disk_warn)
+    if out.startswith("Installed + started"):
+        console.print(f"[green]{out}[/green]")
+    elif out.startswith("Installed"):
+        console.print(f"[yellow]{out}[/yellow]")
+    else:
+        console.print(f"[red]{out}[/red]")
+    console.print(f"[dim]Logs: ~/.sidekick/nudges.log · unit: {UNIT_NAME}[/dim]")
