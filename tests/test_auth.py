@@ -112,7 +112,7 @@ def test_setup_local_flow(monkeypatch):
     monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: ["m-a"])
     monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hi"))
     runner, app = _runner()
-    res = runner.invoke(app, ["setup"], input="1\nn\n")
+    res = runner.invoke(app, ["setup"], input="1\n1\nn\n")
     assert res.exit_code == 0, res.output
     assert "setup complete" in res.output
 
@@ -190,7 +190,7 @@ def test_connect_flow(monkeypatch):
     )
     monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hello"))
     # canonical home after commands/ split (was sk.cli._pick_provider)
-    monkeypatch.setattr("sk.cli.commands.auth._pick_provider", lambda default="": "groq")
+    monkeypatch.setattr("sk.cli.commands.auth._pick_provider", lambda default="", **k: "groq")
     runner = CliRunner()
     # key, then model pick 1 (only m-good survives the chat filter)
     res = runner.invoke(app, ["connect"], input="gsk-test\n1\n")
@@ -213,3 +213,36 @@ def test_connect_local_skips_key(monkeypatch):
     res = runner.invoke(app, ["connect"], input="1\n1\n")
     assert res.exit_code == 0, res.output
     assert "no key needed" in res.output
+
+
+def test_picker_lists_despite_valid_default(monkeypatch, capsys):
+    import sk.cli.commands.auth as auth_mod
+    from sk.cli.commands.auth import _pick_provider
+
+    # regression: connect used to skip the list when cfg.provider was valid,
+    # silently validating keys against the wrong provider (401 confusion)
+    monkeypatch.setattr(auth_mod.console, "input", lambda *a, **k: "2")
+    picked = _pick_provider("ollama", force_list=True)
+    out = capsys.readouterr().out
+    assert "Provider:" in out and "anthropic" in out
+    from sk.config import PRESETS
+
+    assert picked == list(PRESETS)[1]
+
+
+def test_picker_empty_keeps_current(monkeypatch):
+    import sk.cli.commands.auth as auth_mod
+    from sk.cli.commands.auth import _pick_provider
+
+    monkeypatch.setattr(auth_mod.console, "input", lambda *a, **k: "")
+    assert _pick_provider("groq", force_list=True) == "groq"
+    # old behavior preserved without force_list
+    assert _pick_provider("groq") == "groq"
+
+
+def test_validate_key_401_names_provider(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(Exception("HTTP 401")))
+    ok, msg = auth.validate_key("openai", "https://x/v1", "bad")
+    assert ok is False and "openai" in msg and "401" in msg

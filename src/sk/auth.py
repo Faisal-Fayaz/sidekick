@@ -48,7 +48,7 @@ def validate_key(provider: str, base_url: str, api_key: str) -> tuple[bool, str]
     except Exception as e:
         msg = str(e)
         if "401" in msg or "403" in msg:
-            return (False, "key rejected (401/403) — check it and retry")
+            return (False, f"key rejected by {provider} (401/403) — check it and retry")
         return (False, f"unreachable: {msg[:150]}")
     return (True, f"valid ({len(names)} models listed)")
 

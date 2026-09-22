@@ -13,11 +13,11 @@ auth_app = typer.Typer(help="Keys: sk auth add/list/status/remove (keys masked, 
 app.add_typer(auth_app, name="auth")
 
 
-def _pick_provider(default: str = "") -> str:
+def _pick_provider(default: str = "", *, force_list: bool = False) -> str:
     from sk.config import PRESETS
 
     names = list(PRESETS)
-    if default and default in names:
+    if default and default in names and not force_list:
         return default
     console.print("Provider:")
     for i, n in enumerate(names, 1):
@@ -55,7 +55,7 @@ def auth_add(
     from sk.config import PRESETS
 
     cfg = _cfg()
-    p = provider.strip().lower() or _pick_provider(cfg.provider)
+    p = provider.strip().lower() or _pick_provider(cfg.provider, force_list=True)
     if p not in PRESETS:
         console.print(f"[red]unknown provider. Pick: {', '.join(PRESETS)}[/red]")
         raise typer.Exit(1)
@@ -180,7 +180,7 @@ def _connect_flow() -> Config:
     from sk.config import PRESETS
 
     cfg = _cfg()
-    p = _pick_provider(cfg.provider)
+    p = _pick_provider(cfg.provider, force_list=True)
     base = PRESETS[p]["base_url"]
     if p in ("ollama", "lmstudio"):
         cfg.provider, cfg.model, cfg.base_url, cfg.api_key = (
