@@ -130,6 +130,45 @@ def test_ping_anthropic(monkeypatch):
     assert seen["j"]["model"] == "claude-sonnet-5" and seen["j"]["max_tokens"] == 5
 
 
+def test_ping_surfaces_api_error_body(monkeypatch):
+    import httpx
+
+    import sk.auth as auth
+
+    body = (
+        '{"type":"error","error":{"type":"invalid_request_error",'
+        '"message":"Your credit balance is too low to access the Anthropic API."}}'
+    )
+
+    class FakeResp:
+        status_code = 400
+        text = body
+
+        def json(self):
+            import json as _json
+
+            return _json.loads(self.text)
+
+    class FakeErr(Exception):
+        def __init__(self):
+            super().__init__("Client error '400 Bad Request'")
+            self.response = FakeResp()
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: (_ for _ in ()).throw(FakeErr()))
+    ok, msg = auth.ping("anthropic", "https://api.anthropic.com", "k", "claude-sonnet-5")
+    assert ok is False and "credit balance" in msg
+
+
+def test_ping_garbage_error_falls_back(monkeypatch):
+    import httpx
+
+    import sk.auth as auth
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    ok, msg = auth.ping("anthropic", "https://api.anthropic.com", "k", "claude-sonnet-5")
+    assert ok is False and msg == "boom"
+
+
 # --- full loop (fake wire) ---
 
 

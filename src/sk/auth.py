@@ -49,7 +49,8 @@ def validate_key(provider: str, base_url: str, api_key: str) -> tuple[bool, str]
         msg = str(e)
         if "401" in msg or "403" in msg:
             return (False, f"key rejected by {provider} (401/403) — check it and retry")
-        return (False, f"unreachable: {msg[:150]}")
+        detail = _api_error_message(e)
+        return (False, f"unreachable: {detail[:150]}")
     return (True, f"valid ({len(names)} models listed)")
 
 
@@ -94,7 +95,31 @@ def ping(
         text = ((r.choices[0].message.content) or "").strip()
         return (True, text[:100] or "(empty reply, but reachable)")
     except Exception as e:
-        return (False, str(e)[:200])
+        return (False, _api_error_message(e))
+
+
+def _api_error_message(exc: Exception, fallback: str = "") -> str:
+    """Extract a human-readable message from an httpx HTTP error body.
+
+    Anthropic/compat APIs return {"error": {"message": ...}} — surfacing it
+    beats the generic "Client error '400 ...'". Falls back gracefully.
+    """
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        try:
+            err = resp.json().get("error", {})
+            if isinstance(err, dict) and err.get("message"):
+                return str(err["message"])[:300]
+            if isinstance(err, str) and err:
+                return err[:300]
+        except Exception:
+            pass
+        try:
+            if getattr(resp, "text", ""):
+                return str(resp.text)[:300]
+        except Exception:
+            pass
+    return (fallback or str(exc))[:300]
 
 
 def _ping_anthropic(base_url: str, api_key: str, model: str, timeout: int) -> tuple[bool, str]:
@@ -117,4 +142,4 @@ def _ping_anthropic(base_url: str, api_key: str, model: str, timeout: int) -> tu
         text = "".join(texts).strip()
         return (True, text[:100] or "(empty reply, but reachable)")
     except Exception as e:
-        return (False, str(e)[:200])
+        return (False, _api_error_message(e))
