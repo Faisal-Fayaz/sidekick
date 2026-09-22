@@ -189,7 +189,8 @@ def test_connect_flow(monkeypatch):
         "sk.auth.fetch_models", lambda *a, **k: ["m-junk-tts", "m-good", "m-pic-image"]
     )
     monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hello"))
-    monkeypatch.setattr("sk.cli._pick_provider", lambda default="": "groq")
+    # canonical home after commands/ split (was sk.cli._pick_provider)
+    monkeypatch.setattr("sk.cli.commands.auth._pick_provider", lambda default="": "groq")
     runner = CliRunner()
     # key, then model pick 1 (only m-good survives the chat filter)
     res = runner.invoke(app, ["connect"], input="gsk-test\n1\n")
