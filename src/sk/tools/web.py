@@ -37,13 +37,20 @@ def _url_blocked(url: str) -> str | None:
         for rip in ips:
             try:
                 ip = ipaddress.ip_address(rip)
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_multicast
+                ):
                     return f"Error: host resolves to private IP ({rip})."
             except ValueError:
                 pass
     except Exception:
         return "Error: DNS failed."
     return None
+
 
 def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
     """Minimal readability: title + visible text. Stdlib only."""
@@ -80,6 +87,7 @@ def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
     text = re.sub(r"[ \t]+", " ", "".join(p.out))
     text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
     return (title, text[:limit])
+
 
 def tool_web_search(query: str, count: int = 5) -> str:
     """Keyless web search via DuckDuckGo html endpoint. Returns title/url/snippet lines."""
@@ -122,6 +130,7 @@ def tool_web_search(query: str, count: int = 5) -> str:
         out.append(f"{i + 1}. {title}\n   {url}" + (f"\n   {snip}" if snip else ""))
     return "\n".join(out) if out else "(no results — try different words)"
 
+
 def tool_read_url(url: str, max_chars: int = 6000) -> str:
     blocked = _url_blocked(url)
     if blocked:
@@ -134,7 +143,12 @@ def tool_read_url(url: str, max_chars: int = 6000) -> str:
             r = c.get(url.strip(), headers={"User-Agent": "sidekick/0.1"})
             r.raise_for_status()
             ctype = r.headers.get("content-type", "")
-            if "text" not in ctype and "html" not in ctype and "json" not in ctype and "xml" not in ctype:
+            if (
+                "text" not in ctype
+                and "html" not in ctype
+                and "json" not in ctype
+                and "xml" not in ctype
+            ):
                 return f"Error: unsupported content-type '{ctype}'."
             raw = r.text
     except Exception as e:

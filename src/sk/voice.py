@@ -20,7 +20,11 @@ INSTALL_HINT = "run `sk talk --install` (downloads ~800MB deps + ~75MB model, st
 
 def detect_recorder() -> str | None:
     """First available capture binary, preferring the OS-native one."""
-    order = ("sox", "ffmpeg", "arecord") if platform.system() == "Darwin" else ("arecord", "sox", "ffmpeg")
+    order = (
+        ("sox", "ffmpeg", "arecord")
+        if platform.system() == "Darwin"
+        else ("arecord", "sox", "ffmpeg")
+    )
     for tool in order:
         if shutil.which(tool):
             return tool
@@ -28,14 +32,29 @@ def detect_recorder() -> str | None:
 
 
 def recorder_install_hint() -> str:
-    return ("install arecord (`sudo apt install alsa-utils`) on Linux, "
-            "or sox/ffmpeg (`brew install sox`) on macOS")
+    return (
+        "install arecord (`sudo apt install alsa-utils`) on Linux, "
+        "or sox/ffmpeg (`brew install sox`) on macOS"
+    )
 
 
 def _capture_start(rec: str, out_wav: str, device: str, rate: int) -> list[str]:
     """Interactive capture argv (stop via SIGINT -> clean finalize)."""
     if rec == "arecord":
-        return ["arecord", "-D", device, "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav]
+        return [
+            "arecord",
+            "-D",
+            device,
+            "-r",
+            str(rate),
+            "-f",
+            "S16_LE",
+            "-c",
+            "1",
+            "-t",
+            "wav",
+            out_wav,
+        ]
     if rec == "sox":
         src = ["sox", "-t", "coreaudio", device] if device not in ("", "default") else ["sox", "-d"]
         return src + ["-r", str(rate), "-c", "1", "-b", "16", "-t", "wav", out_wav]
@@ -50,10 +69,38 @@ def _capture_start(rec: str, out_wav: str, device: str, rate: int) -> list[str]:
 def _capture_once(rec: str, out_wav: str, device: str, rate: int, duration: int) -> list[str]:
     """Fixed-duration capture argv."""
     if rec == "arecord":
-        return ["arecord", "-D", device, "-d", str(duration), "-r", str(rate), "-f", "S16_LE", "-c", "1", "-t", "wav", out_wav]
+        return [
+            "arecord",
+            "-D",
+            device,
+            "-d",
+            str(duration),
+            "-r",
+            str(rate),
+            "-f",
+            "S16_LE",
+            "-c",
+            "1",
+            "-t",
+            "wav",
+            out_wav,
+        ]
     if rec == "sox":
         src = ["sox", "-t", "coreaudio", device] if device not in ("", "default") else ["sox", "-d"]
-        return src + ["-r", str(rate), "-c", "1", "-b", "16", "-t", "wav", out_wav, "trim", "0", str(duration)]
+        return src + [
+            "-r",
+            str(rate),
+            "-c",
+            "1",
+            "-b",
+            "16",
+            "-t",
+            "wav",
+            out_wav,
+            "trim",
+            "0",
+            str(duration),
+        ]
     argv = _capture_start(rec, out_wav, device, rate)
     argv.insert(-1, "-t")
     argv.insert(-1, str(duration))
@@ -212,7 +259,9 @@ def transcribe(wav_path: str, model_size: str = STT_MODEL_DEFAULT) -> str:
     segments, _ = model.transcribe(wav_path, beam_size=5)  # type: ignore
     text = " ".join(s.text.strip() for s in segments).strip()
     if not text:
-        raise RuntimeError("heard only silence — speak louder/closer, or run `sk mic-test` to check levels")
+        raise RuntimeError(
+            "heard only silence — speak louder/closer, or run `sk mic-test` to check levels"
+        )
     return text
 
 
@@ -232,7 +281,7 @@ def _wav_sample_stats(sampwidth: int, frames: bytes) -> tuple[int, int]:
     sumsq = 0
     step = 8192 * sampwidth
     for off in range(0, len(frames), step):
-        block = frames[off:off + step]
+        block = frames[off : off + step]
         vals = struct.unpack(f"{endian}{len(block) // sampwidth}{fmt_char}", block)
         if sampwidth == 1:
             vals = tuple(v - 128 for v in vals)
@@ -264,13 +313,31 @@ def mic_level(duration: int = 3, device: str = "default") -> dict:
     full = float(1 << (width * 8 - 1))
     peak_db = 20 * math.log10(max(peak, 1) / full)
     if peak < 50:
-        return {"ok": False, "peak": peak, "rms": rms, "peak_db": round(peak_db, 1), "verdict": "silent",
-                "hint": "mic hears nothing. Unmute/raise it: `alsamixer` (F4 capture, M unmutes), or try `--device hw:2,0`."}
+        return {
+            "ok": False,
+            "peak": peak,
+            "rms": rms,
+            "peak_db": round(peak_db, 1),
+            "verdict": "silent",
+            "hint": "mic hears nothing. Unmute/raise it: `alsamixer` (F4 capture, M unmutes), or try `--device hw:2,0`.",
+        }
     if peak_db < -30:
-        return {"ok": True, "peak": peak, "rms": rms, "peak_db": round(peak_db, 1), "verdict": "quiet",
-                "hint": f"very quiet ({round(peak_db,1)} dB). Move closer or boost gain in alsamixer."}
-    return {"ok": True, "peak": peak, "rms": rms, "peak_db": round(peak_db, 1), "verdict": "good",
-            "hint": "levels look fine — if words still vanish, try `--stt-model base`."}
+        return {
+            "ok": True,
+            "peak": peak,
+            "rms": rms,
+            "peak_db": round(peak_db, 1),
+            "verdict": "quiet",
+            "hint": f"very quiet ({round(peak_db, 1)} dB). Move closer or boost gain in alsamixer.",
+        }
+    return {
+        "ok": True,
+        "peak": peak,
+        "rms": rms,
+        "peak_db": round(peak_db, 1),
+        "verdict": "good",
+        "hint": "levels look fine — if words still vanish, try `--stt-model base`.",
+    }
 
 
 def record_once(duration: int, device: str = "default") -> Path:

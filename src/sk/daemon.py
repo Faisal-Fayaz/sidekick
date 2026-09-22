@@ -64,7 +64,9 @@ def dirty_repos(projects: list[str]) -> list[str]:
     return dirty
 
 
-def check_once(state: dict | None = None, projects: list[str] | None = None, disk_warn: int = 90) -> tuple[list[str], dict]:
+def check_once(
+    state: dict | None = None, projects: list[str] | None = None, disk_warn: int = 90
+) -> tuple[list[str], dict]:
     from .brief import DEFAULT_PROJECTS
 
     state = dict(state or load_state())
@@ -73,7 +75,9 @@ def check_once(state: dict | None = None, projects: list[str] | None = None, dis
 
     pct = disk_use_pct()
     if pct is not None and pct >= disk_warn:
-        nudges.append(f"disk {pct}% full (>= {disk_warn}%) — clean ~/Downloads, npm cache, old ollama models")
+        nudges.append(
+            f"disk {pct}% full (>= {disk_warn}%) — clean ~/Downloads, npm cache, old ollama models"
+        )
 
     fails, max_id = new_failures(int(state.get("last_shell_id", 0) or 0))
     for fid, cmd, cwd, rc in fails:

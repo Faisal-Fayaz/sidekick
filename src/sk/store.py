@@ -65,7 +65,9 @@ def _migrate_0_to_1(conn: sqlite3.Connection) -> None:
     try:
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(content)")
         # backfill any rows missing from fts (first run after upgrade)
-        conn.execute("INSERT INTO memories_fts(rowid, content) SELECT id, content FROM memories WHERE id NOT IN (SELECT rowid FROM memories_fts)")
+        conn.execute(
+            "INSERT INTO memories_fts(rowid, content) SELECT id, content FROM memories WHERE id NOT IN (SELECT rowid FROM memories_fts)"
+        )
         conn.commit()
     except Exception:
         pass
@@ -125,7 +127,9 @@ def list_sessions(limit: int = 20) -> list[dict]:
             )
             row = cur2.fetchone()
             preview = (row[0] if row else "")[:80].replace("\n", " ")
-            out.append({"session": session, "count": count, "last_ts": last_ts or 0, "preview": preview})
+            out.append(
+                {"session": session, "count": count, "last_ts": last_ts or 0, "preview": preview}
+            )
         return out
     finally:
         conn.close()
@@ -151,7 +155,9 @@ def latest_session(prefix: str = "") -> str:
                 (prefix + "%",),
             )
         else:
-            cur = conn.execute("SELECT session FROM messages GROUP BY session ORDER BY MAX(ts) DESC LIMIT 1")
+            cur = conn.execute(
+                "SELECT session FROM messages GROUP BY session ORDER BY MAX(ts) DESC LIMIT 1"
+            )
         row = cur.fetchone()
         return row[0] if row else ""
     finally:
@@ -192,10 +198,15 @@ def save_memory(content: str) -> str:
         return "Too long (>2000 chars), keep memories short."
     conn = _connect()
     try:
-        cur = conn.execute("INSERT OR IGNORE INTO memories (content, ts) VALUES (?, ?)", (content, time.time()))
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO memories (content, ts) VALUES (?, ?)", (content, time.time())
+        )
         if cur.rowcount:
             try:
-                conn.execute("INSERT INTO memories_fts(rowid, content) VALUES (last_insert_rowid(), ?)", (content,))
+                conn.execute(
+                    "INSERT INTO memories_fts(rowid, content) VALUES (last_insert_rowid(), ?)",
+                    (content,),
+                )
             except Exception:
                 pass
         conn.commit()
@@ -210,7 +221,28 @@ def _keywords(query: str) -> list[str]:
     import re
 
     words = re.findall(r"[a-z0-9]+", query.lower())
-    stop = {"the", "a", "an", "my", "me", "i", "you", "and", "or", "what", "how", "is", "are", "do", "does", "can", "tell", "give", "show", "please"}
+    stop = {
+        "the",
+        "a",
+        "an",
+        "my",
+        "me",
+        "i",
+        "you",
+        "and",
+        "or",
+        "what",
+        "how",
+        "is",
+        "are",
+        "do",
+        "does",
+        "can",
+        "tell",
+        "give",
+        "show",
+        "please",
+    }
     return [w for w in words if len(w) > 2 and w not in stop][:8]
 
 
@@ -234,7 +266,10 @@ def recall_memories(query: str, limit: int = 5) -> list[str]:
         try:
             fq = _fts_query(keys)
             if fq:
-                cur = conn.execute("SELECT content FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT ?", (fq, limit))
+                cur = conn.execute(
+                    "SELECT content FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (fq, limit),
+                )
                 rows = [r[0] for r in cur.fetchall()]
                 if rows:
                     return rows
@@ -296,7 +331,9 @@ def add_todo(text: str) -> str:
         return "Too long (>500 chars)."
     conn = _connect()
     try:
-        cur = conn.execute("INSERT INTO todos (text, done, ts) VALUES (?, 0, ?)", (text, time.time()))
+        cur = conn.execute(
+            "INSERT INTO todos (text, done, ts) VALUES (?, 0, ?)", (text, time.time())
+        )
         conn.commit()
         return f"Added todo #{cur.lastrowid}."
     finally:
@@ -360,7 +397,9 @@ def log_shell(cmd: str, cwd: str = "", exit: int = 0) -> bool:
         )
         conn.commit()
         # cap 2000 rows
-        conn.execute("DELETE FROM shell_history WHERE id NOT IN (SELECT id FROM shell_history ORDER BY id DESC LIMIT 2000)")
+        conn.execute(
+            "DELETE FROM shell_history WHERE id NOT IN (SELECT id FROM shell_history ORDER BY id DESC LIMIT 2000)"
+        )
         conn.commit()
         return True
     finally:
@@ -370,7 +409,9 @@ def log_shell(cmd: str, cwd: str = "", exit: int = 0) -> bool:
 def list_shell(limit: int = 20) -> list[tuple[int, str, str, int]]:
     conn = _connect()
     try:
-        cur = conn.execute("SELECT id, cmd, cwd, exit FROM shell_history ORDER BY id DESC LIMIT ?", (limit,))
+        cur = conn.execute(
+            "SELECT id, cmd, cwd, exit FROM shell_history ORDER BY id DESC LIMIT ?", (limit,)
+        )
         return [(r[0], r[1], r[2], r[3]) for r in cur.fetchall()]
     finally:
         conn.close()
@@ -379,7 +420,9 @@ def list_shell(limit: int = 20) -> list[tuple[int, str, str, int]]:
 def last_failed() -> tuple[int, str, str, int] | None:
     conn = _connect()
     try:
-        cur = conn.execute("SELECT id, cmd, cwd, exit FROM shell_history WHERE exit != 0 ORDER BY id DESC LIMIT 1")
+        cur = conn.execute(
+            "SELECT id, cmd, cwd, exit FROM shell_history WHERE exit != 0 ORDER BY id DESC LIMIT 1"
+        )
         row = cur.fetchone()
         return (row[0], row[1], row[2], row[3]) if row else None
     finally:

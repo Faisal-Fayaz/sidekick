@@ -96,7 +96,9 @@ def test_history_trimmed_to_20(tmp_path, monkeypatch):
 
 
 def test_write_denied_without_approval():
-    out, ok = _gated_dispatch("write_file", {"path": "/tmp/x", "content": "hi"}, approve=lambda n, a: False)
+    out, ok = _gated_dispatch(
+        "write_file", {"path": "/tmp/x", "content": "hi"}, approve=lambda n, a: False
+    )
     assert ok is False and "--yes" in out
 
 
@@ -108,11 +110,29 @@ def test_read_tools_bypass_gate():
 def test_all_tools_parseable():
     from sk.agent import _parse_text_tool
 
-    for name in ("sysinfo", "list_dir", "read_file", "exec", "shell", "delete_file", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"):
+    for name in (
+        "sysinfo",
+        "list_dir",
+        "read_file",
+        "exec",
+        "shell",
+        "delete_file",
+        "write_file",
+        "edit_file",
+        "make_dir",
+        "remember",
+        "recall",
+        "todo_add",
+        "todo_list",
+        "todo_done",
+        "read_url",
+        "web_search",
+        "skill",
+    ):
         args = {"path": "/tmp/x"} if name in ("list_dir", "read_file") else {}
         import json
 
-        blob = f'```json {json.dumps({"name": name, "arguments": args})} ```'
+        blob = f"```json {json.dumps({'name': name, 'arguments': args})} ```"
         assert _parse_text_tool(blob) is not None, name
 
 
@@ -199,6 +219,7 @@ def test_today_in_system_prompt(tmp_path, monkeypatch):
 
 def test_repeat_tool_uses_cache():
     from sk.agent import _run_tool_cached
+
     seen: dict[str, str] = {}
     calls: list[str] = []
 
@@ -211,8 +232,12 @@ def test_repeat_tool_uses_cache():
     orig = agent.dispatch_tool
     agent.dispatch_tool = fake_dispatch  # type: ignore
     try:
-        r1, rep1 = _run_tool_cached("read_url", {"url": "https://x", "max_chars": 400}, None, None, seen)
-        r2, rep2 = _run_tool_cached("read_url", {"url": "https://x", "max_chars": 2000}, None, None, seen)
+        r1, rep1 = _run_tool_cached(
+            "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
+        )
+        r2, rep2 = _run_tool_cached(
+            "read_url", {"url": "https://x", "max_chars": 2000}, None, None, seen
+        )
     finally:
         agent.dispatch_tool = orig
     assert (r1, rep1) == ("RESULT", False)
@@ -223,7 +248,9 @@ def test_build_messages_auto_search(monkeypatch, tmp_path):
     import sk.store as store
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
-    monkeypatch.setattr("sk.tools.tool_web_search", lambda q, count=5: "1. Example Model\n   https://example.com")
+    monkeypatch.setattr(
+        "sk.tools.tool_web_search", lambda q, count=5: "1. Example Model\n   https://example.com"
+    )
     from sk.agent import build_messages
 
     msgs = build_messages("search on the internet for the most used AI model", [], _cfg())
@@ -260,7 +287,17 @@ def test_length_cut_continues_to_tools(monkeypatch, tmp_path):
     cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
     calls = {"n": 0}
 
-    def fake_stream(client, model, messages, tools, temperature, max_tokens, extra, on_token=None, on_reasoning=None):
+    def fake_stream(
+        client,
+        model,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        extra,
+        on_token=None,
+        on_reasoning=None,
+    ):
         calls["n"] += 1
         if calls["n"] == 1:
             return agent._Msg("I will use write_file tool. Then", None, "", "length")

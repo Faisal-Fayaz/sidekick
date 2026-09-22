@@ -6,19 +6,40 @@ from sk.config import PRESETS, Config
 
 
 def test_ollama_defaults():
-    cfg = Config(provider="ollama", model="qwen2.5-coder:7b", base_url="", api_key="", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="ollama",
+        model="qwen2.5-coder:7b",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
     assert cfg.effective_base_url() == "http://localhost:11434/v1"
     assert cfg.effective_api_key() == "ollama"
 
 
 def test_cloud_preset_needs_key():
-    cfg = Config(provider="openai", model="gpt-4o-mini", base_url="", api_key="", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="openai",
+        model="gpt-4o-mini",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
     assert cfg.effective_base_url() == "https://api.openai.com/v1"
     assert cfg.effective_api_key() == ""
 
 
 def test_custom_override_wins():
-    cfg = Config(provider="openai", model="m", base_url="https://proxy.local/v1", api_key="k", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="openai",
+        model="m",
+        base_url="https://proxy.local/v1",
+        api_key="k",
+        max_steps=5,
+        temperature=0.2,
+    )
     assert cfg.effective_base_url() == "https://proxy.local/v1"
 
 
@@ -37,7 +58,9 @@ def test_mask():
 
 
 def test_client_uses_effective_values():
-    cfg = Config(provider="groq", model="m", base_url="", api_key="gsk-test", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="groq", model="m", base_url="", api_key="gsk-test", max_steps=5, temperature=0.2
+    )
     client = get_client(cfg)
     assert "groq" in str(client.base_url)
 
@@ -45,10 +68,14 @@ def test_client_uses_effective_values():
 def test_extra_body_local_only():
     from sk.agent import _extra_body
 
-    ollama = Config(provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2)
+    ollama = Config(
+        provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
+    )
     assert _extra_body(ollama) == {"options": {"num_ctx": 4096, "num_predict": 350}}
     for prov in ("openai", "groq", "together", "deepseek", "openrouter", "custom"):
-        cfg = Config(provider=prov, model="m", base_url="", api_key="k", max_steps=5, temperature=0.2)
+        cfg = Config(
+            provider=prov, model="m", base_url="", api_key="k", max_steps=5, temperature=0.2
+        )
         assert _extra_body(cfg) == {}, prov  # cloud 400s on Ollama-only 'options'
 
 
@@ -69,7 +96,14 @@ def test_save_chmod_and_reload(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "config.toml")
-    cfg = Config(provider="openai", model="gpt-4o-mini", base_url="", api_key="secret123456", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="openai",
+        model="gpt-4o-mini",
+        base_url="",
+        api_key="secret123456",
+        max_steps=5,
+        temperature=0.2,
+    )
     cfg.save()
     assert (tmp_path / "config.toml").exists()
     assert oct(os.stat(tmp_path / "config.toml").st_mode)[-3:] == "600"
@@ -81,7 +115,14 @@ def test_slash_provider(monkeypatch, tmp_path):
     import sk.store as store
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
-    cfg = Config(provider="ollama", model="qwen2.5-coder:7b", base_url="", api_key="", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="ollama",
+        model="qwen2.5-coder:7b",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
     out = slash.handle("/provider", session="s", cfg=cfg, state={})
     assert "ollama" in out.text
     out = slash.handle("/provider groq", session="s", cfg=cfg, state={})

@@ -109,7 +109,9 @@ def load_skills(query: str = "", top: int = 8) -> str:
         chosen = [p for p in ranked if p[2].name != "SKILL.md"]
         chosen += [p for p in ranked if p[2].name == "SKILL.md"][: max(0, top - len(chosen))]
         lines = [f"- {name}: {desc}"[:160] if desc else f"- {name}" for name, desc, _ in chosen]
-        index = "SKILL INDEX (call `skill` with a name to load full instructions):\n" + "\n".join(lines)
+        index = "SKILL INDEX (call `skill` with a name to load full instructions):\n" + "\n".join(
+            lines
+        )
         bodies: list[str] = []
         for name, _, f in chosen:
             if f.name == "SKILL.md" or f.stat().st_size > 2000:
@@ -133,7 +135,9 @@ def show_skill(name: str) -> str:
             try:
                 _, body = parse_frontmatter(f.read_text(errors="replace"))
                 body = body.strip()
-                return body[:MAX_BODY_CHARS] + ("\n... [truncated]" if len(body) > MAX_BODY_CHARS else "")
+                return body[:MAX_BODY_CHARS] + (
+                    "\n... [truncated]" if len(body) > MAX_BODY_CHARS else ""
+                )
             except Exception as e:
                 return f"Error reading skill: {e}"
     known = ", ".join(n for n, _, _ in _packs()[:20])
@@ -170,7 +174,13 @@ def install_preset(name: str, force: bool = False) -> str:
         shutil.rmtree(dest, ignore_errors=True)
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        subprocess.run(["git", "clone", "--depth", "1", url, str(dest)], capture_output=True, text=True, timeout=120, check=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", url, str(dest)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
     except subprocess.CalledProcessError as e:
         return f"Clone failed: {(e.stderr or '')[:300]}"
     except Exception as e:

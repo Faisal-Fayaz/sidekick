@@ -19,7 +19,9 @@ def _resp(payload, status=200):
 def test_fetch_models_ollama(monkeypatch):
     import httpx
 
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp({"models": [{"name": "m1"}, {"name": "m2"}]}))
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **k: _resp({"models": [{"name": "m1"}, {"name": "m2"}]})
+    )
     assert auth.fetch_models("ollama", "http://localhost:11434/v1", "") == ["m1", "m2"]
 
 
@@ -27,7 +29,13 @@ def test_fetch_models_cloud(monkeypatch):
     import httpx
 
     seen = {}
-    monkeypatch.setattr(httpx, "get", lambda url, headers=None, **k: seen.update({"url": url, "h": headers}) or _resp({"data": [{"id": "a"}, {"id": "b"}]}))
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, headers=None, **k: (
+            seen.update({"url": url, "h": headers}) or _resp({"data": [{"id": "a"}, {"id": "b"}]})
+        ),
+    )
     assert auth.fetch_models("groq", "https://api.groq.com/openai/v1", "k") == ["a", "b"]
     assert seen["h"] == {"Authorization": "Bearer k"}
 
@@ -45,9 +53,12 @@ def test_validate_key_empty():
 
 
 def test_provider_status_no_key():
-    cfg = Config(provider="openai", model="m", base_url="", api_key="", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="openai", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
+    )
     ok, msg = auth.provider_status(cfg)
     assert ok is False and "sk auth add" in msg
+
 
 def _runner():
     from typer.testing import CliRunner
@@ -135,7 +146,15 @@ def test_ping_uses_tiny_completion(monkeypatch):
     class FakeCompletions:
         def create(self, **kw):
             seen.update(kw)
-            return type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": " hi there"})()})()]})()
+            return type(
+                "R",
+                (),
+                {
+                    "choices": [
+                        type("C", (), {"message": type("M", (), {"content": " hi there"})()})()
+                    ]
+                },
+            )()
 
     class FakeChat:
         completions = FakeCompletions()
@@ -166,7 +185,9 @@ def test_connect_flow(monkeypatch):
     from sk.cli import app
 
     monkeypatch.setattr("sk.auth.validate_key", lambda *a, **k: (True, "valid (2 models)"))
-    monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: ["m-junk-tts", "m-good", "m-pic-image"])
+    monkeypatch.setattr(
+        "sk.auth.fetch_models", lambda *a, **k: ["m-junk-tts", "m-good", "m-pic-image"]
+    )
     monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hello"))
     monkeypatch.setattr("sk.cli._pick_provider", lambda default="": "groq")
     runner = CliRunner()

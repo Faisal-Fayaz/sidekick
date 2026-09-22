@@ -7,14 +7,32 @@ import subprocess
 from pathlib import Path
 
 ALLOWED_BINARIES = {
-    "ls", "pwd", "echo", "df", "du", "wc", "whoami", "uname",
-    "cat", "head", "tail", "find", "lsblk", "python3", "git", "ollama",
-    "free", "nproc", "nvidia-smi", "lscpu",
+    "ls",
+    "pwd",
+    "echo",
+    "df",
+    "du",
+    "wc",
+    "whoami",
+    "uname",
+    "cat",
+    "head",
+    "tail",
+    "find",
+    "lsblk",
+    "python3",
+    "git",
+    "ollama",
+    "free",
+    "nproc",
+    "nvidia-smi",
+    "lscpu",
 }
 
 ALLOWED_GIT = {"status", "log", "branch", "diff", "remote"}
 
 BLOCKED_CHARS = {";", "&", "|", ">", "<", "`", "$", "(", ")", "\n"}
+
 
 def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
     """Return (binary, argv) if allowed, else error string."""
@@ -41,6 +59,7 @@ def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
             return "Blocked: find -exec/-delete not allowed."
     return (binary_name, argv)
 
+
 def tool_list_dir(path: str = ".") -> str:
     try:
         p = Path(path).expanduser().resolve()
@@ -55,6 +74,7 @@ def tool_list_dir(path: str = ".") -> str:
         return f"{p}:\n" + "\n".join(lines) if lines else f"{p}: (empty)"
     except Exception as e:
         return f"Error: {e}"
+
 
 def tool_read_file(path: str, max_chars: int = 8000) -> str:
     try:
@@ -72,6 +92,7 @@ def tool_read_file(path: str, max_chars: int = 8000) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def tool_exec(cmd: str, timeout: int = 15) -> str:
     checked = _check_cmd(cmd)
     if isinstance(checked, str):
@@ -88,6 +109,7 @@ def tool_exec(cmd: str, timeout: int = 15) -> str:
         return f"Error: timed out after {timeout}s"
     except Exception as e:
         return f"Error: {e}"
+
 
 def tool_sysinfo() -> str:
     """One-shot grounded hardware + Ollama snapshot. Fast, no chaining, cross-platform."""
@@ -113,7 +135,7 @@ def tool_sysinfo() -> str:
             cores = "?"
         try:
             mem_bytes = int(run(["sysctl", "-n", "hw.memsize"]))
-            mem = f"MemTotal: {mem_bytes / (1024 ** 3):.1f} GiB (hw.memsize)"
+            mem = f"MemTotal: {mem_bytes / (1024**3):.1f} GiB (hw.memsize)"
         except Exception:
             mem = run(["sysctl", "-n", "hw.memsize"]) or "(unknown)"
     else:
@@ -130,13 +152,18 @@ def tool_sysinfo() -> str:
 
     if platform.system() == "Darwin":
         gpu_out = run(["system_profiler", "SPDisplaysDataType", "-detailLevel", "mini"], timeout=8)
-        gpu = "\n".join(
-            ln.strip()[:200]
-            for ln in gpu_out.splitlines()
-            if "Chipset Model" in ln or ("Metal" in ln and ":" in ln)
-        ) or "GPU: (none detected)"
+        gpu = (
+            "\n".join(
+                ln.strip()[:200]
+                for ln in gpu_out.splitlines()
+                if "Chipset Model" in ln or ("Metal" in ln and ":" in ln)
+            )
+            or "GPU: (none detected)"
+        )
     else:
-        gpu = run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader"])
+        gpu = run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader"]
+        )
     disk = run(["df", "-h", "/"])
     ollama_models = run(["ollama", "list"])
     # trim verbose outputs

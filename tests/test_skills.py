@@ -21,7 +21,9 @@ def test_frontmatter_and_bundle(monkeypatch, tmp_path):
     skills.ensure_defaults()
     pack = d / "debugging"
     pack.mkdir()
-    (pack / "SKILL.md").write_text('---\nname: systematic-debugging\ndescription: "Find root causes."\n---\n\n# Debug\n\nSteps here.')
+    (pack / "SKILL.md").write_text(
+        '---\nname: systematic-debugging\ndescription: "Find root causes."\n---\n\n# Debug\n\nSteps here.'
+    )
     out = skills.load_skills()
     assert "systematic-debugging" in out and "Find root causes." in out
     body = skills.show_skill("systematic-debugging")

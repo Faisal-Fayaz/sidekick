@@ -15,18 +15,55 @@ except Exception:  # pragma: no cover - import cycle guard in tests
     TIERS = {}  # type: ignore[assignment]
 
 FAST_MODEL = TIERS.get("ollama", {}).get("fast", "llama3.2:3b") if TIERS else "llama3.2:3b"
-SMART_MODEL = TIERS.get("ollama", {}).get("smart", "qwen2.5-coder:7b") if TIERS else "qwen2.5-coder:7b"
+SMART_MODEL = (
+    TIERS.get("ollama", {}).get("smart", "qwen2.5-coder:7b") if TIERS else "qwen2.5-coder:7b"
+)
 
 SMART_WORDS = {
-    "code", "coding", "refactor", "debug", "rewrite", "implement", "fix",
-    "function", "class", "script", "write", "edit", "create", "scope",
-    "architecture", "review", "explain", "error", "bug", "test", "tests",
-    "device", "hardware", "llm", "model", "vram", "gpu", "ram",
-    "project", "repo", "repository", "install", "run", "execute", "delete",
-    "remove", "folder", "directory", "file",
+    "code",
+    "coding",
+    "refactor",
+    "debug",
+    "rewrite",
+    "implement",
+    "fix",
+    "function",
+    "class",
+    "script",
+    "write",
+    "edit",
+    "create",
+    "scope",
+    "architecture",
+    "review",
+    "explain",
+    "error",
+    "bug",
+    "test",
+    "tests",
+    "device",
+    "hardware",
+    "llm",
+    "model",
+    "vram",
+    "gpu",
+    "ram",
+    "project",
+    "repo",
+    "repository",
+    "install",
+    "run",
+    "execute",
+    "delete",
+    "remove",
+    "folder",
+    "directory",
+    "file",
 }
 
-PATH_HINT = re.compile(r"(~/|\.\w{1,5}\b|/home/|[\w\-./]+\.(py|ts|tsx|js|rs|go|md|toml|json|yaml)\b)")
+PATH_HINT = re.compile(
+    r"(~/|\.\w{1,5}\b|/home/|[\w\-./]+\.(py|ts|tsx|js|rs|go|md|toml|json|yaml)\b)"
+)
 
 
 def pick_tier(task: str) -> tuple[str, str]:

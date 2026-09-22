@@ -77,7 +77,21 @@ def _now() -> str:
 # Words that approve a pending write. Keep in sync with the prompt line.
 # Multi-word entries match when the whole line starts with them ("go ahead
 # and write it" counts; "yeah but not there" does not — strict startswith).
-AFFIRMATIVE_EXACT = ("y", "yes", "yup", "ok", "okay", "sure", "approve", "--yes", "-y", "yeah", "yep", "yepp", "aye")
+AFFIRMATIVE_EXACT = (
+    "y",
+    "yes",
+    "yup",
+    "ok",
+    "okay",
+    "sure",
+    "approve",
+    "--yes",
+    "-y",
+    "yeah",
+    "yep",
+    "yepp",
+    "aye",
+)
 AFFIRMATIVE_PREFIX = ("go ahead", "do it", "yes please", "please do")
 
 
@@ -124,7 +138,6 @@ class ChatLog(RichLog):
 
     def get_selection(self, selection) -> tuple[str, str] | None:
         try:
-
             text = "\n".join(ln.text for ln in self.lines)
             if not text.strip():
                 return None
@@ -332,7 +345,11 @@ class SidekickTUI(App):
 
         frag = fragment.lower()
         starts = [(n, d) for n, d in COMMANDS if n.split()[0].lower().startswith(frag)]
-        contains = [(n, d) for n, d in COMMANDS if frag and frag not in n.split()[0].lower() and frag in n.lower()]
+        contains = [
+            (n, d)
+            for n, d in COMMANDS
+            if frag and frag not in n.split()[0].lower() and frag in n.lower()
+        ]
         return (starts + contains)[:12]
 
     def slash_update(self, text: str) -> None:
@@ -343,7 +360,7 @@ class SidekickTUI(App):
             lst = self.query_one("#slash-list", ListView)
         except Exception:
             return
-        first = (text.strip().split("\n")[0] if text else "")
+        first = text.strip().split("\n")[0] if text else ""
         if not first.startswith("/"):
             lst.styles.display = "none"
             return
@@ -428,7 +445,17 @@ class SidekickTUI(App):
         try:
             from textual.theme import Theme
 
-            self.register_theme(Theme(name="sidekick", primary="#00ff9d", secondary="#7c3aed", accent="#ffb000", background="#0b0f0c", surface="#111613", panel="#111613"))
+            self.register_theme(
+                Theme(
+                    name="sidekick",
+                    primary="#00ff9d",
+                    secondary="#7c3aed",
+                    accent="#ffb000",
+                    background="#0b0f0c",
+                    surface="#111613",
+                    panel="#111613",
+                )
+            )
             self.theme = "sidekick"
         except Exception:
             pass
@@ -437,7 +464,10 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).")
+        _w(
+            log,
+            "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).",
+        )
         if self._continued:
             from .store import get_history
 
@@ -460,7 +490,11 @@ class SidekickTUI(App):
         except Exception:
             pass
         if self._is_fresh():
-            _role(log, "", "New here? Try: `what files are in ~/` · `/model fast` for speed · `/help` for everything.")
+            _role(
+                log,
+                "",
+                "New here? Try: `what files are in ~/` · `/model fast` for speed · `/help` for everything.",
+            )
 
     @staticmethod
     def _is_fresh() -> bool:
@@ -492,7 +526,12 @@ class SidekickTUI(App):
         # TextArea never sees these keys (unbound there) — they reach the app.
         log = self.query_one("#chat-log", RichLog)
         try:
-            {"up": log.scroll_page_up, "down": log.scroll_page_down, "top": log.scroll_home, "bottom": log.scroll_end}[what]()
+            {
+                "up": log.scroll_page_up,
+                "down": log.scroll_page_down,
+                "top": log.scroll_home,
+                "bottom": log.scroll_end,
+            }[what]()
         except Exception:
             pass
 
@@ -657,7 +696,16 @@ class SidekickTUI(App):
         owner = threading.get_ident()
         deadline = _t.monotonic() + timeout + 30
         asked_at = _t.monotonic()
-        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": asked_at, "reply": "", "token": token, "owner": owner, "deadline": deadline}
+        self._pending_approval = {
+            "question": f"{name} -> {path}",
+            "event": event,
+            "answer": False,
+            "asked_at": asked_at,
+            "reply": "",
+            "token": token,
+            "owner": owner,
+            "deadline": deadline,
+        }
 
         def _log_outcome(result: str) -> None:
             try:
@@ -667,7 +715,9 @@ class SidekickTUI(App):
 
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 with open(CONFIG_DIR / "tui-errors.log", "a") as f:
-                    f.write(f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] approve: {name} -> {path} = {result} ({_t.monotonic() - asked_at:.0f}s)\n")
+                    f.write(
+                        f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] approve: {name} -> {path} = {result} ({_t.monotonic() - asked_at:.0f}s)\n"
+                    )
             except Exception:
                 pass
 
@@ -679,24 +729,41 @@ class SidekickTUI(App):
             expired = not event.wait(timeout=timeout)
         finally:
             # never leave a stale slot: only clear if still ours
-            if getattr(self, "_pending_approval", None) is not None and self._pending_approval.get("token") is token:
+            if (
+                getattr(self, "_pending_approval", None) is not None
+                and self._pending_approval.get("token") is token
+            ):
                 pending, self._pending_approval = self._pending_approval, None
             else:
                 pending = None
         if expired:
             _log_outcome("timeout-denied")
             try:
-                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)")
+                self.call_from_thread(
+                    _role,
+                    self.query_one("#chat-log", RichLog),
+                    "warn",
+                    f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)",
+                )
             except Exception:
                 pass
             return False
         if pending is None:
             _log_outcome("slot-stolen-denied")
             return False  # slot stolen/cleared concurrently: fail closed
-        _log_outcome("approved" if pending.get("answer") else f"denied reply={pending.get('reply', '')[:20]!r}")
+        _log_outcome(
+            "approved"
+            if pending.get("answer")
+            else f"denied reply={pending.get('reply', '')[:20]!r}"
+        )
         if not bool(pending.get("answer", False)):
             try:
-                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", f"denied (you answered '{pending.get('reply', '')[:20]}')")
+                self.call_from_thread(
+                    _role,
+                    self.query_one("#chat-log", RichLog),
+                    "sys",
+                    f"denied (you answered '{pending.get('reply', '')[:20]}')",
+                )
             except Exception:
                 pass
         return bool(pending.get("answer", False))
@@ -719,7 +786,12 @@ class SidekickTUI(App):
         from rich.text import Text as _Text
 
         log = self.query_one("#chat-log", RichLog)
-        log.write(_Text(f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)", style="reverse bold yellow"))
+        log.write(
+            _Text(
+                f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)",
+                style="reverse bold yellow",
+            )
+        )
         if preview:
             _w(log, f"  {preview}")
         try:
@@ -761,7 +833,9 @@ class SidekickTUI(App):
         except Exception as e:
             _role(log, "error", f"copy failed ({e}) — {install_hint()}")
             return
-        _role(log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty")
+        _role(
+            log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty"
+        )
 
     def action_copy_last(self) -> None:
         from .store import get_history
@@ -814,7 +888,9 @@ class SidekickTUI(App):
             _role(log, "you", text)
             pending["answer"] = verdict
             pending["reply"] = text[:20]
-            _role(log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}")
+            _role(
+                log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}"
+            )
             try:
                 pending["event"].set()
             except Exception:
@@ -976,7 +1052,15 @@ class SidekickTUI(App):
 
         try:
             answer = await asyncio.to_thread(
-                run_agent, text, hist, cfg, on_tool, None, self._approve, on_reasoning, bool(self.state.get("yolo"))
+                run_agent,
+                text,
+                hist,
+                cfg,
+                on_tool,
+                None,
+                self._approve,
+                on_reasoning,
+                bool(self.state.get("yolo")),
             )
         except Exception as e:
             log_error("answer", e)

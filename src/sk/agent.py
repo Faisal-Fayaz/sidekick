@@ -181,14 +181,23 @@ def _auto_search_context(text: str) -> str:
 
     from .tools import tool_web_search
 
-    m = re.search(r"search\s+(?:on\s+)?(?:the\s+)?(?:internet|web)\b\s*(?:for\s+)?(.+)", text, re.IGNORECASE)
+    m = re.search(
+        r"search\s+(?:on\s+)?(?:the\s+)?(?:internet|web)\b\s*(?:for\s+)?(.+)", text, re.IGNORECASE
+    )
     query = ""
     if m:
         query = m.group(1).strip().rstrip("?.!")[:200]
     else:
         low = text.lower()
-        recency = re.search(r"\b(right now|latest|currently|up[- ]to[- ]date|this week|today|2026)\b", low)
-        local = re.search(r"~/|" + re.escape(str(Path.home())) + r"|my (device|machine|files?|todos?|projects?|prefs?)|can i run|do i (have|need)", low)
+        recency = re.search(
+            r"\b(right now|latest|currently|up[- ]to[- ]date|this week|today|2026)\b", low
+        )
+        local = re.search(
+            r"~/|"
+            + re.escape(str(Path.home()))
+            + r"|my (device|machine|files?|todos?|projects?|prefs?)|can i run|do i (have|need)",
+            low,
+        )
         if recency and not local and len(text.split()) > 3:
             from .store import _keywords
 
@@ -274,7 +283,25 @@ def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
     Returns list of (name, args). Only allows known tools.
     """
 
-    allowed = {"sysinfo", "list_dir", "read_file", "exec", "shell", "delete_file", "write_file", "edit_file", "make_dir", "remember", "recall", "todo_add", "todo_list", "todo_done", "read_url", "web_search", "skill"}
+    allowed = {
+        "sysinfo",
+        "list_dir",
+        "read_file",
+        "exec",
+        "shell",
+        "delete_file",
+        "write_file",
+        "edit_file",
+        "make_dir",
+        "remember",
+        "recall",
+        "todo_add",
+        "todo_list",
+        "todo_done",
+        "read_url",
+        "web_search",
+        "skill",
+    }
     found: list[tuple[str, dict]] = []
     seen: set[str] = set()
     for span in _balanced_objects(text):
@@ -317,7 +344,10 @@ def _run_tool_cached(
     """Execute unless this exact target already ran this turn. Returns (result, repeated)."""
     key = _tool_target(name, args)
     if key in seen:
-        return (f"[cached — already ran above]\n{seen[key][:2000]}\nSynthesize the final answer now. Do not call more tools.", True)
+        return (
+            f"[cached — already ran above]\n{seen[key][:2000]}\nSynthesize the final answer now. Do not call more tools.",
+            True,
+        )
     result, _ = _gated_dispatch(name, args, approve)
     seen[key] = result
     if on_tool is not None:
@@ -336,7 +366,10 @@ def _gated_dispatch(name: str, args: dict, approve: object = None) -> tuple[str,
         except Exception:
             ok = False
         if not ok:
-            return (f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.", False)
+            return (
+                f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.",
+                False,
+            )
     return (dispatch_tool(name, args), True)
 
 
@@ -347,7 +380,9 @@ class _TC:
 
 
 class _Msg:
-    def __init__(self, content: str, tool_calls: list | None, reasoning: str = "", finish: str = ""):
+    def __init__(
+        self, content: str, tool_calls: list | None, reasoning: str = "", finish: str = ""
+    ):
         self.content = content
         self.tool_calls = tool_calls
         self.reasoning = reasoning
@@ -367,7 +402,14 @@ def _retryable_status(exc: BaseException) -> int:
         except Exception:
             pass
     code = getattr(exc, "status_code", 0) or 0
-    if code in (429, 503) or "429" in msg or "503" in msg or "overloaded" in msg.lower() or "rate limit" in msg.lower() or "RESOURCE_EXHAUSTED" in msg:
+    if (
+        code in (429, 503)
+        or "429" in msg
+        or "503" in msg
+        or "overloaded" in msg.lower()
+        or "rate limit" in msg.lower()
+        or "RESOURCE_EXHAUSTED" in msg
+    ):
         return 5
     return 0
 
@@ -396,7 +438,17 @@ def _create_with_retry(client, kwargs: dict, tries: int = 3, on_token=None) -> o
     raise last
 
 
-def _stream_chat(client, model: str, messages: list[dict], tools, temperature: float, max_tokens: int, extra: dict, on_token=None, on_reasoning=None) -> _Msg:
+def _stream_chat(
+    client,
+    model: str,
+    messages: list[dict],
+    tools,
+    temperature: float,
+    max_tokens: int,
+    extra: dict,
+    on_token=None,
+    on_reasoning=None,
+) -> _Msg:
     """Streaming chat.completions with tool accumulation.
 
     Content deltas -> on_token, reasoning deltas -> on_reasoning (falls back
@@ -410,8 +462,16 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
     try:
         stream = _create_with_retry(
             client,
-            dict(model=model, messages=messages, tools=tools, tool_choice="auto" if tools else "none",
-                 temperature=temperature, max_tokens=max_tokens, stream=True, extra_body=extra),
+            dict(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto" if tools else "none",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+                extra_body=extra,
+            ),
             on_token=on_token,
         )
         for chunk in stream:  # type: ignore[attr-defined]
@@ -426,7 +486,9 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
             if delta is None:
                 continue
             # reasoning field (qwen3 via Ollama) — separate sink when provided
-            r = getattr(delta, "reasoning", None) or (delta.get("reasoning") if isinstance(delta, dict) else None)
+            r = getattr(delta, "reasoning", None) or (
+                delta.get("reasoning") if isinstance(delta, dict) else None
+            )
             if r:
                 acc_reason += r if isinstance(r, str) else str(r)
                 if _on_r is not None:
@@ -451,13 +513,21 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
                 for tc in tcs:
                     idx = tc.index if hasattr(tc, "index") else tc.get("index", 0)
                     buf = tc_buf.setdefault(idx, {"id": "", "name": "", "args": ""})
-                    tid = getattr(tc, "id", None) or (tc.get("id") if isinstance(tc, dict) else None)
+                    tid = getattr(tc, "id", None) or (
+                        tc.get("id") if isinstance(tc, dict) else None
+                    )
                     if tid:
                         buf["id"] = tid
-                    fn = getattr(tc, "function", None) or (tc.get("function") if isinstance(tc, dict) else None)
+                    fn = getattr(tc, "function", None) or (
+                        tc.get("function") if isinstance(tc, dict) else None
+                    )
                     if fn:
-                        n = getattr(fn, "name", None) or (fn.get("name") if isinstance(fn, dict) else None)
-                        a = getattr(fn, "arguments", None) or (fn.get("arguments") if isinstance(fn, dict) else None)
+                        n = getattr(fn, "name", None) or (
+                            fn.get("name") if isinstance(fn, dict) else None
+                        )
+                        a = getattr(fn, "arguments", None) or (
+                            fn.get("arguments") if isinstance(fn, dict) else None
+                        )
                         if n:
                             buf["name"] = (buf["name"] or "") + n
                         if a:
@@ -466,21 +536,40 @@ def _stream_chat(client, model: str, messages: list[dict], tools, temperature: f
         # fallback to non-streaming on error
         resp = _create_with_retry(
             client,
-            dict(model=model, messages=messages, tools=tools, tool_choice="auto" if tools else "none",
-                 temperature=temperature, max_tokens=max_tokens, stream=False, extra_body=extra),
+            dict(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto" if tools else "none",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=False,
+                extra_body=extra,
+            ),
             on_token=on_token,
         )
         m = resp.choices[0].message  # type: ignore[attr-defined]
-        return _Msg(m.content or "", getattr(m, "tool_calls", None), getattr(m, "reasoning", "") or "", str(getattr(resp.choices[0], "finish_reason", "") or ""))  # type: ignore[attr-defined]
+        return _Msg(
+            m.content or "",
+            getattr(m, "tool_calls", None),
+            getattr(m, "reasoning", "") or "",
+            str(getattr(resp.choices[0], "finish_reason", "") or ""),  # type: ignore[attr-defined]
+        )
     tool_calls = None
     if tc_buf:
-        tool_calls = [_TC(b["id"] or f"call_{i}", b["name"], b["args"]) for i, b in sorted(tc_buf.items()) if b["name"]]
+        tool_calls = [
+            _TC(b["id"] or f"call_{i}", b["name"], b["args"])
+            for i, b in sorted(tc_buf.items())
+            if b["name"]
+        ]
         if not tool_calls:
             tool_calls = None
     return _Msg(acc_text, tool_calls, acc_reason, finish)
 
 
-def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False) -> list[dict]:
+def build_messages(
+    user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False
+) -> list[dict]:
     """Assemble system + history + user messages with all grounding. Pure I/O, no LLM.
 
     Extracted for the eval harness: every quality regression (unguessed specs,
@@ -495,13 +584,22 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve
         snapshot = snapshot[:2500] + "\n... [truncated]"
     auto_ctx = _auto_local_context(user_msg)
     if auto_ctx:
-        user_msg = user_msg + f"\n\n[AUTO LOCAL FACTS — these paths DO exist, never say otherwise]:\n{auto_ctx[:5000]}"
+        user_msg = (
+            user_msg
+            + f"\n\n[AUTO LOCAL FACTS — these paths DO exist, never say otherwise]:\n{auto_ctx[:5000]}"
+        )
     web_ctx = _auto_web_context(user_msg)
     if web_ctx:
-        user_msg = user_msg + f"\n\n[AUTO WEB FACTS — already fetched, summarize directly, never claim inability]:\n{web_ctx[:6500]}"
+        user_msg = (
+            user_msg
+            + f"\n\n[AUTO WEB FACTS — already fetched, summarize directly, never claim inability]:\n{web_ctx[:6500]}"
+        )
     search_ctx = _auto_search_context(user_msg)
     if search_ctx:
-        user_msg = user_msg + f"\n\n[AUTO SEARCH — results below, answer from them + read_url the best hit if needed]:\n{search_ctx[:3000]}"
+        user_msg = (
+            user_msg
+            + f"\n\n[AUTO SEARCH — results below, answer from them + read_url the best hit if needed]:\n{search_ctx[:3000]}"
+        )
     try:
         from .store import list_todos, recall_memories
 
@@ -533,13 +631,22 @@ def build_messages(user_msg: str, history: list[dict], cfg: Config, auto_approve
     except Exception:
         smart_model = "qwen2.5-coder:7b"
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(
-            cwd=os.getcwd(),
-            home=str(Path.home()),
-            os=platform.system(),
-            platform=platform.platform(),
-            sysinfo=snapshot, memories=mem_block, todos=todo_block, skills=skill_block, today=today, approval_mode=approval_mode,
-            smart_model=smart_model)},
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT.format(
+                cwd=os.getcwd(),
+                home=str(Path.home()),
+                os=platform.system(),
+                platform=platform.platform(),
+                sysinfo=snapshot,
+                memories=mem_block,
+                todos=todo_block,
+                skills=skill_block,
+                today=today,
+                approval_mode=approval_mode,
+                smart_model=smart_model,
+            ),
+        },
         *history[-20:],
         {"role": "user", "content": user_msg},
     ]
@@ -585,7 +692,17 @@ def run_agent(
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
     for _ in range(cfg.max_steps):
-        msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA, cfg.temperature, max_tokens, extra, on_token, on_reasoning)
+        msg = _stream_chat(
+            client,
+            cfg.model,
+            messages,
+            TOOLS_SCHEMA,
+            cfg.temperature,
+            max_tokens,
+            extra,
+            on_token,
+            on_reasoning,
+        )
 
         # qwen3-style reasoning models put text in .reasoning, content empty
         msg_text = (msg.content or "").strip()
@@ -603,7 +720,13 @@ def run_agent(
             for tname, targs in text_tools[:4]:  # cap 4 per turn
                 result, _ = _run_tool_cached(tname, targs, approve, on_tool, seen)
                 combined.append(f"[tool {tname} result]\n{result}")
-            messages.append({"role": "user", "content": "\n".join(combined) + "\nAnswer the original question concisely using these results. Do not emit more tool JSON."})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "\n".join(combined)
+                    + "\nAnswer the original question concisely using these results. Do not emit more tool JSON.",
+                }
+            )
             continue
 
         # no tool call -> done, unless cut off mid-thought (finish=length):
@@ -612,7 +735,9 @@ def run_agent(
             if msg.finish == "length" and continued < 2:
                 continued += 1
                 messages.append({"role": "assistant", "content": msg_text})
-                messages.append({"role": "user", "content": "Continue: emit the tool calls now, no more prose."})
+                messages.append(
+                    {"role": "user", "content": "Continue: emit the tool calls now, no more prose."}
+                )
                 continue
             final_text = msg_text
             messages.append({"role": "assistant", "content": final_text})
@@ -645,7 +770,17 @@ def run_agent(
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis
         if _ == cfg.max_steps - 1:
-            m2 = _stream_chat(client, cfg.model, messages, None, cfg.temperature, max_tokens, extra, on_token, on_reasoning)
+            m2 = _stream_chat(
+                client,
+                cfg.model,
+                messages,
+                None,
+                cfg.temperature,
+                max_tokens,
+                extra,
+                on_token,
+                on_reasoning,
+            )
             final_text = m2.content or m2.reasoning or ""
             messages.append({"role": "assistant", "content": final_text})
     else:

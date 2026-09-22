@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover
 
 try:
     import tomli_w  # for writing; fallback to manual write
+
     _HAS_TOMLI_W = True
 except ImportError:
     _HAS_TOMLI_W = False
@@ -24,15 +25,43 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 # OpenAI-compatible providers. Anything speaking /v1/chat/completions works,
 # including local servers (ollama, LM Studio, llama.cpp --server).
 PRESETS: dict[str, dict[str, str]] = {
-    "ollama": {"base_url": "http://localhost:11434/v1", "key": "ollama", "model": "qwen2.5-coder:7b"},
+    "ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "key": "ollama",
+        "model": "qwen2.5-coder:7b",
+    },
     "openai": {"base_url": "https://api.openai.com/v1", "key": "", "model": "gpt-4o-mini"},
-    "groq": {"base_url": "https://api.groq.com/openai/v1", "key": "", "model": "openai/gpt-oss-20b"},
-    "together": {"base_url": "https://api.together.xyz/v1", "key": "", "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "key": "",
+        "model": "openai/gpt-oss-20b",
+    },
+    "together": {
+        "base_url": "https://api.together.xyz/v1",
+        "key": "",
+        "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    },
     "deepseek": {"base_url": "https://api.deepseek.com/v1", "key": "", "model": "deepseek-chat"},
-    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "key": "", "model": "openai/gpt-4o-mini"},
-    "google": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "", "model": "models/gemini-3.6-flash"},
-    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "key": "", "model": "models/gemini-3.6-flash"},
-    "lmstudio": {"base_url": "http://localhost:1234/v1", "key": "lm-studio", "model": "local-model"},
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "key": "",
+        "model": "openai/gpt-4o-mini",
+    },
+    "google": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "key": "",
+        "model": "models/gemini-3.6-flash",
+    },
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "key": "",
+        "model": "models/gemini-3.6-flash",
+    },
+    "lmstudio": {
+        "base_url": "http://localhost:1234/v1",
+        "key": "lm-studio",
+        "model": "local-model",
+    },
     "custom": {"base_url": "", "key": "", "model": ""},
 }
 
@@ -59,6 +88,7 @@ def resolve_alias(provider: str, alias: str, fallback: str) -> str:
     if m in ("fast", "smart"):
         return provider_tier(provider, m, fallback)
     return m or fallback
+
 
 DEFAULTS: dict[str, str | int | float] = {
     "provider": "ollama",
@@ -111,7 +141,9 @@ class Config:
             prov = "custom"
         return cls(
             provider=prov,
-            model=str(model or file_vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]),
+            model=str(
+                model or file_vals.get("model", "") or PRESETS[prov]["model"] or DEFAULTS["model"]
+            ),
             base_url=str(base_url or file_vals.get("base_url", "")),
             api_key=str(api_key or file_vals.get("api_key", "")),
             max_steps=int(str(file_vals.get("max_steps", DEFAULTS["max_steps"]))),

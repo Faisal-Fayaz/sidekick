@@ -17,12 +17,16 @@ def test_prefers_wl_copy(monkeypatch):
     class P:
         def __init__(self, argv, **k):
             started.append(argv)
-            self.stdin = type("S", (), {"write": lambda self, d: None, "close": lambda self: None})()
+            self.stdin = type(
+                "S", (), {"write": lambda self, d: None, "close": lambda self: None}
+            )()
 
         def wait(self, timeout=None):
             return 0
 
-    monkeypatch.setattr(clip.shutil, "which", lambda b: "/usr/bin/wl-copy" if b == "wl-copy" else None)
+    monkeypatch.setattr(
+        clip.shutil, "which", lambda b: "/usr/bin/wl-copy" if b == "wl-copy" else None
+    )
     monkeypatch.setattr(clip.subprocess, "Popen", P)
     assert clip.copy_text("hello") == "wl-copy"
     assert started and started[0][0] == "wl-copy"
@@ -41,7 +45,9 @@ def test_xclip_detached_not_awaited(monkeypatch):
     class P:
         def __init__(self, argv, **k):
             assert "-loops" not in argv  # no serve-limits; daemon serves on
-            self.stdin = type("S", (), {"write": lambda self, d: None, "close": lambda self: None})()
+            self.stdin = type(
+                "S", (), {"write": lambda self, d: None, "close": lambda self: None}
+            )()
 
         def wait(self, timeout=None):
             waited.append(True)
@@ -56,7 +62,9 @@ def test_xclip_detached_not_awaited(monkeypatch):
 def test_dead_backend_falls_through(monkeypatch):
     class P:
         def __init__(self, *a, **k):
-            self.stdin = type("S", (), {"write": lambda self, d: None, "close": lambda self: None})()
+            self.stdin = type(
+                "S", (), {"write": lambda self, d: None, "close": lambda self: None}
+            )()
 
         def wait(self, timeout=None):
             return 1  # fast non-zero = real failure
@@ -112,7 +120,9 @@ def test_slash_copy_lines(tmp_path, monkeypatch):
     assert seen == ["l3\nl4"] and "2 lines" in out.text
     out = slash.handle("/copy lines", session="s", cfg=cfg, state={})
     assert seen[-1] == "l1\nl2\nl3\nl4"  # default: whole tail
-    assert "no answers" in slash.handle("/copy lines 1", session="e", cfg=cfg, state={}).text.lower()
+    assert (
+        "no answers" in slash.handle("/copy lines 1", session="e", cfg=cfg, state={}).text.lower()
+    )
 
 
 def test_slash_copy(tmp_path, monkeypatch):

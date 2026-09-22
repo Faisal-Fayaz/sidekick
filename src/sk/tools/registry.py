@@ -32,7 +32,9 @@ TOOLS_SCHEMA = [
             "description": "List files in a directory. Use for exploring the filesystem.",
             "parameters": {
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "Directory path, default '.'"}},
+                "properties": {
+                    "path": {"type": "string", "description": "Directory path, default '.'"}
+                },
                 "required": [],
             },
         },
@@ -56,7 +58,9 @@ TOOLS_SCHEMA = [
             "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects. No approval needed.",
             "parameters": {
                 "type": "object",
-                "properties": {"cmd": {"type": "string", "description": "Command, e.g. 'df -h' or 'ls -la'"}},
+                "properties": {
+                    "cmd": {"type": "string", "description": "Command, e.g. 'df -h' or 'ls -la'"}
+                },
                 "required": ["cmd"],
             },
         },
@@ -96,7 +100,10 @@ TOOLS_SCHEMA = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "File path, e.g. ~/notes/todo.md or /tmp/test.py"},
+                    "path": {
+                        "type": "string",
+                        "description": "File path, e.g. ~/notes/todo.md or /tmp/test.py",
+                    },
                     "content": {"type": "string", "description": "Full file content"},
                 },
                 "required": ["path", "content"],
@@ -126,7 +133,9 @@ TOOLS_SCHEMA = [
             "description": "Create a directory (like mkdir -p, HOME or /tmp only). REQUIRES user approval.",
             "parameters": {
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "Directory to create, e.g. ~/notes"}},
+                "properties": {
+                    "path": {"type": "string", "description": "Directory to create, e.g. ~/notes"}
+                },
                 "required": ["path"],
             },
         },
@@ -224,12 +233,15 @@ TOOLS_SCHEMA = [
             "description": "Load full instructions of one skill pack by name (see SKILL INDEX in prompt, e.g. 'brainstorming'). Use when the task matches a skill's description.",
             "parameters": {
                 "type": "object",
-                "properties": {"name": {"type": "string", "description": "Skill name from the index"}},
+                "properties": {
+                    "name": {"type": "string", "description": "Skill name from the index"}
+                },
                 "required": ["name"],
             },
         },
     },
 ]
+
 
 def dispatch_tool(name: str, args: dict) -> str:
     if name == "sysinfo":
@@ -251,7 +263,11 @@ def dispatch_tool(name: str, args: dict) -> str:
     if name == "write_file":
         return tool_write_file(str(args.get("path", "")), str(args.get("content", "")))
     if name == "edit_file":
-        return tool_edit_file(str(args.get("path", "")), str(args.get("old_string", "")), str(args.get("new_string", "")))
+        return tool_edit_file(
+            str(args.get("path", "")),
+            str(args.get("old_string", "")),
+            str(args.get("new_string", "")),
+        )
     if name == "make_dir":
         return tool_make_dir(str(args.get("path", "")))
     if name == "remember":

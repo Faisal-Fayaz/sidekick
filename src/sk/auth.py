@@ -60,7 +60,9 @@ def chat_models(names: list[str]) -> list[str]:
     return out
 
 
-def ping(provider: str, base_url: str, api_key: str, model: str, timeout: int = 30) -> tuple[bool, str]:
+def ping(
+    provider: str, base_url: str, api_key: str, model: str, timeout: int = 30
+) -> tuple[bool, str]:
     """One tiny completion to prove end-to-end works. No tools, no history."""
     from openai import OpenAI
 

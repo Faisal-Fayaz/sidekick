@@ -8,7 +8,9 @@ import sk.voice as voice
 
 
 def test_check_mic_ok(monkeypatch):
-    monkeypatch.setattr(voice.shutil, "which", lambda b: "/usr/bin/arecord" if b == "arecord" else None)
+    monkeypatch.setattr(
+        voice.shutil, "which", lambda b: "/usr/bin/arecord" if b == "arecord" else None
+    )
 
     class R:
         stdout = "**** List of CAPTURE Hardware Devices ****"
@@ -223,7 +225,9 @@ def test_record_once_sox(monkeypatch):
 
 def test_detect_recorder_prefers_native(monkeypatch):
     monkeypatch.setattr(voice.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(voice.shutil, "which", lambda b: "/usr/bin/" + b if b == "arecord" else None)
+    monkeypatch.setattr(
+        voice.shutil, "which", lambda b: "/usr/bin/" + b if b == "arecord" else None
+    )
     assert voice.detect_recorder() == "arecord"
 
     monkeypatch.setattr(voice.platform, "system", lambda: "Darwin")
@@ -244,7 +248,10 @@ def _sine_wav(path, peak_amp, seconds=1):
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(16000)
-        frames = b"".join(struct.pack("<h", int(peak_amp * math.sin(2 * math.pi * 440 * i / 16000))) for i in range(n))
+        frames = b"".join(
+            struct.pack("<h", int(peak_amp * math.sin(2 * math.pi * 440 * i / 16000)))
+            for i in range(n)
+        )
         w.writeframes(frames)
 
 

@@ -36,7 +36,9 @@ def test_slash_sessions_flow(tmp_path, monkeypatch):
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     cfg = Config(model="t", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0)
-    assert "no past sessions" in slash.handle("/sessions", session="s", cfg=cfg, state={}).text.lower()
+    assert (
+        "no past sessions" in slash.handle("/sessions", session="s", cfg=cfg, state={}).text.lower()
+    )
     store.save_message("chat-1", "user", "first topic here")
     out = slash.handle("/sessions", session="chat-1", cfg=cfg, state={})
     assert "chat-1" in out.text and "first topic" in out.text

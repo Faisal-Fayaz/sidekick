@@ -27,6 +27,7 @@ def tool_delete_file(path: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 WRITE_TOOLS = {"write_file", "edit_file", "make_dir"}
 
 WRITE_BLOCKLIST = (
@@ -42,6 +43,7 @@ WRITE_BLOCKLIST = (
     Path("/sys"),
     Path("/dev"),
 )
+
 
 def _check_write_path(path: str) -> Path | str:
     import tempfile
@@ -81,6 +83,7 @@ def _check_write_path(path: str) -> Path | str:
         return f"Error: writes are only allowed under {home} or {tmp_root} (got {p})."
     return p
 
+
 def tool_make_dir(path: str) -> str:
     """mkdir -p under HOME or /tmp. Approval-gated like other writes."""
     checked = _check_write_path(path)
@@ -95,6 +98,7 @@ def tool_make_dir(path: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def tool_write_file(path: str, content: str) -> str:
     checked = _check_write_path(path)
     if isinstance(checked, str):
@@ -108,6 +112,7 @@ def tool_write_file(path: str, content: str) -> str:
         return f"Wrote {len(content)} chars to {p}"
     except Exception as e:
         return f"Error: {e}"
+
 
 def tool_edit_file(path: str, old_string: str, new_string: str) -> str:
     if not old_string:

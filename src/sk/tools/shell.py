@@ -18,6 +18,7 @@ def _check_shell(cmd: str) -> str | None:
             return "Error: blocked destructive command (refused even with approval)."
     return None
 
+
 def tool_shell(cmd: str, timeout: int = 30) -> str:
     """General shell via bash -c. Approval-gated; catastrophic patterns hard-blocked."""
     blocked = _check_shell(cmd)
@@ -35,6 +36,7 @@ def tool_shell(cmd: str, timeout: int = 30) -> str:
         return f"Error: timed out after {timeout}s"
     except Exception as e:
         return f"Error: {e}"
+
 
 SHELL_BLOCK_PATTERNS = [
     r"\brm\s+(-[a-z]*r[a-z]*\s+)+/(?:\s|$)",  # rm -rf /

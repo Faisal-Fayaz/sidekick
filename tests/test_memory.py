@@ -30,7 +30,9 @@ def test_forget(monkeypatch, tmp_path):
     _isolate(tmp_path, monkeypatch)
     store.save_memory("prefers qwen fast")
     assert "1" in store.forget_memory("qwen")
-    assert store.recall_memories("qwen") == [] or all("qwen" not in h for h in store.recall_memories("qwen"))
+    assert store.recall_memories("qwen") == [] or all(
+        "qwen" not in h for h in store.recall_memories("qwen")
+    )
 
 
 def test_tools_dispatch_memory(monkeypatch, tmp_path):

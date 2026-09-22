@@ -23,8 +23,13 @@ from .base import _cfg, app, console
 from .resolve import _resolve_model
 
 __all__ = [
-    "app", "console", "_cfg",
-    "_make_approver", "_make_approver_state", "_make_on_tool", "_make_on_token",
+    "app",
+    "console",
+    "_cfg",
+    "_make_approver",
+    "_make_approver_state",
+    "_make_on_tool",
+    "_make_on_token",
     "_resolve_model",
 ]
 
@@ -47,7 +52,12 @@ def chat(
     elif not session:
         session = new_session_id("chat")
     state = {"yolo": yes}
-    console.print(Panel(f"[bold]sidekick[/]  model=[cyan]{cfg.model}[/]  session=[cyan]{session}[/]\nType [bold]/help[/] for commands, [bold]@path[/] to attach a file.", expand=False))
+    console.print(
+        Panel(
+            f"[bold]sidekick[/]  model=[cyan]{cfg.model}[/]  session=[cyan]{session}[/]\nType [bold]/help[/] for commands, [bold]@path[/] to attach a file.",
+            expand=False,
+        )
+    )
     approve = _make_approver_state(state)
     on_tool = _make_on_tool()
     on_token = None if no_stream else _make_on_token()
@@ -91,9 +101,19 @@ def chat(
 
         console.print("[dim]thinking... (streams live)[/dim]")
         try:
-            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve, auto_approve=bool(state.get("yolo")))
+            answer = run_agent(
+                user,
+                history,
+                cfg,
+                on_tool=on_tool,
+                on_token=on_token,
+                approve=approve,
+                auto_approve=bool(state.get("yolo")),
+            )
         except Exception as e:
-            console.print(f"[red]Error talking to {cfg.provider} ({cfg.effective_base_url()} model={cfg.model}): {e}[/red]")
+            console.print(
+                f"[red]Error talking to {cfg.provider} ({cfg.effective_base_url()} model={cfg.model}): {e}[/red]"
+            )
             console.print("[dim]Tip: run `sk doctor` and `ollama serve`[/dim]")
             continue
         save_message(session, "assistant", answer)
@@ -111,7 +131,9 @@ def talk(
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes"),
     model: str = typer.Option("", help="Model override: name or fast/smart"),
     stt_model: str = typer.Option("tiny", help="faster-whisper size: tiny/base/small"),
-    duration: int = typer.Option(0, "--duration", "-d", help="Fixed record seconds (0 = Enter to start/stop)"),
+    duration: int = typer.Option(
+        0, "--duration", "-d", help="Fixed record seconds (0 = Enter to start/stop)"
+    ),
     install: bool = typer.Option(False, "--install", help="Install faster-whisper without asking"),
     device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
 ):
@@ -132,14 +154,21 @@ def talk(
         console.print(f"[yellow]{msg}[/yellow]")
         if not install and not typer.confirm("Install now?", default=True):
             raise typer.Exit(1)
-        console.print("[dim]installing faster-whisper into sidekick's env (one time, ~800MB)...[/dim]")
+        console.print(
+            "[dim]installing faster-whisper into sidekick's env (one time, ~800MB)...[/dim]"
+        )
         ok, out = _voice.install_stt()
         if not ok:
             console.print(f"[red]{out}[/red]")
             raise typer.Exit(1)
         console.print("[dim]installed.[/dim]")
     state = {"yolo": yes}
-    console.print(Panel(f"[bold]sidekick talk[/]  model=[cyan]{cfg.model}[/]  stt=[cyan]{stt_model}[/] (local int8)\n[bold green]Enter[/] to record, [bold green]Enter[/] to stop. [bold]/quit[/] exits, [bold]/help[/] commands.", expand=False))
+    console.print(
+        Panel(
+            f"[bold]sidekick talk[/]  model=[cyan]{cfg.model}[/]  stt=[cyan]{stt_model}[/] (local int8)\n[bold green]Enter[/] to record, [bold green]Enter[/] to stop. [bold]/quit[/] exits, [bold]/help[/] commands.",
+            expand=False,
+        )
+    )
     approve = _make_approver_state(state)
     on_tool = _make_on_tool()
     on_token = _make_on_token()
@@ -199,8 +228,16 @@ def talk(
         console.print("[dim]thinking... (streams live)[/dim]")
         try:
             t0 = _t.monotonic()
-            answer = run_agent(user, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve, auto_approve=bool(state.get("yolo")))
-            console.print(f"[dim]({ _t.monotonic() - t0:.0f}s)[/dim]")
+            answer = run_agent(
+                user,
+                history,
+                cfg,
+                on_tool=on_tool,
+                on_token=on_token,
+                approve=approve,
+                auto_approve=bool(state.get("yolo")),
+            )
+            console.print(f"[dim]({_t.monotonic() - t0:.0f}s)[/dim]")
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
             continue
@@ -237,7 +274,19 @@ def _code_version() -> str:
     try:
         import subprocess as _sp
 
-        r = _sp.run(["git", "-C", str(Path(__file__).resolve().parent.parent.parent), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5)
+        r = _sp.run(
+            [
+                "git",
+                "-C",
+                str(Path(__file__).resolve().parent.parent.parent),
+                "rev-parse",
+                "--short",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
         h = (r.stdout or "").strip()
         if h:
             return h
@@ -259,13 +308,13 @@ def version():
 
 @app.command()
 def run(
-    task: str = typer.Argument(..., help="Task in quotes, e.g. \"summarize disk usage\""),
+    task: str = typer.Argument(..., help='Task in quotes, e.g. "summarize disk usage"'),
     session: str = typer.Option("default", help="Session name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes (else prompts)"),
     model: str = typer.Option("auto", help="Model: auto (router), fast, smart, or name"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
 ):
-    """Single-shot: sk run \"summarize disk usage in ~/\" """
+    """Single-shot: sk run \"summarize disk usage in ~/\""""
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model, task)
     history = get_history(session)
@@ -279,7 +328,15 @@ def run(
 
     console.print("[dim]working... (streams live)[/dim]")
     try:
-        answer = run_agent(task, history, cfg, on_tool=on_tool, on_token=on_token, approve=approve, auto_approve=yes)
+        answer = run_agent(
+            task,
+            history,
+            cfg,
+            on_tool=on_tool,
+            on_token=on_token,
+            approve=approve,
+            auto_approve=yes,
+        )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
@@ -320,7 +377,9 @@ def doctor():
     from sk.auth import provider_status
 
     cfg = _cfg()
-    console.print(f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan] code=[cyan]{_code_version()}[/cyan]")
+    console.print(
+        f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan] code=[cyan]{_code_version()}[/cyan]"
+    )
     ok, msg = provider_status(cfg)
     if ok and cfg.provider in ("ollama", "lmstudio"):
         from sk.auth import fetch_models
@@ -331,7 +390,9 @@ def doctor():
             if cfg.model in names:
                 console.print(f"[green]✓ model '{cfg.model}' installed[/green]")
             else:
-                console.print(f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]")
+                console.print(
+                    f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]"
+                )
         except Exception as e:
             console.print(f"[red]✗ {cfg.provider} not reachable: {e}[/red]")
     elif ok:
@@ -349,9 +410,14 @@ def doctor():
 @app.command()
 def config(
     model: str = typer.Option("", help="Set model, e.g. --model qwen3:4b"),
-    provider: str = typer.Option("", help="Set provider: ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom"),
+    provider: str = typer.Option(
+        "",
+        help="Set provider: ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom",
+    ),
     api_key: str = typer.Option("", help="Set API key (or use SIDEKICK_API_KEY env)"),
-    base_url: str = typer.Option("", help="Custom base URL (sets provider=custom unless --provider given)"),
+    base_url: str = typer.Option(
+        "", help="Custom base URL (sets provider=custom unless --provider given)"
+    ),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
     """View/set config. Keys are chmod-600’d; env vars always win."""
@@ -387,7 +453,9 @@ def config(
     if changed:
         cfg.save()
     if show or not changed:
-        console.print(f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}")
+        console.print(
+            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}"
+        )
 
 
 auth_app = typer.Typer(help="Keys: sk auth add/list/status/remove (keys masked, validated live)")
@@ -405,7 +473,11 @@ def _pick_provider(default: str = "") -> str:
         console.print(f"  {i}. {n}")
     while True:
         try:
-            raw = console.input("Pick [1-{}] ({}): ".format(len(names), default or "ollama")).strip() or default or "ollama"
+            raw = (
+                console.input("Pick [1-{}] ({}): ".format(len(names), default or "ollama")).strip()
+                or default
+                or "ollama"
+            )
         except (EOFError, KeyboardInterrupt):
             raise typer.Exit(1)
         if raw.isdigit() and 1 <= int(raw) <= len(names):
@@ -436,10 +508,19 @@ def auth_add(
     if p not in PRESETS:
         console.print(f"[red]unknown provider. Pick: {', '.join(PRESETS)}[/red]")
         raise typer.Exit(1)
-    base = PRESETS[p]["base_url"] if p != cfg.provider or not cfg.base_url else cfg.effective_base_url()
+    base = (
+        PRESETS[p]["base_url"]
+        if p != cfg.provider or not cfg.base_url
+        else cfg.effective_base_url()
+    )
     k = key.strip() or _ask_key()
     if p in ("ollama", "lmstudio"):
-        cfg.provider, cfg.model, cfg.base_url, cfg.api_key = p, PRESETS[p]["model"] or cfg.model, "", ""
+        cfg.provider, cfg.model, cfg.base_url, cfg.api_key = (
+            p,
+            PRESETS[p]["model"] or cfg.model,
+            "",
+            "",
+        )
         cfg.save()
         console.print(f"[green]provider set to {p}, no key needed locally.[/green]")
         return
@@ -486,7 +567,9 @@ def auth_status(provider: str = typer.Argument("", help="Provider, omit for curr
         if p != _cfg().provider:
             cfg.base_url, cfg.api_key = "", ""
     ok, msg = provider_status(cfg)
-    console.print(f"[green]✓ {cfg.provider}: {msg}[/green]" if ok else f"[red]✗ {cfg.provider}: {msg}[/red]")
+    console.print(
+        f"[green]✓ {cfg.provider}: {msg}[/green]" if ok else f"[red]✗ {cfg.provider}: {msg}[/red]"
+    )
     if not ok:
         raise typer.Exit(1)
 
@@ -497,7 +580,7 @@ def auth_remove(provider: str = typer.Argument("", help="Provider, omit for curr
     from sk.config import PRESETS
 
     cfg = _cfg()
-    p = (provider.strip().lower() or cfg.provider)
+    p = provider.strip().lower() or cfg.provider
     if p not in PRESETS:
         console.print("[red]unknown provider[/red]")
         raise typer.Exit(1)
@@ -516,7 +599,9 @@ def model():
     cfg = _cfg()
     p = _pick_provider(cfg.provider)
     try:
-        names = fetch_models(p, PRESETS[p]["base_url"], cfg.effective_api_key() if p == cfg.provider else "")
+        names = fetch_models(
+            p, PRESETS[p]["base_url"], cfg.effective_api_key() if p == cfg.provider else ""
+        )
     except Exception as e:
         console.print(f"[red]cannot list {p}: {e}[/red]")
         try:
@@ -579,7 +664,12 @@ def _connect_flow() -> Config:
     p = _pick_provider(cfg.provider)
     base = PRESETS[p]["base_url"]
     if p in ("ollama", "lmstudio"):
-        cfg.provider, cfg.model, cfg.base_url, cfg.api_key = p, PRESETS[p]["model"] or cfg.model, "", ""
+        cfg.provider, cfg.model, cfg.base_url, cfg.api_key = (
+            p,
+            PRESETS[p]["model"] or cfg.model,
+            "",
+            "",
+        )
         cfg.save()
         console.print(f"[green]provider set to {p}, no key needed locally.[/green]")
     else:
@@ -613,10 +703,19 @@ def connect():
     cfg = _connect_flow()
     console.print("[dim]ping...[/dim]")
     ok, msg = ping(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key(), cfg.model)
-    console.print(f"[green]✓ {cfg.provider} / {cfg.model} answers: {msg}[/green]" if ok else f"[red]✗ ping failed: {msg}[/red]")
+    console.print(
+        f"[green]✓ {cfg.provider} / {cfg.model} answers: {msg}[/green]"
+        if ok
+        else f"[red]✗ ping failed: {msg}[/red]"
+    )
     if not ok:
         raise typer.Exit(1)
-    console.print(Panel(f"[bold]connected[/]  provider=[cyan]{cfg.provider}[/]  model=[cyan]{cfg.model}[/]  key=[cyan]{Config.mask(cfg.effective_api_key())}[/]\nTry `sk tui`.", expand=False))
+    console.print(
+        Panel(
+            f"[bold]connected[/]  provider=[cyan]{cfg.provider}[/]  model=[cyan]{cfg.model}[/]  key=[cyan]{Config.mask(cfg.effective_api_key())}[/]\nTry `sk tui`.",
+            expand=False,
+        )
+    )
 
 
 @app.command()
@@ -641,7 +740,7 @@ def setup():
 
 @app.command()
 def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers fast model'")):
-    """Save a memory: sk remember \"prefers qwen3:4b\" """
+    """Save a memory: sk remember \"prefers qwen3:4b\""""
     from sk.store import save_memory
 
     console.print(f"[green]{save_memory(text)}[/green] {text[:120]}")
@@ -649,12 +748,12 @@ def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers f
 
 @app.command(name="recall")
 def recall_cmd(query: str = typer.Argument("", help="Search terms (empty = recent)")):
-    """Search memories: sk recall \"model\" """
+    """Search memories: sk recall \"model\""""
     from sk.store import recall_memories
 
     hits = recall_memories(query, limit=10)
     if not hits:
-        console.print("[yellow](no memories yet — try `sk remember \"...\"`)[/yellow]")
+        console.print('[yellow](no memories yet — try `sk remember "..."`)[/yellow]')
         return
     for h in hits:
         console.print(f"• {h}")
@@ -675,7 +774,7 @@ def memories_cmd():
 
 @app.command()
 def forget(query: str = typer.Argument(..., help="Substring to delete")):
-    """Delete matching memories: sk forget \"qwen\" """
+    """Delete matching memories: sk forget \"qwen\""""
     from sk.store import forget_memory
 
     console.print(f"[yellow]{forget_memory(query)}[/yellow]")
@@ -687,7 +786,7 @@ app.add_typer(todo_app, name="todo")
 
 @todo_app.command("add")
 def todo_add(text: str = typer.Argument(..., help="Todo text")):
-    """Add: sk todo add \"clean disk\" """
+    """Add: sk todo add \"clean disk\""""
     from sk.store import add_todo
 
     console.print(f"[green]{add_todo(text)}[/green]")
@@ -695,12 +794,12 @@ def todo_add(text: str = typer.Argument(..., help="Todo text")):
 
 @todo_app.command("list")
 def todo_list(all: bool = typer.Option(False, "--all", help="Include done")):
-    """List: sk todo list """
+    """List: sk todo list"""
     from sk.store import list_todos
 
     rows = list_todos(open_only=not all)
     if not rows:
-        console.print("[dim](no todos — sk todo add \"...\" )[/dim]")
+        console.print('[dim](no todos — sk todo add "..." )[/dim]')
         return
     for i, t, d in rows:
         mark = "[green]✓[/green]" if d else "[yellow]○[/yellow]"
@@ -709,7 +808,7 @@ def todo_list(all: bool = typer.Option(False, "--all", help="Include done")):
 
 @todo_app.command("done")
 def todo_done(tid: int = typer.Argument(..., help="Todo id")):
-    """Done: sk todo done 1 """
+    """Done: sk todo done 1"""
     from sk.store import complete_todo
 
     console.print(f"[green]{complete_todo(tid)}[/green]")
@@ -717,7 +816,7 @@ def todo_done(tid: int = typer.Argument(..., help="Todo id")):
 
 @todo_app.command("clear")
 def todo_clear():
-    """Clear done: sk todo clear """
+    """Clear done: sk todo clear"""
     from sk.store import clear_todos
 
     console.print(f"[yellow]{clear_todos()}[/yellow]")
@@ -763,7 +862,7 @@ def hook_log(
 
 @app.command()
 def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show")):
-    """Show recent shell commands: sk history """
+    """Show recent shell commands: sk history"""
     from sk.store import list_shell
 
     rows = list_shell(limit=limit)
@@ -780,7 +879,7 @@ def oops(
     model: str = typer.Option("", help="Model override or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable streaming"),
 ):
-    """Explain last failed command: sk oops """
+    """Explain last failed command: sk oops"""
     from sk.store import last_failed
 
     fail = last_failed()
@@ -846,7 +945,9 @@ def hook_install(
 
 @app.command()
 def brief(
-    project: list[str] = typer.Option([], "--project", "-p", help="Extra project path (repeatable)"),
+    project: list[str] = typer.Option(
+        [], "--project", "-p", help="Extra project path (repeatable)"
+    ),
     smart: bool = typer.Option(False, "--smart", help="Pipe digest through LLM for 2-line summary"),
     model: str = typer.Option("", help="Model for --smart (or fast/smart)"),
 ):
@@ -865,7 +966,17 @@ def brief(
     keep: list[str] = []
     for line in sysinfo.splitlines():
         ll = line.lower()
-        if line.startswith("CPU:") or line.startswith("GPU:") or "mem:" in ll or "memory" in ll or "/dev/nvme" in line or "OLLAMA MODELS" in line or "qwen" in line or "llama" in line or "NAME " in line:
+        if (
+            line.startswith("CPU:")
+            or line.startswith("GPU:")
+            or "mem:" in ll
+            or "memory" in ll
+            or "/dev/nvme" in line
+            or "OLLAMA MODELS" in line
+            or "qwen" in line
+            or "llama" in line
+            or "NAME " in line
+        ):
             keep.append(line)
     console.print(Panel("\n".join(keep[:14]) or sysinfo[:1000], title="system", expand=False))
 
@@ -901,11 +1012,15 @@ def brief(
     if mems:
         console.print(Panel("\n".join(f"• {m}" for m in mems[:5]), title="memories", expand=False))
     else:
-        console.print("[dim]no memories yet — sk remember \"...\"[/dim]")
+        console.print('[dim]no memories yet — sk remember "..."[/dim]')
 
     todos: list = data.get("todos", [])
     if todos:
-        console.print(Panel("\n".join(f"○ #{i} {t}" for i, t, _ in todos[:5]), title="open todos", expand=False))
+        console.print(
+            Panel(
+                "\n".join(f"○ #{i} {t}" for i, t, _ in todos[:5]), title="open todos", expand=False
+            )
+        )
 
     if smart:
         cfg = _cfg()
@@ -992,7 +1107,9 @@ def daemon(
     if once:
         run_one()
         return
-    console.print(f"[dim]daemon loop every {interval}s (Ctrl-C to stop). Log: ~/.sidekick/nudges.log[/dim]")
+    console.print(
+        f"[dim]daemon loop every {interval}s (Ctrl-C to stop). Log: ~/.sidekick/nudges.log[/dim]"
+    )
     try:
         while True:
             run_one()

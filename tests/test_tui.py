@@ -154,7 +154,16 @@ async def _pilot_slash_model():
 async def _pilot_streaming(monkeypatch):
     import sk.agent as agent
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+    ):
         if on_reasoning:
             on_reasoning("hmm ")
         for tok in ("Hello", " world"):
@@ -396,7 +405,9 @@ async def _pilot_ctrl_y_warn(monkeypatch):
     from sk.tui import SidekickTUI as _T
 
     monkeypatch.setattr(_c, "backends_available", lambda: [])
-    monkeypatch.setattr(_s, "get_history", lambda *a, **k: [{"role": "assistant", "content": "ans"}])
+    monkeypatch.setattr(
+        _s, "get_history", lambda *a, **k: [{"role": "assistant", "content": "ans"}]
+    )
     app = _T()
     async with app.run_test() as pilot:
         area = app.query_one("#chat-input")
@@ -418,7 +429,16 @@ def test_timestamps():
 
 
 def _approval_fake(store):
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+    ):
         ok = approve("write_file", {"path": "/tmp/x", "content": "hi"})
         store.append(ok)
         return "wrote it" if ok else "blocked"
@@ -542,7 +562,19 @@ def test_dash_yes_approves():
 def test_affirmative_words():
     from sk.tui import is_affirmative
 
-    for yes in ("y", "yes", "yeah", "yep", "go ahead", "go ahead and do it", "do it", "--yes", "-y", "YES", "  Yup  "):
+    for yes in (
+        "y",
+        "yes",
+        "yeah",
+        "yep",
+        "go ahead",
+        "go ahead and do it",
+        "do it",
+        "--yes",
+        "-y",
+        "YES",
+        "  Yup  ",
+    ):
         assert is_affirmative(yes), yes
     for no in ("n", "no", "nope", "yesterday", "yeah but not there", "ok, wait", ""):
         assert not is_affirmative(no), no
@@ -558,7 +590,16 @@ async def _pilot_stale_pending_ignored(monkeypatch):
 
     agent_calls: list[str] = []
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+    ):
         agent_calls.append(text)
         return "agent heard you"
 
@@ -627,7 +668,16 @@ async def _pilot_slash_bypasses_pending(monkeypatch):
 
     agent_calls: list[str] = []
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+    ):
         agent_calls.append(text)
         return "done"
 

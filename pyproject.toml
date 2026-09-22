@@ -91,7 +91,7 @@ target-version = "py312"
 line-length = 100
 # Baseline: E/F/I/UP only. BLE/S/DTZ/PLW intentionally not enabled for now —
 # this codebase returns Error strings via broad except (tools.py/agent.py).
-# Tighten after Phase 4 split. Format gate deferred (repo not format-clean yet).
+# Format gate enabled (repo formatted with `ruff format`).
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

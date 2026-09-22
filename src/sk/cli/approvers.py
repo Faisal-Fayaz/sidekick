@@ -29,7 +29,11 @@ def _make_approver(auto_yes: bool):
             old = str(args.get("old_string", ""))[:300]
             new = str(args.get("new_string", ""))[:300]
             preview = f"OLD:\n{old}\nNEW:\n{new}"
-        console.print(Panel(f"[bold yellow]approval[/] {name} -> [cyan]{target}[/cyan]\n{preview}", expand=False))
+        console.print(
+            Panel(
+                f"[bold yellow]approval[/] {name} -> [cyan]{target}[/cyan]\n{preview}", expand=False
+            )
+        )
         if auto_yes:
             console.print("[dim]--yes: auto-approved[/dim]")
             return True
@@ -61,7 +65,9 @@ def _make_on_tool():
     def on_tool(name, args):
         # newline first since tokens stream without newlines
         console.print()
-        console.print(f"[dim]○ tool: {name} {args if name not in ('write_file',) else {'path': args.get('path')}}[/dim]")
+        console.print(
+            f"[dim]○ tool: {name} {args if name not in ('write_file',) else {'path': args.get('path')}}[/dim]"
+        )
 
     return on_tool
 
