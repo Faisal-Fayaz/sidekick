@@ -286,6 +286,82 @@ def setup():
     console.print("[green]setup complete. Try `sk tui`.[/green]")
 
 
+@app.command(name="init")
+def init_cmd():
+    """Guided first-run: detect hardware, pull the right Ollama model, verify."""
+    import platform
+
+    from rich.panel import Panel
+
+    from sk.auth import fetch_models, ping
+    from sk.init_wizard import hardware_snapshot, pull_model, recommend_model
+    from sk.tools import tool_sysinfo
+
+    console.print(Panel("[bold]sidekick init[/] — guided first-run.", expand=False))
+    try:
+        local = typer.confirm("Use local Ollama (recommended, free, offline)?", default=True)
+    except (EOFError, KeyboardInterrupt, OSError):
+        raise typer.Exit(1)
+    if not local:
+        cfg = _connect_flow()
+        try:
+            if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
+                hook_install(shell="", write=True)
+        except (EOFError, KeyboardInterrupt, OSError):
+            pass
+        console.print("[green]init complete. Try `sk tui`.[/green]")
+        return
+
+    cfg = _cfg()
+    try:
+        installed = fetch_models("ollama", cfg.effective_base_url(), cfg.effective_api_key())
+    except Exception:
+        console.print("[red]ollama not reachable.[/red]")
+        console.print("[dim]Run `ollama serve` in another terminal, then `sk init` again.[/dim]")
+        raise typer.Exit(1)
+    snap = hardware_snapshot(tool_sysinfo())
+    snap["models"] = installed
+    hw = snap["gpu"] or "unknown GPU"
+    mem = (
+        f"{snap['vram_mb']} MiB VRAM"
+        if snap["vram_mb"] is not None
+        else (f"{snap['ram_gb']} GiB RAM" if snap["ram_gb"] is not None else "unknown memory")
+    )
+    console.print(f"[dim]detected: {hw} · {mem}[/dim]")
+    name, reason, alts = recommend_model(snap, is_mac=platform.system() == "Darwin")
+    options = [name, *[a for a in alts if a != name]]
+    console.print(f"Recommended model: [cyan]{name}[/cyan] — {reason}")
+    for i, alt in enumerate(options[1:], 2):
+        console.print(f"  {i}. {alt}")
+    try:
+        raw = console.input(f"Pick [1-{len(options)}, Enter={name}]: ").strip() or "1"
+    except (EOFError, KeyboardInterrupt, OSError):
+        raise typer.Exit(1)
+    picked = options[int(raw) - 1] if raw.isdigit() and 1 <= int(raw) <= len(options) else raw
+    if picked not in installed:
+        console.print(f"[dim]pulling {picked} (one-time download)...[/dim]")
+        ok, msg = pull_model(picked)
+        console.print(f"[green]{msg}[/green]" if ok else f"[red]{msg}[/red]")
+        if not ok:
+            console.print("[dim]Tip: `sk brief` flags disk pressure; retry when ready.[/dim]")
+            raise typer.Exit(1)
+    else:
+        console.print(f"[dim]{picked} already installed — no download.[/dim]")
+    cfg.provider, cfg.model, cfg.base_url, cfg.api_key = "ollama", picked, "", ""
+    cfg.save()
+    console.print("[dim]ping...[/dim]")
+    ok, msg = ping("ollama", cfg.effective_base_url(), cfg.effective_api_key(), picked)
+    console.print(f"[green]✓ answers: {msg}[/green]" if ok else f"[red]✗ ping failed: {msg}[/red]")
+    if not ok:
+        raise typer.Exit(1)
+    try:
+        if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
+            hook_install(shell="", write=True)
+    except (EOFError, KeyboardInterrupt, OSError):
+        pass
+    console.print("[green]init complete. Try `sk tui`.[/green]")
+
+
 BASH_SNIPPET = """# sidekick shell hook — logs commands for `sk history` / `sk oops`
 _sk_hook() {
   local rc=$?
