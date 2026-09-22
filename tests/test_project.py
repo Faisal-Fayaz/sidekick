@@ -169,7 +169,9 @@ def test_cwd_option_drives_discovery(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # restored on teardown despite os.chdir in-app
     res = CliRunner().invoke(app, ["--cwd", str(proj / "sub"), "config", "--show"])
     assert res.exit_code == 0, res.output
-    assert "cwd-model" in res.output and str(proj) in res.output
+    # rich wraps long lines at terminal width — compare against unwrapped text
+    flat = res.output.replace("\n", "")
+    assert "cwd-model" in flat and str(proj) in flat
 
 
 def test_config_show_warnings(tmp_path, monkeypatch):
