@@ -54,6 +54,13 @@ Thesis: own the users cloud agents structurally can't serve
 - **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
 - **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
 - **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
+- **`sk init` wizard** — guided first-run: detect hardware via `sysinfo`, recommend + pull the right Ollama model, verify with a ping. Kills setup friction, the #1 CLI killer.
+- **Session compaction** — summarize-and-trim long sessions so small-context local models don't degrade. Serves small-model-friendly directly.
+- **Scriptable runs** — `sk run --json` with stable exit codes for pipes and scripts. Unix-philosophy composability, zero new deps.
+- **Background runs** — `sk run --bg` with daemon + desktop notification on completion. Stepping stone to daemon-as-teammate.
+- **`sk export`** — dump any session to a portable Markdown transcript. Sharing, debugging, audit trail.
+- **Self-update** — `sk upgrade` via uv/PyPI version check. Unblocks non-technical users from staying current.
+- **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
