@@ -24,14 +24,6 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next → `v0.3.0`
-
-GitHub milestone: [`v0.3.0`](https://github.com/Faisal01011/sidekick/milestones).
-
-- [ ] `sk audit` — exportable compliance log (tool calls, files touched, network egress; `md|json`). Privacy as an auditor's checkbox; issue #10.
-- [ ] Native Anthropic provider — Claude reachable today only via OpenRouter; wrap the Anthropic-native API.
-- [ ] `mypy` cleanup — 16 pre-existing errors in `slash.py` / `tui.py` / `cli/__init__.py`, then tighten the CI baseline toward strict.
-
 ## Queued → `v0.4.0` (Adoption: convert trust into users)
 
 GitHub milestone: [`v0.4.0`](https://github.com/Faisal01011/sidekick/milestones).
@@ -76,6 +68,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.3.0` — `sk audit` + `tool_runs` schema v2, native Anthropic provider, mypy cleanup + tighter baseline, connect picker fix, API error surfacing, bare-`sk` TUI default, `tui/` split.
 - `v0.1.2` — release-job fix (checkout before tagging).
 - `v0.2.0` — skills search, systemd `daemon-install`, `commands/` split, format gate.
 - `v0.1.1` — PyPI trusted publishing (`sidekick-agent`), AUR + conda-forge notes.
