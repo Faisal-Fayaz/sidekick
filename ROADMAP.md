@@ -24,6 +24,15 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
+## Queued → `v0.5.0` (Smarter agent: small models that feel big)
+
+GitHub milestone: [`v0.5.0`](https://github.com/Faisal01011/sidekick/milestones).
+
+- [ ] Parallel tool calls — run independent reads concurrently (~2–3x latency win on grounded answers).
+- [ ] Prompt caching — cache the repeated system prompt (Anthropic + compatible APIs). 10x cheaper, faster agent turns.
+- [ ] Plan-review step — show the multi-tool plan, ask `[y/N]` before destructive/foreign actions. The make-or-break trust feature.
+- [ ] Session compaction — summarize-and-trim long sessions so small-context local models don't degrade. Serves small-model-friendly directly.
+
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
@@ -37,14 +46,11 @@ Thesis: own the users cloud agents structurally can't serve
 - **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
 - **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
 - **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
-- **Session compaction** — summarize-and-trim long sessions so small-context local models don't degrade. Serves small-model-friendly directly.
 - **Scriptable runs** — `sk run --json` with stable exit codes for pipes and scripts. Unix-philosophy composability, zero new deps.
 - **Background runs** — `sk run --bg` with daemon + desktop notification on completion. Stepping stone to daemon-as-teammate.
 - **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
-- **Plan-review step** — show the multi-tool plan, ask `[y/N]` before destructive/foreign actions. The make-or-break trust feature.
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
-- **Parallel tool calls** — run independent reads concurrently (~2–3x latency win on grounded answers).
 - **MCP server** — wrap the 17 tools + safety policy for Claude Desktop, Copilots, IDEs. Biggest single leverage point.
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
 - **Keyring + spend caps** — OS keyring backend with file fallback; per-session cost display for BYO-key users.
@@ -54,7 +60,6 @@ Thesis: own the users cloud agents structurally can't serve
 - **TUI overhaul** — `tui/` package split, then design system + reskin (tranche A), then layout restructure: status bar, sessions drawer, approval cards, streaming markdown (tranche B). Keymap changes allowed only with F1-overlay migration notes.
 - **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
 - **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
-- **Prompt caching** — cache the repeated system prompt (Anthropic + compatible APIs). 10x cheaper, faster agent turns.
 - **Model manager** — `sk models pull/prune` wrapping Ollama. Closes the loop `brief` opens when it warns disk is 90% full of old models.
 - **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked.
 - **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe.
