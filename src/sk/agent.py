@@ -608,6 +608,26 @@ def _retryable_status(exc: BaseException) -> int:
     return 0
 
 
+_tools_unsupported: set[str] = set()
+
+
+def _tools_rejected(exc: BaseException) -> bool:
+    """True when the provider/server refuses function calling for THIS model.
+
+    Groq and friends return HTTP 400 "Tool calling is not supported with this
+    model" when the selected model has no function-calling support. We match
+    the phrasing (not status codes) so unrelated errors still surface.
+    """
+    msg = str(exc).lower()
+    return (
+        "tool calling is not supported" in msg
+        or "tools are not supported" in msg
+        or "does not support tool" in msg
+        or "function calling is not supported" in msg
+        or "does not support function calling" in msg
+    )
+
+
 def _create_with_retry(client, kwargs: dict, tries: int = 3, on_token=None) -> object:
     """chat.completions.create with backoff on rate limits. Streams status via on_token."""
     import time as _t
@@ -1037,18 +1057,26 @@ def run_agent(
     final_text = ""
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
+    # Some providers/models reject native function calling (Groq 400 "tool
+    # calling is not supported with this model"). Remember the failure so the
+    # rest of this turn AND future turns skip tools and use text-JSON instead.
+    tools_enabled = cfg.model not in _tools_unsupported
     for _ in range(cfg.max_steps):
-        msg = _stream_chat(
-            client,
-            cfg.model,
-            messages,
-            TOOLS_SCHEMA,
-            cfg.temperature,
-            max_tokens,
-            extra,
-            on_token,
-            on_reasoning,
-        )
+        try:
+            msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA if tools_enabled else None, cfg.temperature, max_tokens, extra, on_token, on_reasoning)
+        except Exception as e:
+            if tools_enabled and _tools_rejected(e):
+                _tools_unsupported.add(cfg.model)
+                tools_enabled = False
+                note = "\n[model does not support native tool calling — emit tools as ```json blocks only]\n"
+                if on_token is not None:
+                    try:
+                        on_token(note)  # type: ignore
+                    except Exception:
+                        pass
+                messages.append({"role": "user", "content": note})
+                continue
+            raise
 
         # qwen3-style reasoning models put text in .reasoning, content empty
         msg_text = (msg.content or "").strip()
