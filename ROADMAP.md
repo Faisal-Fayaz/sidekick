@@ -48,7 +48,7 @@ Thesis: own the users cloud agents structurally can't serve
 - **Opt-in crash telemetry** — no data by default, explicit flag only.
 - **Test-infra remainder** — pre-commit config, property-based allowlist/SSRF tests, coverage gates.
 - **Daemon remainder** — launchd unit (macOS) + desktop notifications with do-not-disturb.
-- **TUI overhaul** — `tui/` package split, then design system + reskin (tranche A), then layout restructure: status bar, sessions drawer, approval cards, streaming markdown (tranche B). Keymap changes allowed only with F1-overlay migration notes.
+- **TUI overhaul, tranche B2** — approval cards + streaming Markdown (A1/A2/B1 shipped in v0.6.0).
 - **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
 - **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
 - **Model manager** — `sk models pull/prune` wrapping Ollama. Closes the loop `brief` opens when it warns disk is 90% full of old models.
@@ -75,6 +75,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.6.0` — TUI reskin: dual dark/light themes, role rework, keymap rationalization, generated F1 help, status bar, sessions drawer.
 - `v0.5.0` — parallel tool dispatch, Anthropic prompt caching, plan-review gate, rolling session compaction (schema v4).
 - `v0.4.0` — per-project `.sidekick.toml` + memory namespaces (schema v3), `sk export` transcripts, `sk upgrade` self-update, `sk init` wizard, macOS cwd-discovery test fix.
 - `v0.3.0` — `sk audit` + `tool_runs` schema v2, native Anthropic provider, mypy cleanup + tighter baseline, connect picker fix, API error surfacing, bare-`sk` TUI default, `tui/` split.

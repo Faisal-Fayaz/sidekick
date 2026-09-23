@@ -86,12 +86,23 @@ def test_free_tools_run_concurrently(monkeypatch):
 def test_timing_beats_serial_floor(monkeypatch):
     from sk.agent import _run_tools_batch
 
-    _, fake = _tracker(sleep=0.4)
+    # Deterministic proof of true parallelism (no wall-clock margins that
+    # flake on loaded CI runners): all three workers must rendezvous.
+    # Serial execution would deadlock at the barrier and time out instead.
+    gate = threading.Barrier(3)
+
+    def fake(name, args):
+        gate.wait(timeout=30)
+        return f"ok-{name}"
+
     monkeypatch.setattr(agent, "dispatch_tool", fake)
     t0 = time.monotonic()
-    _run_tools_batch([("list_dir", {}), ("sysinfo", {}), ("exec", {})], None, None, {}, session="s")
+    outs = _run_tools_batch(
+        [("list_dir", {}), ("sysinfo", {}), ("exec", {})], None, None, {}, session="s"
+    )
     elapsed = time.monotonic() - t0
-    assert elapsed < 1.0  # serial floor would be >= 1.2s; generous margin for CI
+    assert [r for r, _ in outs] == ["ok-list_dir", "ok-sysinfo", "ok-exec"]
+    assert elapsed < 25  # sanity only: serial would hang 30s+ at the barrier
 
 
 def test_cache_hits_skip_execution(monkeypatch):
