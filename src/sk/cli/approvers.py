@@ -80,6 +80,27 @@ def _make_on_tool():
     return on_tool
 
 
+def _make_plan_reviewer(state: dict):
+    """One confirmation for a whole multi-tool plan (no per-tool re-prompts).
+
+    Reads live state['yolo'] like the approvers: yolo mode proceeds silently.
+    """
+
+    def review(plan_text: str, calls: list) -> bool:
+        if state.get("yolo"):
+            console.print(f"[dim]yolo: auto-approved plan ({len(calls)} tools)[/dim]")
+            return True
+        console.print(
+            Panel(f"[bold yellow]plan[/] ({len(calls)} tools)\n{plan_text}", expand=False)
+        )
+        try:
+            return typer.confirm("Run this plan?", default=False)
+        except (EOFError, KeyboardInterrupt, OSError):
+            return False
+
+    return review
+
+
 def _make_on_token():
     import sys
 

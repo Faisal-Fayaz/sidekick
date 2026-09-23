@@ -52,6 +52,7 @@ class SidekickTUI(App):
         self._live_n: int = 0
         self._stats: str = ""
         self._pending_approval: dict[str, object] | None = None
+        self._plan_approved: frozenset[str] | None = None
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -430,9 +431,6 @@ class SidekickTUI(App):
         """Approval gate for worker threads. Reads auto-pass; writes either
         auto-pass (/yolo) or block on an inline [y/N] question answered by
         the user's next input line (timeout denies, and says so)."""
-        import threading
-        import time as _t
-
         from sk.tools import APPROVAL_TOOLS
 
         if name not in APPROVAL_TOOLS:
@@ -445,6 +443,12 @@ class SidekickTUI(App):
 
             if is_project_approved(name, args, cfg.approved_commands):
                 return True
+        plan = getattr(self, "_plan_approved", None)
+        if plan:
+            from sk.agent import _tool_target
+
+            if _tool_target(name, args) in plan:
+                return True
         path = args.get("path", args.get("cmd", "?"))
         preview = str(args.get("content", ""))[:200] if name == "write_file" else ""
         if name == "edit_file":
@@ -453,7 +457,15 @@ class SidekickTUI(App):
             preview = f"$ {str(args.get('cmd', ''))[:200]}"
         if name == "delete_file":
             preview = "(PERMANENT delete)"
-        timeout = float(getattr(self, "_approve_timeout", 300))
+        return self._wait_slot(name, path, preview)
+
+    def _wait_slot(self, name: str, path: str, preview: str, timeout: float = 300) -> bool:
+        """Post an inline [y/N] slot, wait for the answer, clean up. Shared by
+        per-tool approval and plan review so timeout/stale semantics match."""
+        import threading
+        import time as _t
+
+        timeout = float(getattr(self, "_approve_timeout", timeout))
         event = threading.Event()
         token = object()
         owner = threading.get_ident()
@@ -528,6 +540,18 @@ class SidekickTUI(App):
             except Exception:
                 pass
         return bool(pending.get("answer", False))
+
+    def _review_plan(self, plan_text: str, calls: list) -> bool:
+        """One confirmation for a whole multi-tool plan. Plan-approved targets
+        auto-pass their per-tool prompts for the rest of this turn."""
+        if bool(self.state.get("yolo")):
+            return True
+        from sk.agent import _tool_target
+
+        approved = frozenset({_tool_target(n, a) for n, a in calls})
+        ok = self._wait_slot("plan", f"{len(calls)} tools", plan_text)
+        self._plan_approved = approved if ok else None
+        return ok
 
     def _live_pending(self):
         """Active approval or None. Clears stale slots (dead owner, past deadline)."""
@@ -826,9 +850,11 @@ class SidekickTUI(App):
                     self._approve,
                     on_reasoning,
                     bool(self.state.get("yolo")),
+                    review_plan=self._review_plan,
                 )
             finally:
                 audit_session.reset(token)
+                self._plan_approved = None  # turn-scoped: never leak into next turn
         except Exception as e:
             log_error("answer", e)
             try:

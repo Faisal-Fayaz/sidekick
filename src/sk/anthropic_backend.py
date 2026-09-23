@@ -190,9 +190,10 @@ def run_anthropic_agent(
     on_reasoning=None,
     auto_approve: bool = False,
     session: str = "",
+    review_plan=None,
 ) -> str:
     """One agent turn over the native Messages API. Same contract as run_agent."""
-    from .agent import _provider_host, build_messages
+    from .agent import _maybe_review_plan, _provider_host, build_messages
     from .store import log_tool_run
     from .tools import TOOLS_SCHEMA
 
@@ -246,10 +247,6 @@ def run_anthropic_agent(
                 pass
         if not uses:
             return text or "(empty)"
-        # tool turn: append assistant tool_use + dispatch batch, then continue
-        messages.append({"role": "assistant", "content": blocks})
-        from .agent import _run_tools_batch
-
         batch = [
             (
                 u.get("name", ""),
@@ -257,7 +254,16 @@ def run_anthropic_agent(
             )
             for u in uses
         ]
-        outs = _run_tools_batch(batch, approve, on_tool, seen, session, cfg)
+        from .agent import _run_tools_batch
+
+        proceed, turn_approve = _maybe_review_plan(
+            batch, approve, review_plan, auto_approve, session, cfg.provider, _provider_host(cfg)
+        )
+        if not proceed:
+            return "Plan denied by user — nothing was executed."
+        # tool turn: append assistant tool_use + dispatch batch, then continue
+        messages.append({"role": "assistant", "content": blocks})
+        outs = _run_tools_batch(batch, turn_approve, on_tool, seen, session, cfg)
         for u, (result, _) in zip(uses, outs):
             messages.append(
                 {

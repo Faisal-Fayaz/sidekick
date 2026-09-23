@@ -376,6 +376,68 @@ def _tool_target(name: str, args: dict) -> str:
     return f"{name}|{json.dumps(args, sort_keys=True)[:300]}"
 
 
+def format_plan(calls: list[tuple[str, dict]]) -> str:
+    """One-line-per-tool plan text for review prompts. Pure, no I/O."""
+    lines = []
+    for i, (name, args) in enumerate(calls, 1):
+        target = args.get("path", args.get("cmd", args.get("url", "?")))
+        lines.append(f"{i}. {name} -> {str(target)[:120]}")
+    return "\n".join(lines)
+
+
+def _maybe_review_plan(
+    calls: list[tuple[str, dict]],
+    approve,
+    review_plan,
+    auto_approve: bool,
+    session: str = "",
+    provider: str = "",
+    host: str = "",
+) -> tuple[bool, object]:
+    """Gate multi-tool turns with destructive actions behind one plan review.
+
+    Triggers when the turn has >= 2 calls with >= 1 approval-gated tool,
+    a review_plan callback is wired, and we are not in auto-approve mode.
+    Returns (proceed, approve_fn): on approval, approve_fn auto-passes the
+    plan's own targets (no double-prompting) and delegates anything else to
+    the original approve. Denial (or reviewer crash: fail closed) logs an
+    audit row and returns (False, approve) with nothing executed.
+    """
+    from .store import log_tool_run
+
+    targets = {_tool_target(name, args) for name, args in calls}
+    needs_review = (
+        len(calls) >= 2
+        and any(name in APPROVAL_TOOLS for name, _ in calls)
+        and review_plan is not None
+        and not auto_approve
+    )
+    if not needs_review:
+        return (True, approve)
+    plan = format_plan(calls)
+    try:
+        ok = bool(review_plan(plan, list(calls)))
+    except Exception:
+        ok = False
+    if not ok:
+        log_tool_run(
+            session, "plan", plan[:200], approved=False, provider=provider, host=host, ok=False
+        )
+        return (False, approve)
+
+    def turn_approve(name: str, args: dict) -> bool:
+        if _tool_target(name, args) in targets:
+            return True
+        if approve is None:
+            return True
+        try:
+            return bool(approve(name, args))
+        except Exception:
+            return False
+
+    return (True, turn_approve)
+
+
 def _provider_host(cfg) -> str:
     """Hostname of the provider endpoint. Pure parse, no network."""
     from urllib.parse import urlparse
@@ -797,6 +859,7 @@ def run_agent(
     on_reasoning: object = None,
     auto_approve: bool = False,
     session: str = "",
+    review_plan=None,
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
@@ -807,6 +870,8 @@ def run_agent(
     approve callback); pass True when --yes/yolo so the model calls directly.
     session tags audit rows (tool_runs) for `sk audit`. Empty session falls
     back to the audit_session context var (used by the TUI worker path).
+    review_plan(plan_text, calls) -> bool: one confirmation for multi-tool
+    turns with destructive actions (skipped when None or auto_approve).
     """
     session = session or audit_session.get()
     quick = _quick_reply(user_msg)
@@ -830,6 +895,7 @@ def run_agent(
             on_reasoning=on_reasoning,
             auto_approve=auto_approve,
             session=session,
+            review_plan=review_plan,
         )
     client = get_client(cfg)
     messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
@@ -880,9 +946,20 @@ def run_agent(
         # emit tool JSON as text instead of native tool_calls. Parse ALL of them.
         text_tools = _parse_text_tools(msg_text)
         if getattr(msg, "tool_calls", None) is None and text_tools:
-            messages.append({"role": "assistant", "content": msg_text})
             batch = list(text_tools[:4])  # cap 4 per turn
-            outs = _run_tools_batch(batch, approve, on_tool, seen, session, cfg)
+            proceed, turn_approve = _maybe_review_plan(
+                batch,
+                approve,
+                review_plan,
+                auto_approve,
+                session,
+                cfg.provider,
+                _provider_host(cfg),
+            )
+            if not proceed:
+                return "Plan denied by user — nothing was executed."
+            messages.append({"role": "assistant", "content": msg_text})
+            outs = _run_tools_batch(batch, turn_approve, on_tool, seen, session, cfg)
             combined = [
                 f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
             ]
@@ -909,7 +986,20 @@ def run_agent(
             messages.append({"role": "assistant", "content": final_text})
             break
 
-        # has tool calls: append assistant turn, execute each
+        # has tool calls: parse, plan-review gate, then append assistant turn + execute
+        parsed: list[tuple[str, str, dict]] = []
+        for tc in msg.tool_calls:  # type: ignore
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            parsed.append((tc.id, tc.function.name, args))
+        batch = [(name, args) for _, name, args in parsed]
+        proceed, turn_approve = _maybe_review_plan(
+            batch, approve, review_plan, auto_approve, session, cfg.provider, _provider_host(cfg)
+        )
+        if not proceed:
+            return "Plan denied by user — nothing was executed."
         messages.append(
             {
                 "role": "assistant",
@@ -924,16 +1014,7 @@ def run_agent(
                 ],
             }
         )
-        parsed: list[tuple[str, str, dict]] = []
-        for tc in msg.tool_calls:  # type: ignore
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            parsed.append((tc.id, tc.function.name, args))
-        outs = _run_tools_batch(
-            [(name, args) for _, name, args in parsed], approve, on_tool, seen, session, cfg
-        )
+        outs = _run_tools_batch(batch, turn_approve, on_tool, seen, session, cfg)
         for (tid, _, _), (result, _) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
 

@@ -9,7 +9,7 @@ from rich.panel import Panel
 from sk.agent import run_agent
 from sk.store import get_history, save_message
 
-from ..approvers import _make_approver_state, _make_on_token, _make_on_tool
+from ..approvers import _make_approver_state, _make_on_token, _make_on_tool, _make_plan_reviewer
 from ..base import _cfg, app, console
 from ..resolve import _resolve_model
 
@@ -90,6 +90,7 @@ def chat(
                 approve=approve,
                 auto_approve=bool(state.get("yolo")),
                 session=session,
+                review_plan=_make_plan_reviewer(state),
             )
         except Exception as e:
             console.print(
@@ -218,6 +219,7 @@ def talk(
                 approve=approve,
                 auto_approve=bool(state.get("yolo")),
                 session=session,
+                review_plan=_make_plan_reviewer(state),
             )
             console.print(f"[dim]({_t.monotonic() - t0:.0f}s)[/dim]")
         except Exception as e:

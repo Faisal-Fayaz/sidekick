@@ -8,7 +8,7 @@ from rich.markdown import Markdown
 from sk.agent import run_agent
 from sk.store import get_history, save_message
 
-from ..approvers import _make_approver, _make_on_token, _make_on_tool
+from ..approvers import _make_approver, _make_on_token, _make_on_tool, _make_plan_reviewer
 from ..base import _cfg, app, console
 from ..resolve import _resolve_model
 
@@ -44,6 +44,7 @@ def run(
             approve=approve,
             auto_approve=yes,
             session=session,
+            review_plan=_make_plan_reviewer({"yolo": yes}),
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
