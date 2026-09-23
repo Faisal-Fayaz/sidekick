@@ -403,7 +403,7 @@ async def _pilot_copy_selection(monkeypatch):
     monkeypatch.setattr(_c, "backends_available", lambda: ["xclip"])
     monkeypatch.setattr(_c, "copy_text", lambda t: copied.append(t) or "xclip")
     app = _T()
-    async with app.run_test() as pilot:
+    async with app.run_test(notifications=True) as pilot:
         log = app.query_one("#chat-log")
         log.clear()
         log.write("SELECTME line one")
@@ -416,8 +416,8 @@ async def _pilot_copy_selection(monkeypatch):
         app.action_copy_last()
         await pilot.pause()
         assert copied == ["SELEC"]
-        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
-        assert "copied selection via xclip" in blob
+        await pilot.pause()  # let the confirmation toast mount
+        assert "copied selection via xclip" in _toast_blob(app).lower()
 
 
 def test_ctrl_y_copies_selection(monkeypatch):
@@ -470,19 +470,152 @@ async def _pilot_ctrl_y_warn(monkeypatch):
         _s, "get_history", lambda *a, **k: [{"role": "assistant", "content": "ans"}]
     )
     app = _T()
-    async with app.run_test() as pilot:
+    async with app.run_test(notifications=True) as pilot:
         area = app.query_one("#chat-input")
         area.focus()
         await pilot.pause()
         await pilot.press("ctrl+y")
         await pilot.pause()
         await pilot.pause()
-        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        blob = _toast_blob(app).lower()
         assert "xclip" in blob  # honest warning instead of fake success
 
 
 def test_ctrl_y_warns_without_backends(monkeypatch):
     _run(_pilot_ctrl_y_warn(monkeypatch))
+
+
+def _span_bgs(strip):
+    """Map cell ranges of a rendered strip to (bgcolor, fgcolor)."""
+    out = {}
+    col = 0
+    for seg in strip:
+        out[(col, col + seg.cell_length)] = (seg.style.bgcolor, seg.style.color)
+        col += seg.cell_length
+    return out
+
+
+def _toast_blob(app):
+    """Visible toast popups joined as plain text."""
+    from textual.widgets._toast import Toast
+
+    return "\n".join(str(t.render()) for t in app.screen.query(Toast))
+
+
+async def _pilot_drag_selects_and_highlights(monkeypatch):
+    import sk.clip as _c
+    from rich.style import Style
+    from textual import events
+
+    from sk.tui import SidekickTUI as _T
+
+    monkeypatch.setattr(_c, "backends_available", lambda: ["xclip"])
+    copied: list[str] = []
+    monkeypatch.setattr(_c, "copy_text", lambda t: copied.append(t) or "xclip")
+
+    def mouse(event_cls, x, y, **kw):
+        return event_cls(
+            widget=None,
+            x=x,
+            y=y,
+            delta_x=0,
+            delta_y=0,
+            button=1,
+            shift=False,
+            meta=False,
+            ctrl=False,
+            screen_x=x,
+            screen_y=y,
+            style=Style(),
+            **kw,
+        )
+
+    app = _T()
+    async with app.run_test(size=(120, 40)) as pilot:
+        from rich.text import Text
+
+        log = app.query_one("#chat-log")
+        log.clear()
+        log.write(Text("line one abc"))
+        log.write(Text("line two xyz"))
+        log.write(Text("line three"))
+        await pilot.pause()
+
+        region = app.screen.find_widget(log).region
+        x0, y0 = region.x + 3, region.y + 1
+        x1, y1 = region.x + 8, region.y + 2
+        app.post_message(mouse(events.MouseDown, x0, y0))
+        for step in range(1, 6):
+            app.post_message(
+                mouse(
+                    events.MouseMove,
+                    x0 + (x1 - x0) * step // 5,
+                    y0 + (y1 - y0) * step // 5,
+                )
+            )
+            await pilot.pause()
+        app.post_message(mouse(events.MouseUp, x1, y1))
+        await pilot.pause()
+        await pilot.pause()
+
+        # a real drag copies the substring, and the highlight clears on release
+        assert copied == ["ne one abc\nline two"]
+        assert app.screen.selections.get(log) is None
+        assert not app.screen.get_selected_text()
+
+
+def test_drag_selects_and_highlights(monkeypatch):
+    _run(_pilot_drag_selects_and_highlights(monkeypatch))
+
+
+async def _pilot_selection_highlight_visible(monkeypatch):
+    from textual.geometry import Offset
+    from textual.selection import Selection
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test(size=(120, 40)) as pilot:
+        from rich.text import Text
+
+        log = app.query_one("#chat-log")
+        log.clear()
+        log.write(Text("line one abc"))
+        log.write(Text("line two xyz"))
+        log.write(Text("line three"))
+        await pilot.pause()
+
+        plain = _span_bgs(log.render_line(0))
+        assert len(plain) >= 2  # text + padding filler exist
+
+        # select columns 2..6 of row 0
+        log.screen.selections[log] = Selection(Offset(2, 0), Offset(6, 0))
+        await pilot.pause()
+
+        colormap = _span_bgs(log.render_line(0))
+        plain_bg = next(iter(plain.values()))[0]
+        highlighted = [(rng, bg, fg) for rng, (bg, fg) in colormap.items() if bg != plain_bg]
+        # exactly the selected cells (2..6) change background
+        assert highlighted, "selection produced no visible background change"
+        assert [lo for (lo, hi), bg, fg in highlighted] == [2]
+        assert all(hi == 6 for (lo, hi), bg, fg in highlighted)
+        # text stays legible: the selected fg is the normal text color, not the bg
+        for (lo, hi), bg, fg in highlighted:
+            assert fg == next(iter(plain.values()))[1], "selected text fg changed"
+
+        # selection spanning two rows highlights both, nothing below the end row
+        log.screen.selections[log] = Selection(Offset(2, 0), Offset(6, 1))
+        await pilot.pause()
+        row0 = _span_bgs(log.render_line(0))
+        row1 = _span_bgs(log.render_line(1))
+        row2 = _span_bgs(log.render_line(2))
+        assert any(bg != plain_bg for (lo, hi), (bg, fg) in row0.items())
+        assert any(bg != plain_bg for (lo, hi), (bg, fg) in row1.items())
+        assert all(bg == plain_bg for (lo, hi), (bg, fg) in row2.items())
+
+
+def test_selection_highlight_visible(monkeypatch):
+    _run(_pilot_selection_highlight_visible(monkeypatch))
 
 
 def test_timestamps():

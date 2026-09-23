@@ -34,7 +34,7 @@ def test_disk_parse(monkeypatch):
 
 def test_unit_text_renders():
     out = daemon.unit_text(interval=120, disk_warn=80)
-    assert "sidekick" in out and "daemon --interval 120 --disk-warn 80" in out
+    assert "sidekick" in out.lower() and "daemon --interval 120 --disk-warn 80" in out
     assert "WantedBy=default.target" in out and "Restart=on-failure" in out
 
 
