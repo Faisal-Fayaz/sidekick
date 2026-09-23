@@ -369,3 +369,69 @@ def test_create_no_retry_on_fatal():
     with pytest.raises(Exception, match="401"):
         agent._create_with_retry(FakeClient(), {})
     assert calls["n"] == 1
+
+
+def test_tools_rejected_detection():
+    from sk.agent import _tools_rejected
+
+    assert _tools_rejected(Exception("Tool calling is not supported with this model"))
+    assert _tools_rejected(Exception("ERROR: tools are not supported by model"))
+    assert _tools_rejected(Exception("does not support function calling"))
+    assert not _tools_rejected(Exception("401 bad key"))
+    assert not _tools_rejected(Exception("connection reset"))
+
+
+def test_tool_unsupported_falls_back_to_text_tools(monkeypatch, tmp_path):
+    """Groq 400 'tool calling is not supported' must retry WITHOUT tools.
+
+    The model then emits tools as ```json text blocks, which the existing
+    text-JSON parser executes — no crash, no lost turn.
+    """
+    import sk.agent as agent
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    agent._tools_unsupported.clear()
+    cfg = Config(model="no-tools-model", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
+    calls = {"n": 0, "tools": [None]}
+
+    def fake_stream(client, model, messages, tools, temperature, max_tokens, extra, on_token=None, on_reasoning=None):
+        calls["n"] += 1
+        calls["tools"].append(tools)
+        if calls["n"] == 1:
+            raise Exception("Tool calling is not supported with this model")
+        if calls["n"] == 2:
+            blob = '```json {"name": "exec", "arguments": {"cmd": "pwd"}} ```'
+            return agent._Msg(blob, None, "", "stop")
+        return agent._Msg("done via text-tools", None, "", "stop")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("list files", [], cfg, approve=lambda n, a: True)
+    assert calls["tools"][1] is not None  # first attempt had tools attached
+    assert calls["tools"][2] is None  # retry disabled tools
+    assert calls["n"] == 3
+    assert "done via text-tools" in out
+    assert "no-tools-model" in agent._tools_unsupported
+
+
+def test_tool_unsupported_cached_between_turns(monkeypatch, tmp_path):
+    """Once a model is flagged tool-unsupported, later turns skip the failing
+    call entirely (first stream attempt already uses tools=None)."""
+    import sk.agent as agent
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    agent._tools_unsupported.add("no-tools-model")
+    cfg = Config(model="no-tools-model", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
+    seen = {"tools_arg": "unset"}
+
+    def fake_stream(client, model, messages, tools, temperature, max_tokens, extra, on_token=None, on_reasoning=None):
+        seen["tools_arg"] = tools
+        return agent._Msg("ok", None, "", "stop")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("summarize the logs", [], cfg)
+    assert seen["tools_arg"] is None
+    assert out == "ok"
