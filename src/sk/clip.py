@@ -21,7 +21,9 @@ def backends_available() -> list[str]:
 
 
 def install_hint() -> str:
-    return "no clipboard helper found — `sudo apt install xclip` (Linux) or use pbcopy/OSC52 on macOS"
+    return (
+        "no clipboard helper found — `sudo apt install xclip` (Linux) or use pbcopy/OSC52 on macOS"
+    )
 
 
 def osc52_sequence(text: str) -> str:
@@ -40,7 +42,10 @@ def _serve(argv: list[str], data: bytes) -> bool:
     """
     try:
         p = subprocess.Popen(
-            argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
     except FileNotFoundError:

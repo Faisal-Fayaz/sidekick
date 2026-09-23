@@ -24,3 +24,6 @@ def _isolate_history(tmp_path, monkeypatch):
     import sk.store as store_mod
 
     monkeypatch.setattr(store_mod, "DB_PATH", tmp_path / "history.db")
+    store_mod.set_default_namespace("")
+    yield
+    store_mod.set_default_namespace("")

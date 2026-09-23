@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-167%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-296%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,14 +53,14 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 167-test suite incl. prompt-regression evals | ✅ | rare |
+| 296-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
 ```bash
 uv tool install sidekick-agent[voice]   # global `sk`, STT included
-sk doctor                                # checks provider + model
-sk tui                                   # fullscreen chat — start here
+sk init                                  # guided first-run: hardware → model → verify
+sk                                       # fullscreen chat — start here (`sk tui` works too)
 ```
 
 No clone, no build — installs straight from PyPI. Requires Python 3.12+.
@@ -94,17 +94,17 @@ sk doctor
 
 ## Chat
 
-One input, two surfaces — REPL and fullscreen TUI share every command:
+One input, two surfaces — fullscreen TUI and plain-text REPL share every command:
 
 ```bash
-sk chat            # type /help once you're in
-sk tui             # same, fullscreen with streaming + themes
-sk tui --model fast
+sk                   # fullscreen chat with streaming + themes — start here
+sk tui --model fast  # same, explicit form
+sk chat              # fallback REPL: dumb terminals, screen readers, broken TUIs
 ```
 
 Type `/` and an autocomplete popup filters all 20+ commands — Enter completes, Tab too, Esc dismisses, ↑/↓ navigates. `F1` opens a generated cheatsheet (keys + commands, built from the same tables as the dispatcher, so it can't rot).
 
-TUI keys: **Enter** sends · **ctrl+j**/**alt+enter** newline · **↑/↓** history · **ctrl+y** copies · **ctrl+t** push-to-talk · **ctrl+b/f** scroll · **F1** help. Answers stream live with role colors; the footer shows model · session · last-turn time/tokens.
+TUI keys: **Enter** sends · **ctrl+j**/**alt+enter** newline · **↑/↓** history · **ctrl+y** copies · **ctrl+g** push-to-talk · **pgup/pgdn** scroll · **F1** help · **F2** dark/light theme · **F3** sessions drawer. Answers stream live as Markdown with role colors; approvals arrive as cards with timeout; the status bar shows model · session · last-turn time/tokens.
 
 ## Voice
 
@@ -113,7 +113,7 @@ sk talk [-d SECS] [--stt-model base] [--device hw:2,0]  # Enter records, Enter s
 sk mic-test                                             # peak dB + silent/quiet/good verdict
 ```
 
-Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS), transcription via local faster-whisper int8, transcript lands editable in the prompt. In the TUI, `ctrl+t` (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted after each take.
+Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS), transcription via local faster-whisper int8, transcript lands editable in the prompt. In the TUI, `ctrl+g` (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted after each take.
 
 ## Providers (BYO key)
 
@@ -123,22 +123,26 @@ sk connect     # pick provider → paste key (hidden) → pick model → ping. D
 
 One guided flow: numbered provider list (local ones skip keys), live validation *before* anything saves, curated model list (TTS/image junk filtered, recommended pre-highlighted, Enter accepts), and a 5-token ping instead of a full agent turn. Advanced paths still work: `sk auth add/list/status/remove`, `sk model`, `sk setup` (connect + hook), `sk config --provider openai --api-key sk-...`, `/provider groq` inside chat.
 
-Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|custom`. Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. Note: true Anthropic-native API isn't wrapped — reach Claude via OpenRouter.
+Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|custom` (`anthropic` speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`.
 
 ## Command reference
 
 | Command | What |
 |---|---|
-| `sk chat [--continue]` / `sk tui [--continue]` | Interactive chat, fresh session each launch |
+| `sk` / `sk tui [--continue]` | Fullscreen chat, fresh session each launch |
+| `sk chat [--continue]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>` | List, switch, delete past sessions |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name]` | Single-shot agent run (auto-router picks the model) |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
+| `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
+| `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
-| `sk skills` / `sk skills-install superpowers` / `sk daemon [--once]` | Skill packs (obra/superpowers) / background watcher |
-| `sk doctor` / `sk models` / `sk config` / `sk version` | Health / models / settings / build |
+| `sk skills` / `sk skills-search` / `sk skills-install superpowers` / `sk daemon [--once]` / `sk daemon-install` | Skill packs (obra/superpowers) / background watcher (systemd) |
+| `sk doctor` / `sk models` / `sk config` / `sk version` / `sk upgrade [--check]` | Health / models / settings / build / self-update |
+| `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
 
 Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked index; the agent loads full instructions on demand via the `skill` tool. `fast`/`smart` resolve per provider (Ollama: llama3.2:3b/qwen2.5-coder:7b, Groq: gpt-oss-20b/120b).
 
@@ -146,7 +150,7 @@ Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-rank
 
 ```mermaid
 flowchart TB
-    U([you]) --> CLI[sk chat / sk run]
+    U([you]) --> CLI[sk / sk run]
     U --> TUI[sk tui: autocomplete, streaming, mic pill]
     U --> VOICE[sk talk: arecord + faster-whisper]
     CLI --> SLASH[slash.py: /commands, no LLM]
@@ -164,12 +168,12 @@ Design bets that paid off: **deterministic grounding beats prompt instructions**
 
 ## Safety
 
-Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]` in TUI, prompt in CLI), HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs. API keys chmod 600, masked in output.
+Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]` in TUI, prompt in CLI), HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. Multi-tool turns with destructive actions get **one plan review** up front instead of per-tool prompts (silent in `--yes`/`/yolo`; denials execute nothing). `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs. API keys chmod 600, masked in output.
 
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 167 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 296 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
@@ -178,10 +182,13 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 `~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`. Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
 
+**History budget:** `history_budget_tokens` (default 3000) caps per-turn history; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
+
+**Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may set `provider`, `model`, `max_steps`, `temperature`, plus a `[project]` table (`docs` files injected into the prompt, `memory_namespace`, `approved_commands` for `shell`). `api_key`/`base_url` are *never* read from project files (global/env only) — `sk config --show` prints the active project and any ignored keys. `sk --cwd PATH` runs any command as if in that directory.
+
 ## Roadmap
 
-- [x] Voice input (local STT) · [x] Skills (superpowers) · [x] Sessions · [x] Providers/BYOK · [x] Eval harness
-- [ ] Spoken replies (offline TTS) · [ ] Native Anthropic provider · [ ] Daemon as a systemd service · [ ] `sk skills search`
+See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, `v0.2.0` / `v0.3.0` milestones, done list). It changes by pull request only.
 
 ## License
 

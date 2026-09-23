@@ -52,6 +52,8 @@ dev = [
     "build>=1.2",
     "twine>=5.0",
     "pytest>=8.0",
+    "ruff>=0.8",
+    "mypy>=1.10",
 ]
 
 [project.scripts]
@@ -83,3 +85,29 @@ include = [
     "LICENSE",
     "pyproject.toml",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Baseline: E/F/I/UP only. BLE/S/DTZ/PLW intentionally not enabled for now —
+# this codebase returns Error strings via broad except (tools.py/agent.py).
+# Format gate enabled (repo formatted with `ruff format`).
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["UP035", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501", "F401", "I001"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Baseline (see #9): lenient on annotations, strict on hygiene.
+# Next toward --strict: disallow_untyped_defs (60 errors), disallow_any_generics.
+# CI gate: mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py
+#   src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/
+disallow_untyped_defs = false
+warn_unused_ignores = true
+strict_equality = true
+no_implicit_reexport = true

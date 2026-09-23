@@ -13,13 +13,72 @@ def test_role_builder_styles():
     from sk.tui import _line
 
     you = _line("12:00", "you", "hi [x]")
-    assert any("green" in str(s.style) for s in you.spans)
+    assert any("34f5a2" in str(s.style) for s in you.spans)
     assert "hi [x]" in you.plain  # brackets literal, body neutral
     bot = _line("12:00", "sidekick", "hello")
-    assert any("cyan" in str(s.style) for s in bot.spans)
+    assert any("9d7bff" in str(s.style) for s in bot.spans)
     tool = _line("12:00", "tool", "○ tool: x")
-    assert any("dim" in str(s.style) for s in tool.spans)
+    assert any("8fa698" in str(s.style) for s in tool.spans)
     assert _line("12:00", "", "plain").plain.startswith("[12:00] ")
+
+
+def test_help_text_covers_all_bindings():
+    """Help can't rot: every keybinding appears in the F1 text."""
+    from sk.tui import SidekickTUI
+    from sk.tui.widgets import ChatArea
+
+    def keys(bindings):
+        out = set()
+        for b in bindings:
+            out.add(b[0] if isinstance(b, tuple) else b.key)
+        return out
+
+    app = SidekickTUI()
+    text = app._help_text()
+    for key in keys(SidekickTUI.BINDINGS) | keys(ChatArea.BINDINGS):
+        assert key in text, f"binding {key!r} missing from help"
+    assert "pageup" in text and "ctrl+g" in text
+    assert "Recently changed" in text  # keymap migration note
+
+
+def test_theme_toggle_and_roles():
+    from sk.tui import theme as theme_mod
+    from sk.tui.theme import (
+        DARK_NAME,
+        LIGHT_NAME,
+        active_roles,
+        current_name,
+        mode_for_name,
+        name_for_mode,
+        set_theme,
+        toggle_theme,
+    )
+
+    assert name_for_mode("light") == LIGHT_NAME
+    assert name_for_mode("dark") == DARK_NAME
+    assert name_for_mode("bogus") == DARK_NAME
+    assert mode_for_name(LIGHT_NAME) == "light"
+    assert mode_for_name(DARK_NAME) == "dark"
+
+    class FakeApp:
+        def __init__(self):
+            self.theme = DARK_NAME
+
+        def register_theme(self, theme):
+            pass
+
+    fake = FakeApp()
+    try:
+        set_theme(fake, LIGHT_NAME)
+        assert current_name() == LIGHT_NAME
+        assert "0a7d4f" in active_roles()["you"]
+        assert toggle_theme(fake) == DARK_NAME
+        assert "34f5a2" in active_roles()["you"]
+        assert set_theme(fake, "bogus") == DARK_NAME  # unknown keeps current
+    finally:
+        # restore suite-wide default for other tests
+        set_theme(fake, DARK_NAME)
+        theme_mod._current = DARK_NAME
 
 
 async def _pilot_checks():
@@ -77,7 +136,8 @@ async def _pilot_thinking_animates(monkeypatch):
                 break
         assert started.is_set()
         live = app.query_one("#live")
-        assert "thinking" in live.text  # animated indicator before tokens
+        live_blob = "\n".join(str(ln) for ln in live.lines)
+        assert "thinking" in live_blob  # animated indicator before tokens
         release.set()
         for _ in range(30):
             await pilot.pause()
@@ -154,7 +214,17 @@ async def _pilot_slash_model():
 async def _pilot_streaming(monkeypatch):
     import sk.agent as agent
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+        review_plan=None,
+    ):
         if on_reasoning:
             on_reasoning("hmm ")
         for tok in ("Hello", " world"):
@@ -179,7 +249,7 @@ async def _pilot_streaming(monkeypatch):
                 pass
         blob = _blob(app)
         assert "Hi" in blob
-        assert "green" in blob and "cyan" in blob  # role colors rendered
+        assert "you>" in blob and "sidekick>" in blob  # role markers rendered
         assert re.search(r"\d+s · ~\d+tok", app.sub_title)
 
 
@@ -396,7 +466,9 @@ async def _pilot_ctrl_y_warn(monkeypatch):
     from sk.tui import SidekickTUI as _T
 
     monkeypatch.setattr(_c, "backends_available", lambda: [])
-    monkeypatch.setattr(_s, "get_history", lambda *a, **k: [{"role": "assistant", "content": "ans"}])
+    monkeypatch.setattr(
+        _s, "get_history", lambda *a, **k: [{"role": "assistant", "content": "ans"}]
+    )
     app = _T()
     async with app.run_test() as pilot:
         area = app.query_one("#chat-input")
@@ -418,7 +490,17 @@ def test_timestamps():
 
 
 def _approval_fake(store):
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+        review_plan=None,
+    ):
         ok = approve("write_file", {"path": "/tmp/x", "content": "hi"})
         store.append(ok)
         return "wrote it" if ok else "blocked"
@@ -542,7 +624,19 @@ def test_dash_yes_approves():
 def test_affirmative_words():
     from sk.tui import is_affirmative
 
-    for yes in ("y", "yes", "yeah", "yep", "go ahead", "go ahead and do it", "do it", "--yes", "-y", "YES", "  Yup  "):
+    for yes in (
+        "y",
+        "yes",
+        "yeah",
+        "yep",
+        "go ahead",
+        "go ahead and do it",
+        "do it",
+        "--yes",
+        "-y",
+        "YES",
+        "  Yup  ",
+    ):
         assert is_affirmative(yes), yes
     for no in ("n", "no", "nope", "yesterday", "yeah but not there", "ok, wait", ""):
         assert not is_affirmative(no), no
@@ -558,7 +652,17 @@ async def _pilot_stale_pending_ignored(monkeypatch):
 
     agent_calls: list[str] = []
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+        review_plan=None,
+    ):
         agent_calls.append(text)
         return "agent heard you"
 
@@ -627,7 +731,17 @@ async def _pilot_slash_bypasses_pending(monkeypatch):
 
     agent_calls: list[str] = []
 
-    def fake(text, hist, cfg, on_tool=None, on_token=None, approve=None, on_reasoning=None, auto_approve=False):
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+        review_plan=None,
+    ):
         agent_calls.append(text)
         return "done"
 
@@ -762,11 +876,11 @@ async def _pilot_scroll_keys():
         area.focus()
         await pilot.pause()
         assert log.scroll_y == log.max_scroll_y  # tail-followed on write
-        await pilot.press("ctrl+b")
+        await pilot.press("pageup")
         await pilot.pause()
         assert log.scroll_y < log.max_scroll_y
         up_at = log.scroll_y
-        await pilot.press("ctrl+f")
+        await pilot.press("pagedown")
         await pilot.pause()
         assert log.scroll_y > up_at
         await pilot.press("ctrl+home")
@@ -807,7 +921,7 @@ async def _pilot_mic_roundtrip(monkeypatch):
     _mock_voice(monkeypatch)
     app = _T()
     async with app.run_test() as pilot:
-        app.action_mic()  # ctrl+t path: pill is display-only
+        app.action_mic()  # ctrl+g path: pill is display-only
         await pilot.pause()
         assert app.mic_state == "recording"
         app.action_mic()  # stop
@@ -861,3 +975,171 @@ def test_mic_roundtrip(monkeypatch):
 
 def test_mic_no_stt_hint(monkeypatch):
     _run(_pilot_mic_no_stt(monkeypatch))
+
+
+async def _pilot_status_bar():
+    from textual.widgets import Static
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        bar = app.query_one("#status-bar", Static)
+        assert bar.display
+        text = str(bar.render())
+        assert app.sub_title in text  # bar mirrors sub_title (session shown short)
+        app._stats = "12s · ~3tok"
+        app._sub()
+        await pilot.pause()
+        assert "12s" in str(bar.render())
+
+
+async def _pilot_sessions_drawer(monkeypatch):
+    import sk.store as store
+    from textual.widgets import ListView
+
+    from sk.tui import ChatArea
+    from sk.tui import SidekickTUI as _T
+
+    store.save_message("drawer-a", "user", "hello alpha")
+    store.save_message("drawer-b", "user", "hello beta")
+    app = _T()
+    async with app.run_test() as pilot:
+        drawer = app.query_one("#sessions-drawer", ListView)
+        area = app.query_one("#chat-input", ChatArea)
+        assert not drawer.display
+        await pilot.press("f3")
+        await pilot.pause()
+        assert drawer.display
+        assert set(app._drawer_sessions) >= {"drawer-a", "drawer-b"}
+        # select a row -> switches session and renders its tail
+        drawer.index = app._drawer_sessions.index("drawer-b")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.session == "drawer-b"
+        assert not drawer.display  # auto-hides after select
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "hello beta" in blob
+        # esc closes an open drawer and refocuses input
+        await pilot.press("f3")
+        await pilot.pause()
+        assert drawer.display
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not drawer.display
+        assert area.has_focus
+
+
+async def _pilot_drawer_lists_new_session(monkeypatch):
+    import sk.store as store
+    from textual.widgets import ListView
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        drawer = app.query_one("#sessions-drawer", ListView)
+        await pilot.press("f3")
+        await pilot.pause()
+        before = set(app._drawer_sessions)
+        await pilot.press("f3")  # close
+        await pilot.pause()
+        store.save_message("drawer-fresh", "user", "brand new")
+        await pilot.press("f3")  # reopen refreshes
+        await pilot.pause()
+        assert drawer.display
+        assert "drawer-fresh" in set(app._drawer_sessions) - before
+
+
+def test_status_bar():
+    _run(_pilot_status_bar())
+
+
+def test_sessions_drawer():
+    _run(_pilot_sessions_drawer(None))
+
+
+def test_drawer_lists_new_session():
+    _run(_pilot_drawer_lists_new_session(None))
+
+
+async def _pilot_approval_card():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._ask_approval("write_file", "/tmp/x", "hello content", 300)
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "allow write_file" in blob
+        assert "/tmp/x" in blob and "[y/N]" in blob
+        assert "timeout denies" in blob
+
+
+async def _pilot_live_throttle():
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        live = app.query_one("#live", RichLog)
+        app._prime_live()  # display:block, otherwise RichLog defers rendering
+        await pilot.pause()
+        app._stop_think_timer()  # dots would interleave with assertions
+        app._live_parts = ["hello **world**"]
+        app._live_reason = []
+        app._push_live()
+        await pilot.pause()
+        first_ts = app._live_rendered_at
+        assert first_ts > 0
+        before = len(live.lines)
+        assert before >= 1
+        for _ in range(5):  # flood within the throttle window: no re-renders
+            app._push_live()
+        await pilot.pause()
+        assert len(live.lines) == before
+        assert app._live_rendered_at == first_ts
+        app._live_rendered_at = 0  # force expiry
+        app._push_live()
+        await pilot.pause()
+        assert len(live.lines) == before  # clear + single rewrite, no growth
+        blob = "\n".join(str(ln) for ln in live.lines)
+        assert "world" in blob
+
+
+async def _pilot_live_fence_and_reason():
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        live = app.query_one("#live", RichLog)
+        app._prime_live()  # display:block, otherwise RichLog defers rendering
+        await pilot.pause()
+        app._stop_think_timer()  # dots would interleave with assertions
+        app._live_parts = ["```python\nprint(1)\n"]  # unclosed fence: must not crash
+        app._live_reason = ["hmm thinking"]
+        app._live_rendered_at = 0
+        app._push_live()  # must not raise
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in live.lines)
+        assert "hmm thinking" in blob and "print" in blob  # highlighted code splits tokens
+
+
+def test_approval_card():
+    _run(_pilot_approval_card())
+
+
+def test_live_throttle():
+    _run(_pilot_live_throttle())
+
+
+def test_live_fence_and_reason():
+    _run(_pilot_live_fence_and_reason())

@@ -1,7 +1,4 @@
-"""Hermes-style single chat view. Everything via /commands — type /help.
-
-Enter sends, ctrl+j newline, up/down history, ctrl+y copies last answer.
-"""
+"""TUI SidekickTUI application shell (split from sk/tui.py, pure move)."""
 
 from __future__ import annotations
 
@@ -12,253 +9,46 @@ from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.message import Message
-from textual.widgets import Footer, Header, Label, ListItem, ListView, RichLog, Static, TextArea
 from textual.containers import Horizontal
+from textual.widgets import Header, Label, ListItem, ListView, RichLog, Static, TextArea
 
-
-def _w(log: RichLog, s: str, markup: bool = False) -> None:
-    """Write to log. markup=True only for our own chrome (no user/model brackets)."""
-    log.write(Text.from_markup(s) if markup else Text(s))
-
-
-def log_error(where: str, exc: BaseException) -> None:
-    """Persist TUI errors where the user can't copy them. Best effort."""
-    import traceback
-
-    from .config import CONFIG_DIR
-
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_DIR / "tui-errors.log", "a") as f:
-            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {where}: {exc!r}\n")
-            f.write(traceback.format_exc()[-2000:] + "\n")
-    except Exception:
-        pass
-
-
-ROLE_STYLES = {
-    "you": "bold green",
-    "sidekick": "bold cyan",
-    "tool": "dim",
-    "sys": "dim",
-    "warn": "bold yellow",
-    "error": "bold red",
-}
-
-
-def _line(when: str, role: str, body: str) -> Text:
-    """Role-colored chat line: dim timestamp, colored `role>`, neutral body.
-
-    Bodies stay neutral on purpose — brackets and code copy cleanly and the
-    role color alone carries who-is-who.
-    """
-    t = Text()
-    t.append(f"[{when}] ", style="dim")
-    if role:
-        t.append(f"{role}> ", style=ROLE_STYLES.get(role, ""))
-    t.append(body)
-    return t
-
-
-def _role(log: RichLog, role: str, body: str) -> None:
-    log.write(_line(_now(), role, body))
-
-
-def _rule(log: RichLog) -> None:
-    t = Text("─" * 40, style="dim")
-    log.write(t)
-
-
-def _now() -> str:
-    return time.strftime("%H:%M")
-
-
-# Words that approve a pending write. Keep in sync with the prompt line.
-# Multi-word entries match when the whole line starts with them ("go ahead
-# and write it" counts; "yeah but not there" does not — strict startswith).
-AFFIRMATIVE_EXACT = ("y", "yes", "yup", "ok", "okay", "sure", "approve", "--yes", "-y", "yeah", "yep", "yepp", "aye")
-AFFIRMATIVE_PREFIX = ("go ahead", "do it", "yes please", "please do")
-
-
-def is_affirmative(text: str) -> bool:
-    t = (text or "").strip().lower()
-    if t in AFFIRMATIVE_EXACT:
-        return True
-    return any(t.startswith(p) for p in AFFIRMATIVE_PREFIX)
-
-
-def _load_history() -> list[str]:
-    import json
-
-    from .config import CONFIG_DIR
-
-    try:
-        items = json.loads((CONFIG_DIR / "input_history").read_text())
-        return [str(x) for x in items if str(x).strip()][:100]
-    except Exception:
-        return []
-
-
-def _save_history(items: list[str]) -> None:
-    import json
-
-    from .config import CONFIG_DIR
-
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        (CONFIG_DIR / "input_history").write_text(json.dumps(items[-100:]))
-    except Exception:
-        pass
-
-
-class ChatLog(RichLog):
-    """Chat history with working mouse-drag text selection.
-
-    Stock RichLog renders RichVisual, which the base get_selection() can't
-    extract text from — so drag-selection in it copies nothing. We extract
-    from the stored line texts instead.
-    """
-
-    ALLOW_SELECT = True
-
-    def get_selection(self, selection) -> tuple[str, str] | None:
-        try:
-            from textual.selection import Selection as _Sel
-
-            text = "\n".join(ln.text for ln in self.lines)
-            if not text.strip():
-                return None
-            extracted = selection.extract(text) if hasattr(selection, "extract") else ""
-            return (extracted, "\n") if extracted else None
-        except Exception:
-            return None
-
-    def on_mouse_up(self, event) -> None:
-        if getattr(event, "button", 1) != 1:
-            return
-        app = self.app
-        if hasattr(app, "_copy_selection_if_any"):
-            try:
-                app.call_after_refresh(app._copy_selection_if_any)
-            except Exception:
-                app._copy_selection_if_any()
-
-
-class ChatArea(TextArea):
-    """Multiline input: Enter sends, ctrl+j / alt+enter newline, up/down history."""
-
-    BINDINGS = [
-        Binding("enter", "send", "send", priority=True, show=False),
-        Binding("ctrl+j", "newline", "newline", show=False),
-        Binding("alt+enter", "newline", "newline", show=False),
-        Binding("ctrl+y", "copy_last", "copy last answer", priority=True, show=False),
-        Binding("up", "hist_prev", "history", show=False),
-        Binding("down", "hist_next", "history", show=False),
-        Binding("escape", "slash_dismiss", "dismiss", show=False),
-        Binding("tab", "slash_complete", "complete", show=False),
-    ]
-
-    class Send(Message):
-        def __init__(self, text: str) -> None:
-            super().__init__()
-            self.text = text
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.cmd_history: list[str] = []
-        self.hist_idx: int = -1  # -1 = not browsing
-
-    def action_send(self) -> None:
-        if self.app.slash_complete_active(self.text):
-            self.app.slash_complete()
-            return
-        text = self.text.strip()
-        if text:
-            self.hist_idx = -1
-            self.post_message(ChatArea.Send(text))
-        self.clear()
-
-    def action_slash_complete(self) -> None:
-        if not self.app.slash_complete_active():
-            self.insert("    ")
-            return
-
-    def action_slash_dismiss(self) -> None:
-        if self.app.close_help_if_open():
-            return
-        self.app.slash_dismiss()
-
-    def action_copy_last(self) -> None:
-        # TextArea binds ctrl+y to redo; this priority binding reclaims it.
-        self.app.action_copy_last()
-
-    def action_newline(self) -> None:
-        self.insert("\n")
-
-    def push_history(self, text: str) -> None:
-        if text and (not self.cmd_history or self.cmd_history[-1] != text):
-            self.cmd_history.append(text)
-            _save_history(self.cmd_history)
-
-    def cursor_to_end(self) -> None:
-        lines = self.text.split("\n")
-        end = (len(lines) - 1, len(lines[-1]))
-        try:
-            self.selection = type(self.selection)(end, end)
-        except Exception:
-            pass
-
-    def _browse(self, step: int) -> None:
-        if self.app.slash_navigate(step):
-            return
-        if "\n" in self.text or not self.cmd_history:
-            if step < 0:
-                self.action_cursor_up()
-            else:
-                self.action_cursor_down()
-            return
-        if self.hist_idx == -1:
-            self.hist_idx = len(self.cmd_history) if step < 0 else -1
-        self.hist_idx = max(-1, min(len(self.cmd_history) - 1, self.hist_idx + step))
-        self.text = self.cmd_history[self.hist_idx] if self.hist_idx >= 0 else ""
-        self.cursor_to_end()
-
-    def action_hist_prev(self) -> None:
-        self._browse(-1)
-
-    def action_hist_next(self) -> None:
-        self._browse(1)
+from .helpers import _load_history, _now, _role, _rule, _w, is_affirmative, log_error
+from .theme import install_sidekick_theme
+from .widgets import ChatArea, ChatLog
 
 
 class SidekickTUI(App):
     TITLE = "sidekick"
     BINDINGS = [
         ("ctrl+y", "copy_last", "copy last answer"),
-        ("ctrl+t", "mic", "push to talk"),
-        ("ctrl+b", "scroll_log_up", "scroll up"),
-        ("ctrl+f", "scroll_log_down", "scroll down"),
+        ("ctrl+g", "mic", "push to talk"),
+        Binding("pageup", "scroll_log_up", "scroll up", priority=True),
+        Binding("pagedown", "scroll_log_down", "scroll down", priority=True),
         ("ctrl+home", "scroll_log_top", "top"),
         ("ctrl+end", "scroll_log_bottom", "bottom"),
         ("f1", "toggle_help", "help"),
+        ("f2", "toggle_theme", "theme"),
+        ("f3", "toggle_sessions", "sessions"),
         ("escape", "close_help", "close"),
     ]
     CSS = """
-    RichLog { height: 1fr; border: solid #1d3327; }
-    #live { height: auto; max-height: 10; border: solid #1d3327; display: none; }
-    #slash-list { height: auto; max-height: 8; border: solid #1d3327; display: none; }
-    #help-panel { height: auto; max-height: 14; border: solid #7c3aed; display: none; }
+    RichLog { height: 1fr; border: solid $primary-muted; }
+    #live { height: auto; max-height: 10; border: solid $primary-muted; display: none; }
+    #slash-list { height: auto; max-height: 8; border: solid $primary-muted; display: none; }
+    #help-panel { height: auto; max-height: 14; border: solid $secondary; display: none; }
     #input-row { height: 5; }
-    ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
-    ChatArea:focus { border: solid #00ff9d; }
-    #mic-status { width: 22; height: 5; border: solid #1d3327; color: #9b9bab; content-align: center middle; }
-    #mic-status.recording { border: solid #ff5555; color: #ff5555; }
+    ChatArea { width: 1fr; height: 5; border: solid $primary-muted; }
+    ChatArea:focus { border: solid $primary; }
+    #mic-status { width: 22; height: 5; border: solid $primary-muted; color: $text-muted; content-align: center middle; }
+    #mic-status.recording { border: solid $error; color: $error; }
+    #status-bar { height: 1; color: $text-muted; background: $surface; }
+    #sessions-drawer { dock: left; width: 44; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     """
 
     def __init__(self, model: str = "", session: str = ""):
         super().__init__()
         self.model_override = model
-        from .store import new_session_id
+        from sk.store import new_session_id
 
         self.session = session or new_session_id("tui")
         self._continued = bool(session)
@@ -266,8 +56,11 @@ class SidekickTUI(App):
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
         self._live_n: int = 0
+        self._live_rendered_at: float = 0.0
         self._stats: str = ""
-        self._pending_approval = None
+        self._pending_approval: dict[str, object] | None = None
+        self._plan_approved: frozenset[str] | None = None
+        self._drawer_sessions: list[str] = []
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -280,25 +73,41 @@ class SidekickTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ListView(id="sessions-drawer")
         yield ChatLog(id="chat-log", wrap=True, highlight=True)
-        yield TextArea(id="live", read_only=True, show_line_numbers=False)
+        yield RichLog(id="live", wrap=True, highlight=False)
         yield ListView(id="slash-list")
         yield RichLog(id="help-panel", wrap=True, highlight=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
-            yield Static("ctrl+t\nto talk", id="mic-status")
-        yield Footer()
+            yield Static("ctrl+g\nto talk", id="mic-status")
+        yield Static("", id="status-bar")
 
     def _help_text(self) -> str:
-        from .slash import COMMANDS
+        from textual.binding import Binding
 
-        keys = [
-            "Enter send · ctrl+j / alt+enter newline · ↑/↓ history+autocomplete",
-            "ctrl+y copy · ctrl+t talk · ctrl+b/f scroll · ctrl+home/end jump",
-            "Esc closes this panel · F1 toggles it",
-        ]
+        from sk.slash import COMMANDS
+
+        def entries(bindings) -> list[str]:
+            out = []
+            for b in bindings:
+                if isinstance(b, tuple):
+                    key, _action, desc = b
+                elif isinstance(b, Binding):
+                    key, desc = b.key, b.description
+                else:  # pragma: no cover - defensive
+                    continue
+                if desc:
+                    out.append(f"{key} {desc}")
+            return out
+
+        keys = entries(type(self).BINDINGS) + entries(ChatArea.BINDINGS)
+        # NOTE: remove the migration block after one release cycle.
+        migrated = (
+            "Recently changed: scroll was ctrl+b/f → pageup/pagedown · talk was ctrl+t → ctrl+g"
+        )
         cmds = [f"/{n} — {d}" for n, d in COMMANDS]
-        return "KEYS\n" + "\n".join(keys) + "\n\nCOMMANDS\n" + "\n".join(cmds)
+        return "KEYS\n" + "\n".join(keys) + "\n\n" + migrated + "\n\nCOMMANDS\n" + "\n".join(cmds)
 
     def action_toggle_help(self) -> None:
         try:
@@ -313,8 +122,111 @@ class SidekickTUI(App):
         except Exception:
             pass
 
+    def action_toggle_theme(self) -> None:
+        """F2: flip dark <-> light, persist to config. Existing log lines keep
+        their baked-in colors; new output uses the new palette."""
+        from sk.config import Config
+
+        from .theme import mode_for_name, toggle_theme
+
+        name = toggle_theme(self)
+        try:
+            cfg = Config.load()
+            cfg.theme = mode_for_name(name)
+            cfg.save()
+        except Exception:
+            pass
+        try:
+            self._sub()
+        except Exception:
+            pass
+
     def action_close_help(self) -> None:
-        self.close_help_if_open()
+        if self.close_help_if_open():
+            return
+        self._hide_sessions_drawer()
+
+    def _sessions_visible(self) -> bool:
+        try:
+            return bool(self.query_one("#sessions-drawer", ListView).display)
+        except Exception:
+            return False
+
+    def _refresh_sessions(self) -> None:
+        from sk.store import list_sessions
+
+        try:
+            lst = self.query_one("#sessions-drawer", ListView)
+        except Exception:
+            return
+        try:
+            rows = list_sessions(limit=20)
+        except Exception:
+            rows = []
+        self._drawer_sessions = [r["session"] for r in rows]
+        lst.clear()
+        for r in rows:
+            mark = "● " if r["session"] == self.session else "○ "
+            lst.append(ListItem(Label(f"{mark}{r['preview'][:32]} ({r['count']})")))
+
+    def action_toggle_sessions(self) -> None:
+        try:
+            lst = self.query_one("#sessions-drawer", ListView)
+        except Exception:
+            return
+        if lst.display:
+            self._hide_sessions_drawer()
+            return
+        self._refresh_sessions()
+        lst.styles.display = "block"
+        try:
+            lst.focus()
+        except Exception:
+            pass
+
+    def _hide_sessions_drawer(self) -> None:
+        try:
+            self.query_one("#sessions-drawer", ListView).styles.display = "none"
+        except Exception:
+            pass
+        try:
+            self.query_one("#chat-input", ChatArea).focus()
+        except Exception:
+            pass
+
+    @on(ListView.Selected, "#sessions-drawer")
+    def _sessions_chosen(self, ev: ListView.Selected) -> None:
+        try:
+            idx = ev.list_view.index if ev.list_view.index is not None else 0
+            session_id = self._drawer_sessions[idx]
+        except Exception:
+            return
+        self._hide_sessions_drawer()
+        self._show_session(session_id, "")
+
+    def _show_session(self, session_id: str, notice: str = "") -> None:
+        """Adopt a session + render its tail. Shared by /resume and the drawer."""
+        from sk.store import get_history as _gh
+
+        log = self.query_one("#chat-log", RichLog)
+        self.session = session_id
+        self._sub()
+        log.clear()
+        _role(log, "sys", f"now on `{self.session}`")
+        for m in _gh(self.session)[-10:]:
+            role = "you" if m["role"] == "user" else "sidekick"
+            if role == "sidekick":
+                _role(log, role, "")
+                try:
+                    from rich.markdown import Markdown
+
+                    log.write(Markdown(m["content"][:1500]))
+                except Exception:
+                    _role(log, role, m["content"][:1500])
+            else:
+                _role(log, role, m["content"][:1500])
+        if notice:
+            _role(log, "", notice)
 
     def close_help_if_open(self) -> bool:
         """Hide the help panel if visible. Returns True when it did."""
@@ -329,22 +241,26 @@ class SidekickTUI(App):
 
     # ---- slash autocomplete ----
     def _slash_items(self, fragment: str) -> list[tuple[str, str]]:
-        from .slash import COMMANDS
+        from sk.slash import COMMANDS
 
         frag = fragment.lower()
         starts = [(n, d) for n, d in COMMANDS if n.split()[0].lower().startswith(frag)]
-        contains = [(n, d) for n, d in COMMANDS if frag and frag not in n.split()[0].lower() and frag in n.lower()]
+        contains = [
+            (n, d)
+            for n, d in COMMANDS
+            if frag and frag not in n.split()[0].lower() and frag in n.lower()
+        ]
         return (starts + contains)[:12]
 
     def slash_update(self, text: str) -> None:
         """Refresh/hide the suggestion list from current input. Returns nothing."""
-        from .slash import COMMANDS
+        from sk.slash import COMMANDS
 
         try:
             lst = self.query_one("#slash-list", ListView)
         except Exception:
             return
-        first = (text.strip().split("\n")[0] if text else "")
+        first = text.strip().split("\n")[0] if text else ""
         if not first.startswith("/"):
             lst.styles.display = "none"
             return
@@ -426,21 +342,18 @@ class SidekickTUI(App):
         self.slash_update(ev.text_area.text)
 
     def on_mount(self) -> None:
-        try:
-            from textual.theme import Theme
-
-            self.register_theme(Theme(name="sidekick", primary="#00ff9d", secondary="#7c3aed", accent="#ffb000", background="#0b0f0c", surface="#111613", panel="#111613"))
-            self.theme = "sidekick"
-        except Exception:
-            pass
+        install_sidekick_theme(self)
         area = self.query_one("#chat-input", ChatArea)
         area.cmd_history = _load_history()
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
-        _w(log, "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).")
+        _w(
+            log,
+            "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+g to talk · pgup/pgdn scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).",
+        )
         if self._continued:
-            from .store import get_history
+            from sk.store import get_history
 
             _role(log, "sys", f"continued `{self.session}`")
             for m in get_history(self.session)[-10:]:
@@ -455,18 +368,22 @@ class SidekickTUI(App):
                     except Exception:
                         _role(log, "sidekick", m["content"][:1500])
         try:
-            from .cli import _code_version
+            from sk.cli import _code_version
 
             _w(log, f"build {_code_version()} (`sk version` to compare after updates)")
         except Exception:
             pass
         if self._is_fresh():
-            _role(log, "", "New here? Try: `what files are in ~/` · `/model fast` for speed · `/help` for everything.")
+            _role(
+                log,
+                "",
+                "New here? Try: `what files are in ~/` · `/model fast` for speed · `/help` for everything.",
+            )
 
     @staticmethod
     def _is_fresh() -> bool:
         try:
-            from .store import list_sessions
+            from sk.store import list_sessions
 
             return not list_sessions(limit=1)
         except Exception:
@@ -476,7 +393,7 @@ class SidekickTUI(App):
         self._mic_toggle()
 
     def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
-        """Mic status pill (display-only; ctrl+t is the trigger)."""
+        """Mic status pill (display-only; ctrl+g is the trigger)."""
         self.mic_state = state
         try:
             pill = self.query_one("#mic-status", Static)
@@ -493,7 +410,12 @@ class SidekickTUI(App):
         # TextArea never sees these keys (unbound there) — they reach the app.
         log = self.query_one("#chat-log", RichLog)
         try:
-            {"up": log.scroll_page_up, "down": log.scroll_page_down, "top": log.scroll_home, "bottom": log.scroll_end}[what]()
+            {
+                "up": log.scroll_page_up,
+                "down": log.scroll_page_down,
+                "top": log.scroll_home,
+                "bottom": log.scroll_end,
+            }[what]()
         except Exception:
             pass
 
@@ -512,7 +434,7 @@ class SidekickTUI(App):
     def _mic_toggle(self) -> None:
         import time as _t
 
-        from . import voice as _voice
+        from sk import voice as _voice
 
         log = self.query_one("#chat-log", RichLog)
         try:
@@ -546,7 +468,7 @@ class SidekickTUI(App):
             self._rec_start = _t.monotonic()
             self._mic_status("■ REC\n0s", recording=True, state="recording")
             self._rec_timer = self.set_interval(1.0, self._rec_tick)
-            _role(log, "", "recording... press ctrl+t to stop")
+            _role(log, "", "recording... press ctrl+g to stop")
         else:
             self._mic_stop()
 
@@ -560,7 +482,7 @@ class SidekickTUI(App):
             pass
 
     def _mic_stop(self) -> None:
-        from . import voice as _voice
+        from sk import voice as _voice
 
         log = self.query_one("#chat-log", RichLog)
         proc, self._rec_proc = self._rec_proc, None
@@ -572,7 +494,7 @@ class SidekickTUI(App):
             self._rec_timer = None
         self._mic_status("…busy…", state="busy")
         if proc is None:
-            self._mic_status("ctrl+t\nto talk")
+            self._mic_status("ctrl+g\nto talk")
             return
         err = _voice.stop_recording(proc, wav_path=self._rec_wav)
         if err:
@@ -585,9 +507,8 @@ class SidekickTUI(App):
     async def _do_transcribe(self, wav: str) -> None:
         import asyncio
 
-        from . import voice as _voice
+        from sk import voice as _voice
 
-        log = self.query_one("#chat-log", RichLog)
         try:
             text = await asyncio.to_thread(_voice.transcribe, wav)
         except Exception as e:
@@ -608,12 +529,12 @@ class SidekickTUI(App):
             self._drop_transcript(text)
 
     def _mic_failed(self, msg: str) -> None:
-        self._mic_status("ctrl+t\nto talk")
+        self._mic_status("ctrl+g\nto talk")
         _role(self.query_one("#chat-log", RichLog), "error", msg)
 
     def _drop_transcript(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
-        self._mic_status("ctrl+t\nto talk")
+        self._mic_status("ctrl+g\nto talk")
         area = self.query_one("#chat-input", ChatArea)
         cur = area.text.strip()
         area.text = (cur + " " + text).strip() if cur else text
@@ -622,29 +543,50 @@ class SidekickTUI(App):
         _role(log, "", f"heard> {text[:200]} (edit + Enter to send)")
 
     def _sub(self) -> None:
-        from .config import Config
+        from sk.config import Config
+
+        from .theme import name_for_mode, set_theme
 
         cfg = Config.load()
+        self._cfg = cfg
+        set_theme(self, name_for_mode(cfg.theme))
         model = self.model_override or cfg.model
         mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""
         prov = f"{cfg.provider} · " if cfg.provider not in ("ollama", "") else ""
         short = self.session[-13:] if len(self.session) > 16 else self.session
         self.sub_title = f"{prov}{model} · {mode} · {short} · /help{tail}"
+        self._render_status_bar()
+
+    def _render_status_bar(self) -> None:
+        """Mirror sub_title into the bottom status strip. Best effort."""
+        try:
+            self.query_one("#status-bar", Static).update(self.sub_title)
+        except Exception:
+            pass
 
     def _approve(self, name: str, args: dict) -> bool:
         """Approval gate for worker threads. Reads auto-pass; writes either
         auto-pass (/yolo) or block on an inline [y/N] question answered by
         the user's next input line (timeout denies, and says so)."""
-        import threading
-        import time as _t
-
-        from .tools import APPROVAL_TOOLS
+        from sk.tools import APPROVAL_TOOLS
 
         if name not in APPROVAL_TOOLS:
             return True
         if bool(self.state.get("yolo")):
             return True
+        cfg = getattr(self, "_cfg", None)
+        if cfg is not None:
+            from sk.config import is_project_approved
+
+            if is_project_approved(name, args, cfg.approved_commands):
+                return True
+        plan = getattr(self, "_plan_approved", None)
+        if plan:
+            from sk.agent import _tool_target
+
+            if _tool_target(name, args) in plan:
+                return True
         path = args.get("path", args.get("cmd", "?"))
         preview = str(args.get("content", ""))[:200] if name == "write_file" else ""
         if name == "edit_file":
@@ -653,23 +595,42 @@ class SidekickTUI(App):
             preview = f"$ {str(args.get('cmd', ''))[:200]}"
         if name == "delete_file":
             preview = "(PERMANENT delete)"
-        timeout = float(getattr(self, "_approve_timeout", 300))
+        return self._wait_slot(name, path, preview)
+
+    def _wait_slot(self, name: str, path: str, preview: str, timeout: float = 300) -> bool:
+        """Post an inline [y/N] slot, wait for the answer, clean up. Shared by
+        per-tool approval and plan review so timeout/stale semantics match."""
+        import threading
+        import time as _t
+
+        timeout = float(getattr(self, "_approve_timeout", timeout))
         event = threading.Event()
         token = object()
         owner = threading.get_ident()
         deadline = _t.monotonic() + timeout + 30
         asked_at = _t.monotonic()
-        self._pending_approval = {"question": f"{name} -> {path}", "event": event, "answer": False, "asked_at": asked_at, "reply": "", "token": token, "owner": owner, "deadline": deadline}
+        self._pending_approval = {
+            "question": f"{name} -> {path}",
+            "event": event,
+            "answer": False,
+            "asked_at": asked_at,
+            "reply": "",
+            "token": token,
+            "owner": owner,
+            "deadline": deadline,
+        }
 
         def _log_outcome(result: str) -> None:
             try:
                 import datetime as _dt
 
-                from .config import CONFIG_DIR
+                from sk.config import CONFIG_DIR
 
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 with open(CONFIG_DIR / "tui-errors.log", "a") as f:
-                    f.write(f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] approve: {name} -> {path} = {result} ({_t.monotonic() - asked_at:.0f}s)\n")
+                    f.write(
+                        f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] approve: {name} -> {path} = {result} ({_t.monotonic() - asked_at:.0f}s)\n"
+                    )
             except Exception:
                 pass
 
@@ -681,27 +642,54 @@ class SidekickTUI(App):
             expired = not event.wait(timeout=timeout)
         finally:
             # never leave a stale slot: only clear if still ours
-            if getattr(self, "_pending_approval", None) is not None and self._pending_approval.get("token") is token:
-                pending, self._pending_approval = self._pending_approval, None
+            slot = getattr(self, "_pending_approval", None)
+            if slot is not None and slot.get("token") is token:
+                pending, self._pending_approval = slot, None
             else:
                 pending = None
         if expired:
             _log_outcome("timeout-denied")
             try:
-                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "warn", f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)")
+                self.call_from_thread(
+                    _role,
+                    self.query_one("#chat-log", RichLog),
+                    "warn",
+                    f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)",
+                )
             except Exception:
                 pass
             return False
         if pending is None:
             _log_outcome("slot-stolen-denied")
             return False  # slot stolen/cleared concurrently: fail closed
-        _log_outcome("approved" if pending.get("answer") else f"denied reply={pending.get('reply', '')[:20]!r}")
+        _log_outcome(
+            "approved"
+            if pending.get("answer")
+            else f"denied reply={pending.get('reply', '')[:20]!r}"
+        )
         if not bool(pending.get("answer", False)):
             try:
-                self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", f"denied (you answered '{pending.get('reply', '')[:20]}')")
+                self.call_from_thread(
+                    _role,
+                    self.query_one("#chat-log", RichLog),
+                    "sys",
+                    f"denied (you answered '{pending.get('reply', '')[:20]}')",
+                )
             except Exception:
                 pass
         return bool(pending.get("answer", False))
+
+    def _review_plan(self, plan_text: str, calls: list) -> bool:
+        """One confirmation for a whole multi-tool plan. Plan-approved targets
+        auto-pass their per-tool prompts for the rest of this turn."""
+        if bool(self.state.get("yolo")):
+            return True
+        from sk.agent import _tool_target
+
+        approved = frozenset({_tool_target(n, a) for n, a in calls})
+        ok = self._wait_slot("plan", f"{len(calls)} tools", plan_text)
+        self._plan_approved = approved if ok else None
+        return ok
 
     def _live_pending(self):
         """Active approval or None. Clears stale slots (dead owner, past deadline)."""
@@ -718,12 +706,22 @@ class SidekickTUI(App):
         return pending
 
     def _ask_approval(self, name: str, path: str, preview: str, timeout: int = 300) -> None:
+        from rich.panel import Panel as _Panel
         from rich.text import Text as _Text
 
+        from .theme import active_roles
+
+        roles = active_roles()
+        warn_color = roles.get("warn", "bold yellow").split()[-1]
         log = self.query_one("#chat-log", RichLog)
-        log.write(_Text(f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)", style="reverse bold yellow"))
-        if preview:
-            _w(log, f"  {preview}")
+        log.write(
+            _Panel(
+                _Text(preview if preview else "(no preview)"),
+                title=f"allow {name} -> {path}? \\[y/N]",
+                subtitle=f"y or --yes approves · {timeout}s (timeout denies)",
+                border_style=warn_color,
+            )
+        )
         try:
             self.query_one("#chat-input", ChatArea).focus()
         except Exception:
@@ -748,7 +746,7 @@ class SidekickTUI(App):
 
     def _copy_out(self, text: str, what: str) -> None:
         """Copy via reliable backends, OSC52 fallback with honest warning."""
-        from .clip import backends_available, copy_text, install_hint
+        from sk.clip import backends_available, copy_text, install_hint
 
         log = self.query_one("#chat-log", RichLog)
         if backends_available():
@@ -763,10 +761,12 @@ class SidekickTUI(App):
         except Exception as e:
             _role(log, "error", f"copy failed ({e}) — {install_hint()}")
             return
-        _role(log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty")
+        _role(
+            log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty"
+        )
 
     def action_copy_last(self) -> None:
-        from .store import get_history
+        from sk.store import get_history
 
         log = self.query_one("#chat-log", RichLog)
         # Hermes order: composer (input) selection first, then chat selection.
@@ -789,7 +789,7 @@ class SidekickTUI(App):
 
     @on(ChatArea.Send)
     def _send(self, ev: ChatArea.Send) -> None:
-        from . import slash
+        from sk import slash
 
         text = ev.text.strip()
         if not text:
@@ -805,7 +805,7 @@ class SidekickTUI(App):
                     pending["event"].set()  # release worker; deny by default
                 except Exception:
                     pass
-                self._pending_approval = None
+            self._pending_approval = None
             _role(log, "sys", "bye.")
             self.exit()
             return
@@ -816,7 +816,9 @@ class SidekickTUI(App):
             _role(log, "you", text)
             pending["answer"] = verdict
             pending["reply"] = text[:20]
-            _role(log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}")
+            _role(
+                log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}"
+            )
             try:
                 pending["event"].set()
             except Exception:
@@ -826,8 +828,8 @@ class SidekickTUI(App):
         _rule(log)
         if text.startswith("/"):
             if text.startswith("/model ") and text[7:].strip():
-                from .config import Config
-                from .slash import _resolve_model_name
+                from sk.config import Config
+                from sk.slash import _resolve_model_name
 
                 name = _resolve_model_name(Config.load(), text[7:].strip())
                 self.model_override = name
@@ -840,7 +842,7 @@ class SidekickTUI(App):
                 _role(log, "sys", f"model → `{name}`")
                 self._sub()
                 return
-            from .config import Config
+            from sk.config import Config
 
             cfg = Config.load()
             if self.model_override:
@@ -850,26 +852,7 @@ class SidekickTUI(App):
                 self.exit()
                 return
             if out.switch_session:
-                from .store import get_history as _gh
-
-                self.session = out.switch_session
-                self._sub()
-                log.clear()
-                _role(log, "sys", f"now on `{self.session}`")
-                for m in _gh(self.session)[-10:]:
-                    role = "you" if m["role"] == "user" else "sidekick"
-                    if role == "sidekick":
-                        _role(log, role, "")
-                        try:
-                            from rich.markdown import Markdown
-
-                            log.write(Markdown(m["content"][:1500]))
-                        except Exception:
-                            _role(log, role, m["content"][:1500])
-                    else:
-                        _role(log, role, m["content"][:1500])
-                if out.text:
-                    _role(log, "", out.text)
+                self._show_session(out.switch_session, out.text)
                 return
             if out.clear_view:
                 log.clear()
@@ -889,10 +872,12 @@ class SidekickTUI(App):
         self._live_n = 0
         self._think_dots = 0
         self._turn_start = time.monotonic()
+        self._live_rendered_at = 0.0
         try:
-            live = self.query_one("#live", TextArea)
+            live = self.query_one("#live", RichLog)
             live.styles.display = "block"
-            live.text = "· thinking"
+            live.clear()
+            live.write("· thinking")
         except Exception:
             pass
         try:
@@ -911,8 +896,9 @@ class SidekickTUI(App):
             return
         try:
             self._think_dots = (self._think_dots + 1) % 4
-            live = self.query_one("#live", TextArea)
-            live.text = "· thinking" + "." * self._think_dots
+            live = self.query_one("#live", RichLog)
+            live.clear()
+            live.write("· thinking" + "." * self._think_dots)
         except Exception:
             pass
 
@@ -925,27 +911,33 @@ class SidekickTUI(App):
         self._think_timer = None
 
     def _push_live(self) -> None:
+        """Progressive Markdown render, throttled to ~2Hz. Raw tokens accumulate
+        silently between renders; unclosed fences render as code until closed."""
         try:
-            live = self.query_one("#live", TextArea)
-            body = "".join(self._live_parts)
+            now = time.monotonic()
+            if self._live_rendered_at and now - self._live_rendered_at < 0.5:
+                return
+            self._live_rendered_at = now
+            live = self.query_one("#live", RichLog)
+            live.clear()
             head = "".join(self._live_reason)[-500:]
-            live.text = (("…" + head + "\n───\n") if head else "") + body[-2000:]
+            if head:
+                live.write(Text("…" + head, style="dim"))
+                live.write(Text("───", style="dim"))
+            body = "".join(self._live_parts)[-2000:]
             try:
-                lines = live.text.split("\n")
-                end = (len(lines) - 1, len(lines[-1]))
-                live.selection = type(live.selection)(end, end)
+                live.write(Markdown(body))
             except Exception:
-                pass
-            live.scroll_end(animate=False)
+                live.write(Text(body))
         except Exception:
             pass
 
     async def _answer(self, text: str, show_as: str = "") -> None:
         import asyncio
 
-        from .agent import run_agent
-        from .config import Config
-        from .store import get_history, save_message
+        from sk.agent import run_agent
+        from sk.config import Config
+        from sk.store import get_history, save_message
 
         log = self.query_one("#chat-log", RichLog)
         cfg = Config.load()
@@ -977,9 +969,25 @@ class SidekickTUI(App):
                 pass
 
         try:
-            answer = await asyncio.to_thread(
-                run_agent, text, hist, cfg, on_tool, None, self._approve, on_reasoning, bool(self.state.get("yolo"))
-            )
+            from sk.agent import audit_session
+
+            token = audit_session.set(self.session)
+            try:
+                answer = await asyncio.to_thread(
+                    run_agent,
+                    text,
+                    hist,
+                    cfg,
+                    on_tool,
+                    None,
+                    self._approve,
+                    on_reasoning,
+                    bool(self.state.get("yolo")),
+                    review_plan=self._review_plan,
+                )
+            finally:
+                audit_session.reset(token)
+                self._plan_approved = None  # turn-scoped: never leak into next turn
         except Exception as e:
             log_error("answer", e)
             try:
@@ -1002,16 +1010,16 @@ class SidekickTUI(App):
     def _hide_live(self) -> None:
         self._live_parts = []
         self._live_reason = []
+        self._live_rendered_at = 0.0
         self._stop_think_timer()
         try:
-            live = self.query_one("#live", TextArea)
+            live = self.query_one("#live", RichLog)
             live.clear()
             live.styles.display = "none"
         except Exception:
             pass
 
     def _finish(self, answer: str, stats: str) -> None:
-        from rich.markdown import Markdown
 
         self._hide_live()
         self._stats = stats
@@ -1023,14 +1031,3 @@ class SidekickTUI(App):
         except Exception:
             _role(log, "sidekick", answer)
         _rule(log)
-
-
-def launch(model: str = "", session: str = "", cont: bool = False) -> None:
-    # Mouse tracking on: drag-select in the log auto-copies on release,
-    # clicks and wheel work like every other TUI. Hold Shift to select
-    # natively at terminal level.
-    if cont and not session:
-        from .store import latest_session
-
-        session = latest_session("tui")
-    SidekickTUI(model=model, session=session).run(mouse=True)

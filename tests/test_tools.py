@@ -30,7 +30,8 @@ def test_write_blocklist():
 
 
 def test_edit_unique():
-    import tempfile, os
+    import tempfile
+    import os
 
     with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".txt") as tf:
         tf.write("aaa aaa")
@@ -54,8 +55,16 @@ def test_sysinfo_has_sections():
 
 
 def test_parse_text_tool():
-    assert _parse_text_tool('```json {"name": "list_dir", "arguments": {"path": "."}} ```') == ("list_dir", {"path": "."})
-    assert _parse_text_tool('```json {"name": "write_file", "arguments": {"path": "/tmp/x", "content": "hi"}} ```')[0] == "write_file"
+    assert _parse_text_tool('```json {"name": "list_dir", "arguments": {"path": "."}} ```') == (
+        "list_dir",
+        {"path": "."},
+    )
+    assert (
+        _parse_text_tool(
+            '```json {"name": "write_file", "arguments": {"path": "/tmp/x", "content": "hi"}} ```'
+        )[0]
+        == "write_file"
+    )
     assert _parse_text_tool("just a normal answer") is None
 
 
@@ -94,7 +103,15 @@ def test_make_dir_needs_approval():
 def test_shell_blocks_catastrophic():
     from sk.tools import dispatch_tool, tool_shell
 
-    for bad in ("rm -rf /", "rm -rf /*", "sudo rm -rf ~", "mkfs.ext4 /dev/sda1", "dd if=x of=/dev/sda", ":(){ :|:& };:", "echo hi > /dev/sda"):
+    for bad in (
+        "rm -rf /",
+        "rm -rf /*",
+        "sudo rm -rf ~",
+        "mkfs.ext4 /dev/sda1",
+        "dd if=x of=/dev/sda",
+        ":(){ :|:& };:",
+        "echo hi > /dev/sda",
+    ):
         out = tool_shell(bad)
         assert "blocked" in out.lower(), bad
     assert "hello-shell" in tool_shell("echo hello-shell")
@@ -125,7 +142,9 @@ def test_delete_file_roundtrip(tmp_path, monkeypatch):
     (nd / "x").write_text("x")
     assert "non-empty" in tool_delete_file(str(nd))
     assert "blocked" in tool_delete_file("/etc/sk-evil").lower()
-    assert "Deleted" in dispatch_tool("delete_file", {"path": str(tmp_path / "g.txt")}) or "does not exist" in dispatch_tool("delete_file", {"path": str(tmp_path / "g.txt")})
+    assert "Deleted" in dispatch_tool(
+        "delete_file", {"path": str(tmp_path / "g.txt")}
+    ) or "does not exist" in dispatch_tool("delete_file", {"path": str(tmp_path / "g.txt")})
 
 
 def test_shell_delete_need_approval():

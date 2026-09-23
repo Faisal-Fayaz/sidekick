@@ -93,7 +93,7 @@ def load_skills(query: str = "", top: int = 8) -> str:
         if not packs:
             return "(no skills — add ~/.sidekick/skills/*.md or `sk skills-install superpowers`)"
         # relevance rank: local packs always first, then keyword overlap
-        keys = set(_keywords(query)) if _keywords and query else set()
+        keys = set(_keywords(query)) if callable(_keywords) and query else set()
 
         def score(p: tuple[str, str, Path]) -> tuple[int, str]:
             name, desc, f = p
@@ -109,7 +109,9 @@ def load_skills(query: str = "", top: int = 8) -> str:
         chosen = [p for p in ranked if p[2].name != "SKILL.md"]
         chosen += [p for p in ranked if p[2].name == "SKILL.md"][: max(0, top - len(chosen))]
         lines = [f"- {name}: {desc}"[:160] if desc else f"- {name}" for name, desc, _ in chosen]
-        index = "SKILL INDEX (call `skill` with a name to load full instructions):\n" + "\n".join(lines)
+        index = "SKILL INDEX (call `skill` with a name to load full instructions):\n" + "\n".join(
+            lines
+        )
         bodies: list[str] = []
         for name, _, f in chosen:
             if f.name == "SKILL.md" or f.stat().st_size > 2000:
@@ -133,7 +135,9 @@ def show_skill(name: str) -> str:
             try:
                 _, body = parse_frontmatter(f.read_text(errors="replace"))
                 body = body.strip()
-                return body[:MAX_BODY_CHARS] + ("\n... [truncated]" if len(body) > MAX_BODY_CHARS else "")
+                return body[:MAX_BODY_CHARS] + (
+                    "\n... [truncated]" if len(body) > MAX_BODY_CHARS else ""
+                )
             except Exception as e:
                 return f"Error reading skill: {e}"
     known = ", ".join(n for n, _, _ in _packs()[:20])
@@ -148,6 +152,39 @@ def list_skills() -> list[tuple[str, int]]:
         except Exception:
             pass
     return out
+
+
+def search_skills(query: str = "") -> list[tuple[str, str]]:
+    """Keyword search over pack name + description. Empty query returns all.
+
+    Returns [(name, description)] ranked best-first. Pure listing, no I/O
+    beyond reading the skills dir (via _packs).
+    """
+    try:
+        from .store import _keywords
+    except Exception:
+        _keywords = None  # type: ignore
+
+    packs = _packs()
+    q = (query or "").strip()
+    if not q:
+        return [(name, desc) for name, desc, _ in packs]
+    if callable(_keywords):
+        keys = [k.lower() for k in _keywords(q)]
+    else:
+        keys = [w.lower() for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2]
+    if not keys:
+        return [(name, desc) for name, desc, _ in packs]
+    scored: list[tuple[int, str, str]] = []
+    for name, desc, _ in packs:
+        nl, hay = name.lower(), f"{name} {desc}".lower()
+        s = sum(1 for k in keys if k in hay)
+        if any(k in nl for k in keys):
+            s += 1  # name match outranks description-only match
+        if s > 0:
+            scored.append((s, name, desc))
+    scored.sort(key=lambda r: (-r[0], r[1].lower()))
+    return [(name, desc) for _, name, desc in scored]
 
 
 def install_preset(name: str, force: bool = False) -> str:
@@ -170,7 +207,13 @@ def install_preset(name: str, force: bool = False) -> str:
         shutil.rmtree(dest, ignore_errors=True)
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        subprocess.run(["git", "clone", "--depth", "1", url, str(dest)], capture_output=True, text=True, timeout=120, check=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", url, str(dest)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
     except subprocess.CalledProcessError as e:
         return f"Clone failed: {(e.stderr or '')[:300]}"
     except Exception as e:

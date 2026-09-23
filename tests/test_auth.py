@@ -19,7 +19,9 @@ def _resp(payload, status=200):
 def test_fetch_models_ollama(monkeypatch):
     import httpx
 
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp({"models": [{"name": "m1"}, {"name": "m2"}]}))
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **k: _resp({"models": [{"name": "m1"}, {"name": "m2"}]})
+    )
     assert auth.fetch_models("ollama", "http://localhost:11434/v1", "") == ["m1", "m2"]
 
 
@@ -27,7 +29,13 @@ def test_fetch_models_cloud(monkeypatch):
     import httpx
 
     seen = {}
-    monkeypatch.setattr(httpx, "get", lambda url, headers=None, **k: seen.update({"url": url, "h": headers}) or _resp({"data": [{"id": "a"}, {"id": "b"}]}))
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, headers=None, **k: (
+            seen.update({"url": url, "h": headers}) or _resp({"data": [{"id": "a"}, {"id": "b"}]})
+        ),
+    )
     assert auth.fetch_models("groq", "https://api.groq.com/openai/v1", "k") == ["a", "b"]
     assert seen["h"] == {"Authorization": "Bearer k"}
 
@@ -45,9 +53,12 @@ def test_validate_key_empty():
 
 
 def test_provider_status_no_key():
-    cfg = Config(provider="openai", model="m", base_url="", api_key="", max_steps=5, temperature=0.2)
+    cfg = Config(
+        provider="openai", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
+    )
     ok, msg = auth.provider_status(cfg)
     assert ok is False and "sk auth add" in msg
+
 
 def _runner():
     from typer.testing import CliRunner
@@ -101,7 +112,7 @@ def test_setup_local_flow(monkeypatch):
     monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: ["m-a"])
     monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hi"))
     runner, app = _runner()
-    res = runner.invoke(app, ["setup"], input="1\nn\n")
+    res = runner.invoke(app, ["setup"], input="1\n1\nn\n")
     assert res.exit_code == 0, res.output
     assert "setup complete" in res.output
 
@@ -135,7 +146,15 @@ def test_ping_uses_tiny_completion(monkeypatch):
     class FakeCompletions:
         def create(self, **kw):
             seen.update(kw)
-            return type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": " hi there"})()})()]})()
+            return type(
+                "R",
+                (),
+                {
+                    "choices": [
+                        type("C", (), {"message": type("M", (), {"content": " hi there"})()})()
+                    ]
+                },
+            )()
 
     class FakeChat:
         completions = FakeCompletions()
@@ -166,9 +185,12 @@ def test_connect_flow(monkeypatch):
     from sk.cli import app
 
     monkeypatch.setattr("sk.auth.validate_key", lambda *a, **k: (True, "valid (2 models)"))
-    monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: ["m-junk-tts", "m-good", "m-pic-image"])
+    monkeypatch.setattr(
+        "sk.auth.fetch_models", lambda *a, **k: ["m-junk-tts", "m-good", "m-pic-image"]
+    )
     monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hello"))
-    monkeypatch.setattr("sk.cli._pick_provider", lambda default="": "groq")
+    # canonical home after commands/ split (was sk.cli._pick_provider)
+    monkeypatch.setattr("sk.cli.commands.auth._pick_provider", lambda default="", **k: "groq")
     runner = CliRunner()
     # key, then model pick 1 (only m-good survives the chat filter)
     res = runner.invoke(app, ["connect"], input="gsk-test\n1\n")
@@ -191,3 +213,36 @@ def test_connect_local_skips_key(monkeypatch):
     res = runner.invoke(app, ["connect"], input="1\n1\n")
     assert res.exit_code == 0, res.output
     assert "no key needed" in res.output
+
+
+def test_picker_lists_despite_valid_default(monkeypatch, capsys):
+    import sk.cli.commands.auth as auth_mod
+    from sk.cli.commands.auth import _pick_provider
+
+    # regression: connect used to skip the list when cfg.provider was valid,
+    # silently validating keys against the wrong provider (401 confusion)
+    monkeypatch.setattr(auth_mod.console, "input", lambda *a, **k: "2")
+    picked = _pick_provider("ollama", force_list=True)
+    out = capsys.readouterr().out
+    assert "Provider:" in out and "anthropic" in out
+    from sk.config import PRESETS
+
+    assert picked == list(PRESETS)[1]
+
+
+def test_picker_empty_keeps_current(monkeypatch):
+    import sk.cli.commands.auth as auth_mod
+    from sk.cli.commands.auth import _pick_provider
+
+    monkeypatch.setattr(auth_mod.console, "input", lambda *a, **k: "")
+    assert _pick_provider("groq", force_list=True) == "groq"
+    # old behavior preserved without force_list
+    assert _pick_provider("groq") == "groq"
+
+
+def test_validate_key_401_names_provider(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(Exception("HTTP 401")))
+    ok, msg = auth.validate_key("openai", "https://x/v1", "bad")
+    assert ok is False and "openai" in msg and "401" in msg

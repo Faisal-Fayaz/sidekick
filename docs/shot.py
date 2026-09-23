@@ -1,16 +1,26 @@
 """Capture real TUI screenshots headless for the README. No LLM, no network."""
 
 import asyncio
+import os
 
 from sk.tui import SidekickTUI
+
+THEME = os.getenv("SK_SHOT_THEME", "")
+SUFFIX = "-light" if THEME == "light" else ""
 
 
 async def main() -> None:
     # 1. chat view with content + slash popup open
     app = SidekickTUI()
     async with app.run_test(size=(100, 30)) as pilot:
+        if THEME == "light":
+            from sk.tui import set_theme
+            from sk.tui.theme import LIGHT_NAME
+
+            set_theme(app, LIGHT_NAME)
+            await pilot.pause()
         log = app.query_one("#chat-log")
-        log.write("sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk.")
+        log.write("sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+g to talk.")
         from sk.tui import _role
 
         _role(log, "you", "what files are in ~/sidekick?")
@@ -22,7 +32,7 @@ async def main() -> None:
         area.text = "/mo"
         await pilot.pause()
         await pilot.pause()
-        app.save_screenshot("docs/tui-complete.svg")
+        app.save_screenshot(f"docs/tui-complete{SUFFIX}.svg")
         print("shot 1: complete popup")
 
         # 2. rich conversation: tools + answer + stats line
@@ -36,8 +46,14 @@ async def main() -> None:
         log.write("/dev/nvme0n1p8  133G  117G  8.5G  94% /")
         await pilot.pause()
         await pilot.pause()
-        app.save_screenshot("docs/tui-chat.svg")
+        app.save_screenshot(f"docs/tui-chat{SUFFIX}.svg")
         print("shot 2: conversation")
+
+        # 3. sessions drawer open (whatever live sessions exist; empty is fine)
+        app.action_toggle_sessions()
+        await pilot.pause()
+        app.save_screenshot(f"docs/tui-sessions{SUFFIX}.svg")
+        print("shot 3: sessions drawer")
 
 
 asyncio.run(main())

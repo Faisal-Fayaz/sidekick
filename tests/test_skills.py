@@ -21,7 +21,9 @@ def test_frontmatter_and_bundle(monkeypatch, tmp_path):
     skills.ensure_defaults()
     pack = d / "debugging"
     pack.mkdir()
-    (pack / "SKILL.md").write_text('---\nname: systematic-debugging\ndescription: "Find root causes."\n---\n\n# Debug\n\nSteps here.')
+    (pack / "SKILL.md").write_text(
+        '---\nname: systematic-debugging\ndescription: "Find root causes."\n---\n\n# Debug\n\nSteps here.'
+    )
     out = skills.load_skills()
     assert "systematic-debugging" in out and "Find root causes." in out
     body = skills.show_skill("systematic-debugging")
@@ -60,3 +62,35 @@ def test_install_mocked_clone(monkeypatch, tmp_path):
     assert "Installed superpowers" in out
     out2 = skills.install_preset("superpowers")
     assert "already" in out2
+
+
+def test_search_ranking_and_empty(monkeypatch, tmp_path):
+    d = _iso(tmp_path, monkeypatch)
+    skills.ensure_defaults()
+    pack = d / "debugging"
+    pack.mkdir()
+    (pack / "SKILL.md").write_text(
+        '---\nname: systematic-debugging\ndescription: "Find root causes."\n---\n\n# Debug\n\nSteps here.'
+    )
+    hits = skills.search_skills("root causes")
+    assert hits and hits[0][0] == "systematic-debugging"
+    # name match outranks description-only match
+    hits = skills.search_skills("debugging")
+    assert hits[0][0] == "systematic-debugging"
+    # empty query lists everything (defaults + bundle)
+    assert {n for n, _ in skills.search_skills("")} >= {"git", "disk", "systematic-debugging"}
+    # no match, no crash
+    assert skills.search_skills("zzzqqq xxxwww") == []
+
+
+def test_search_cli(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    _iso(tmp_path, monkeypatch)
+    skills.ensure_defaults()
+    res = CliRunner().invoke(app, ["skills-search"])
+    assert res.exit_code == 0 and "git" in res.output
+    res = CliRunner().invoke(app, ["skills-search", "zzzqqq xxxwww"])
+    assert res.exit_code == 0 and "no matches" in res.output.lower()

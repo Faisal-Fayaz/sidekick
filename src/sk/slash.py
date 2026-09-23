@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -51,14 +51,9 @@ HELP_TEXT = (
 
 
 def _resolve_model_name(cfg, raw: str) -> str:
-    from .config import provider_tier
+    from .config import resolve_alias
 
-    m = (raw or "").strip()
-    if m == "fast":
-        return provider_tier(cfg.provider, "fast", cfg.model)
-    if m == "smart":
-        return provider_tier(cfg.provider, "smart", cfg.model)
-    return m
+    return resolve_alias(cfg.provider, raw, cfg.model)
 
 
 def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
@@ -74,7 +69,9 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
     if cmd == "model":
         if not arg:
-            return SlashOut(handled=True, text=f"model: `{cfg.model}` — switch with `/model fast|smart|<name>`")
+            return SlashOut(
+                handled=True, text=f"model: `{cfg.model}` — switch with `/model fast|smart|<name>`"
+            )
         cfg.model = _resolve_model_name(cfg, arg)
         try:
             cfg.save()
@@ -96,7 +93,10 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         from .config import PRESETS
 
         if not arg.strip():
-            return SlashOut(handled=True, text=f"provider: `{cfg.provider}` — switch: `/provider {'|'.join(PRESETS)}`")
+            return SlashOut(
+                handled=True,
+                text=f"provider: `{cfg.provider}` — switch: `/provider {'|'.join(PRESETS)}`",
+            )
         p = arg.strip().lower()
         if p not in PRESETS:
             return SlashOut(handled=True, text=f"unknown provider. Pick: {', '.join(PRESETS)}")
@@ -107,13 +107,18 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             cfg.save()
         except Exception:
             pass
-        return SlashOut(handled=True, text=f"provider → `{p}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)")
+        return SlashOut(
+            handled=True,
+            text=f"provider → `{p}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)",
+        )
 
     if cmd == "clear":
-        from .store import clear_session, new_session_id
+        from .store import new_session_id
 
         fresh = new_session_id(session.split("-")[0] if "-" in session else session)
-        return SlashOut(handled=True, text=f"_fresh session `{fresh}`_", clear_view=True, switch_session=fresh)
+        return SlashOut(
+            handled=True, text=f"_fresh session `{fresh}`_", clear_view=True, switch_session=fresh
+        )
 
     def _session_lines() -> tuple[list[dict], list[str]]:
         import datetime as _dt
@@ -123,9 +128,15 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         rows = list_sessions(limit=20)
         lines = []
         for i, r in enumerate(rows, 1):
-            when = _dt.datetime.fromtimestamp(r["last_ts"]).strftime("%m-%d %H:%M") if r["last_ts"] else "?"
+            when = (
+                _dt.datetime.fromtimestamp(r["last_ts"]).strftime("%m-%d %H:%M")
+                if r["last_ts"]
+                else "?"
+            )
             cur = " ← current" if r["session"] == session else ""
-            lines.append(f"{i}. `{r['session']}` · {r['count']} msgs · {r['preview'] or '(empty)'} · {when}{cur}")
+            lines.append(
+                f"{i}. `{r['session']}` · {r['count']} msgs · {r['preview'] or '(empty)'} · {when}{cur}"
+            )
         return rows, lines
 
     if cmd == "sessions":
@@ -138,13 +149,20 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
                 idx = int(rest.strip().split()[0]) - 1
                 target = rows[idx]["session"]
             except (ValueError, IndexError):
-                return SlashOut(handled=True, text="usage: `/sessions delete <n>` (see `/sessions`)")
+                return SlashOut(
+                    handled=True, text="usage: `/sessions delete <n>` (see `/sessions`)"
+                )
             n = delete_session(target)
             return SlashOut(handled=True, text=f"_deleted `{target}` ({n} messages)_")
         rows, lines = _session_lines()
         if not lines:
             return SlashOut(handled=True, text="_(no past sessions yet)_")
-        return SlashOut(handled=True, text="**sessions**\n" + "\n".join(lines) + "\n`/resume <n>` to switch · `/sessions delete <n>` to remove")
+        return SlashOut(
+            handled=True,
+            text="**sessions**\n"
+            + "\n".join(lines)
+            + "\n`/resume <n>` to switch · `/sessions delete <n>` to remove",
+        )
 
     if cmd == "resume":
         rows, _ = _session_lines()
@@ -154,7 +172,9 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             return SlashOut(handled=True, text="usage: `/resume <n>` (see `/sessions`)")
         if target == session:
             return SlashOut(handled=True, text=f"_already on `{target}`_")
-        return SlashOut(handled=True, text=f"_resumed `{target}`_", clear_view=True, switch_session=target)
+        return SlashOut(
+            handled=True, text=f"_resumed `{target}`_", clear_view=True, switch_session=target
+        )
 
     if cmd == "yolo":
         state["yolo"] = True
@@ -169,24 +189,32 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             return SlashOut(handled=True, text="usage: `/remember <fact>`")
         from .store import save_memory
 
-        return SlashOut(handled=True, text=f"{save_memory(arg.strip()[:2000])} _{arg.strip()[:120]}_")
+        return SlashOut(
+            handled=True, text=f"{save_memory(arg.strip()[:2000])} _{arg.strip()[:120]}_"
+        )
 
     if cmd == "recall":
         from .store import recall_memories
 
         hits = recall_memories(arg, limit=10)
-        return SlashOut(handled=True, text="\n".join(f"- {h}" for h in hits) if hits else "_(no memories yet)_")
+        return SlashOut(
+            handled=True, text="\n".join(f"- {h}" for h in hits) if hits else "_(no memories yet)_"
+        )
 
     if cmd == "memories":
         from .store import list_memories
 
         hits = list_memories(limit=50)
-        return SlashOut(handled=True, text="\n".join(f"- {h}" for h in hits) if hits else "_(no memories yet)_")
+        return SlashOut(
+            handled=True, text="\n".join(f"- {h}" for h in hits) if hits else "_(no memories yet)_"
+        )
 
     if cmd == "forget":
         from .store import forget_memory
 
-        return SlashOut(handled=True, text=forget_memory(arg) if arg else "usage: `/forget <words>`")
+        return SlashOut(
+            handled=True, text=forget_memory(arg) if arg else "usage: `/forget <words>`"
+        )
 
     if cmd == "todo":
         sub, _, rest = arg.partition(" ")
@@ -196,8 +224,13 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         if sub == "add" and rest.strip():
             return SlashOut(handled=True, text=add_todo(rest.strip()[:500]))
         if sub in ("list", "ls", ""):
-            rows = list_todos(open_only=True)
-            return SlashOut(handled=True, text="\n".join(f"○ #{i} {t}" for i, t, _ in rows) if rows else "_(no open todos)_")
+            todo_rows = list_todos(open_only=True)
+            return SlashOut(
+                handled=True,
+                text="\n".join(f"○ #{i} {t}" for i, t, _ in todo_rows)
+                if todo_rows
+                else "_(no open todos)_",
+            )
         if sub == "done" and rest.strip():
             try:
                 return SlashOut(handled=True, text=complete_todo(int(rest.strip().split()[0])))
@@ -219,10 +252,12 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             n = 15
         from .store import list_shell
 
-        rows = list_shell(limit=max(1, min(n, 50)))
-        if not rows:
+        hist_rows = list_shell(limit=max(1, min(n, 50)))
+        if not hist_rows:
             return SlashOut(handled=True, text="_(no shell history — run `sk hook-install`)_")
-        lines = [f"{'✗'+str(rc) if rc else '✓'} `{c[:100]}`" for _, c, _, rc in reversed(rows)]
+        lines = [
+            f"{'✗' + str(rc) if rc else '✓'} `{c[:100]}`" for _, c, _, rc in reversed(hist_rows)
+        ]
         return SlashOut(handled=True, text="\n".join(lines))
 
     if cmd == "oops":
@@ -241,9 +276,11 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if cmd == "skills":
         from .skills import SKILLS_DIR, list_skills
 
-        rows = list_skills()
-        lines = [f"- **{n}** ({s}b)" for n, s in rows]
-        return SlashOut(handled=True, text=f"`{SKILLS_DIR}`\n" + ("\n".join(lines) if lines else "(none)"))
+        skill_rows = list_skills()
+        lines = [f"- **{n}** ({s}b)" for n, s in skill_rows]
+        return SlashOut(
+            handled=True, text=f"`{SKILLS_DIR}`\n" + ("\n".join(lines) if lines else "(none)")
+        )
 
     if cmd in ("exit", "quit", "q"):
         return SlashOut(handled=True, quit=True)
@@ -261,15 +298,21 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             answers = [m["content"] for m in get_history(session) if m["role"] == "assistant"]
             if not answers:
                 return SlashOut(handled=True, text="_(no answers to copy yet)_")
-            tail = "\n".join(answers[-1].splitlines()[-max(1, n):])
+            tail = "\n".join(answers[-1].splitlines()[-max(1, n) :])
             if not tail.strip():
                 return SlashOut(handled=True, text="_(last answer is empty)_")
             try:
                 method = copy_text(tail)
             except Exception as e:
                 return SlashOut(handled=True, text=f"copy failed ({e}) — `{install_hint()}`")
-            extra = f" — `{install_hint()}` if paste comes up empty" if method == "osc52" and not backends_available() else ""
-            return SlashOut(handled=True, text=f"_copied last {max(1, n)} lines via {method}_{extra}")
+            extra = (
+                f" — `{install_hint()}` if paste comes up empty"
+                if method == "osc52" and not backends_available()
+                else ""
+            )
+            return SlashOut(
+                handled=True, text=f"_copied last {max(1, n)} lines via {method}_{extra}"
+            )
         try:
             n = int((parts or ["1"])[0])
         except ValueError:
@@ -281,7 +324,13 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             method = copy_text(answers[-n])
         except Exception as e:
             return SlashOut(handled=True, text=f"copy failed ({e}) — `{install_hint()}`")
-        extra = f" — `{install_hint()}` if paste comes up empty" if method == "osc52" and not backends_available() else ""
-        return SlashOut(handled=True, text=f"_copied answer {-n if n > 1 else 'last'} via {method}_{extra}")
+        extra = (
+            f" — `{install_hint()}` if paste comes up empty"
+            if method == "osc52" and not backends_available()
+            else ""
+        )
+        return SlashOut(
+            handled=True, text=f"_copied answer {-n if n > 1 else 'last'} via {method}_{extra}"
+        )
 
     return SlashOut(handled=True, text=f"unknown command `/{cmd}` — try `/help`")
