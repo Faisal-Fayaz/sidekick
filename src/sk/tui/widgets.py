@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from rich.segment import Segment
+from rich.style import Style as RichStyle
 from textual.binding import Binding
+from textual.color import Color
 from textual.message import Message
+from textual.strip import Strip
+from textual.style import Style as TextualStyle
 from textual.widgets import RichLog, TextArea
 
 from .helpers import _save_history
@@ -12,12 +17,105 @@ from .helpers import _save_history
 class ChatLog(RichLog):
     """Chat history with working mouse-drag text selection.
 
-    Stock RichLog renders RichVisual, which the base get_selection() can't
-    extract text from — so drag-selection in it copies nothing. We extract
-    from the stored line texts instead.
+    Stock RichLog repaints cached strips and never lays down per-cell offset
+    meta, so the compositor can't derive a drag range (a real drag silently
+    selects the whole log) and the ``screen--selection`` highlight never
+    renders. We fix both here:
+
+    - every returned strip carries ``offset`` meta per segment, so drags
+      resolve to a real substring in the widget's content (row = stored line,
+      col = cell column), and
+    - when the widget has a live selection, the selected cells are painted
+      with the ``screen--selection`` component style.
     """
 
     ALLOW_SELECT = True
+
+    def render_line(self, y: int) -> Strip:
+        scroll_x, scroll_y = self.scroll_offset
+        row = scroll_y + y
+        width = self.scrollable_content_region.width
+        strip = self._render_line(row, scroll_x, width).apply_style(self.rich_style)
+        selection = self.text_selection
+        if selection is not None:
+            span = selection.get_span(row)
+            if span is not None:
+                strip = self._apply_selection_span(strip, span, scroll_x)
+        return self._assign_offsets(strip, row, scroll_x)
+
+    def _assign_offsets(self, strip: Strip, row: int, scroll_x: int) -> Strip:
+        """Attach ``offset`` meta so the compositor can map a drag to cells."""
+        col = scroll_x or 0
+        segments: list[Segment] = []
+        for seg in strip:
+            style = seg.style
+            offset_style = RichStyle.from_meta({"offset": (col, row)})
+            styled = style + offset_style if style is not None else offset_style
+            segments.append(Segment(seg.text, styled, seg.control))
+            col += seg.cell_length
+        return Strip(segments, strip.cell_length)
+
+    def _apply_selection_span(self, strip: Strip, span, scroll_x: int) -> Strip:
+        """Paint ``screen--selection`` over the cells in ``span`` (content cols,
+        already scrolled by ``scroll_x`` on this widget).
+
+        Mirrors how Textual styles Content selections: the translucent
+        selection background is pre-blended over the cell's own background and
+        the text foreground is left untouched, so selected text stays legible.
+        Segments straddling either edge are split at the exact column so the
+        highlight never leaks past the dragged range.
+        """
+        start, end = span
+        width = strip.cell_length
+        sx = max(0, start - scroll_x)
+        ex = width if end < 0 else min(width, end - scroll_x)
+        if sx >= ex:
+            return strip
+        selection_style = TextualStyle.from_styles(
+            self.screen.get_component_styles("screen--selection")
+        )
+        overlay = selection_style.background
+        if overlay is None or overlay.a == 0:
+            return strip
+        fallback_bg = self.rich_style.bgcolor
+        col = 0
+        segments: list[Segment] = []
+
+        def restyled(seg: Segment) -> Segment:
+            base = seg.style.bgcolor if seg.style is not None else fallback_bg
+            base_color = Color.from_rich_color(base) if base is not None else Color.parse("black")
+            blended = base_color + overlay
+            overlay_style = RichStyle(bgcolor=blended.rich_color)
+            style = seg.style + overlay_style if seg.style is not None else overlay_style
+            return Segment(seg.text, style, seg.control)
+
+        for seg in strip:
+            seg_len = seg.cell_length
+            seg_lo, seg_hi = col, col + seg_len
+            if seg_hi > sx and seg_lo < ex:
+                left = max(0, sx - seg_lo)
+                right = min(seg_len, ex - seg_lo)
+                seg_out = seg
+                if left > 0:
+                    pre, seg_out = seg_out.split_cells(left)
+                    if pre.cell_length:
+                        segments.append(pre)
+                    right -= left
+                if right >= seg_out.cell_length:
+                    if seg_out.cell_length:
+                        segments.append(restyled(seg_out))
+                elif right > 0:
+                    mid, post = seg_out.split_cells(right)
+                    if mid.cell_length:
+                        segments.append(restyled(mid))
+                    if post.cell_length:
+                        segments.append(post)
+                elif seg_out.cell_length:
+                    segments.append(seg_out)
+            else:
+                segments.append(seg)
+            col += seg_len
+        return Strip(segments, strip.cell_length)
 
     def get_selection(self, selection) -> tuple[str, str] | None:
         try:

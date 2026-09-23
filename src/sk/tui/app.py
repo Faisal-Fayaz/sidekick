@@ -738,32 +738,45 @@ class SidekickTUI(App):
         selected = self._selected_text()
         if not selected:
             self._last_copied_selection = ""
+            self._clear_log_selection()
             return
         if selected == getattr(self, "_last_copied_selection", None):
+            self._clear_log_selection()
             return
         self._last_copied_selection = selected
-        self._copy_out(selected, "selection")
+        if self._copy_out(selected, "selection"):
+            self._clear_log_selection()
 
-    def _copy_out(self, text: str, what: str) -> None:
-        """Copy via reliable backends, OSC52 fallback with honest warning."""
+    def _clear_log_selection(self) -> None:
+        """Drop the log's screen selection so the drag highlight disappears."""
+        log = self.query_one("#chat-log", RichLog)
+        self.screen.selections = {w: s for w, s in self.screen.selections.items() if w is not log}
+
+    def _copy_out(self, text: str, what: str) -> bool:
+        """Copy text. Returns True on success; confirms via a toast popup."""
         from sk.clip import backends_available, copy_text, install_hint
 
-        log = self.query_one("#chat-log", RichLog)
         if backends_available():
             try:
                 method = copy_text(text)
-                _w(log, f"[{_now()}] copied {what} via {method}")
             except Exception as e:
-                _role(log, "error", f"copy failed ({e})")
-            return
+                _role(self.query_one("#chat-log", RichLog), "error", f"copy failed ({e})")
+                return False
+            self.notify(f"Copied {what} via {method}", title="Copied")
+            return True
         try:
             self.copy_to_clipboard(text)  # driver-safe OSC52
         except Exception as e:
-            _role(log, "error", f"copy failed ({e}) — {install_hint()}")
-            return
-        _role(
-            log, "warn", f"sent via terminal clipboard — {install_hint()} if paste comes up empty"
-        )
+            _role(
+                self.query_one("#chat-log", RichLog),
+                "error",
+                f"copy failed ({e}) — {install_hint()}",
+            )
+            return False
+        hint = install_hint()
+        message = "Sent via terminal clipboard" + (f" — {hint}" if hint else "")
+        self.notify(message, title="Copied via OSC52", severity="warning")
+        return True
 
     def action_copy_last(self) -> None:
         from sk.store import get_history
