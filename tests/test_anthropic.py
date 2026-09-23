@@ -254,3 +254,52 @@ def test_anthropic_preset_and_tiers():
     assert provider_tier("anthropic", "fast", "d") == "claude-haiku-4-5"
     assert provider_tier("anthropic", "smart", "d") == "claude-sonnet-5"
     assert _cfg().effective_base_url() == "https://api.anthropic.com"
+
+
+# --- prompt caching ---
+
+
+def test_cache_breakpoints_system_and_tools():
+    sys_payload, tools = ab._cache_breakpoints(
+        "sys text", [{"name": "a"}, {"name": "b", "input_schema": {}}]
+    )
+    assert isinstance(sys_payload, list)
+    assert sys_payload[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in tools[0]
+    assert tools[1]["cache_control"] == {"type": "ephemeral"}
+    assert tools[1]["name"] == "b"  # definition untouched apart from marker
+
+
+def test_cache_breakpoints_blank_system_and_no_tools():
+    sys_payload, tools = ab._cache_breakpoints("   ", [])
+    assert sys_payload == "" and tools == []
+
+
+def test_loop_sends_cache_markers(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    payloads = []
+
+    def fake_post(base, key, payload, **k):
+        payloads.append(payload)
+        return {"content": [{"type": "text", "text": "cached hi"}], "stop_reason": "end_turn"}
+
+    monkeypatch.setattr(ab, "_post", fake_post)
+    out = ab.run_anthropic_agent("say hi", [], _cfg(), session="s")
+    assert out == "cached hi"
+    sent = payloads[0]
+    assert sent["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert sent["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_cache_usage_block_ignored_gracefully(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+
+    def fake_post(base, key, payload, **k):
+        return {
+            "content": [{"type": "text", "text": "hi"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "cache_read_input_tokens": 900},
+        }
+
+    monkeypatch.setattr(ab, "_post", fake_post)
+    assert ab.run_anthropic_agent("say hi", [], _cfg(), session="s") == "hi"

@@ -126,6 +126,25 @@ def openai_messages_to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]
     return ("\n\n".join(system_parts), [{"role": r, "content": b} for r, b in merged])
 
 
+def _cache_breakpoints(system: str, tools: list[dict]) -> tuple[str | list[dict], list[dict]]:
+    """Attach prompt-caching breakpoints: system block + end of tools definition.
+
+    System + tools are static within a session, so Anthropic serves repeats
+    from cache (up to 10x cheaper). Returns "" for blank system (omit it).
+    Minimum cacheable length (~1k tokens) means tiny prompts simply never
+    form a cache entry — harmless. OpenAI-compatible providers cache matching
+    prefixes automatically server-side, so this backend is the only place
+    markers are needed.
+    """
+    sys_payload: str | list[dict] = ""
+    if system.strip():
+        sys_payload = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    if tools:
+        tools = [dict(t) for t in tools]
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    return (sys_payload, tools)
+
+
 def _post(base_url: str, api_key: str, payload: dict, timeout: float = 300.0) -> dict:
     """POST /v1/messages. Honors Retry-After on 429/529 (2 retries). Returns decoded body."""
     import time
@@ -194,6 +213,7 @@ def run_anthropic_agent(
         build_messages(user_msg, history, cfg, auto_approve)
     )
     tools = openai_tools_to_anthropic(TOOLS_SCHEMA)
+    system_payload, tools = _cache_breakpoints(system, tools)
     max_tokens = 800
     seen: dict[str, str] = {}
     final_text = ""
@@ -205,8 +225,8 @@ def run_anthropic_agent(
             "temperature": cfg.temperature,
             "messages": messages,
         }
-        if system.strip():
-            payload["system"] = system
+        if system_payload:
+            payload["system"] = system_payload
         if tools:
             payload["tools"] = tools
         try:
