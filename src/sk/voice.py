@@ -8,10 +8,12 @@ Everything stays local.
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 STT_MODEL_DEFAULT = "tiny"
@@ -238,11 +240,104 @@ def install_stt(timeout: int = 900) -> tuple[bool, str]:
 
 _model_cache: dict[str, object] = {}
 
+_spawn_guard_installed = False
+
+
+def _sanitize_pass_fds(fds) -> tuple[int, ...]:
+    """Dedupe/sort ``pass_fds`` and drop negatives/stale (closed) descriptors.
+
+    ``multiprocessing`` spawn hands its pipe/tracker fds straight to
+    ``_posixsubprocess.fork_exec`` as ``fds_to_keep``. CPython rejects the list
+    with ``ValueError: bad value(s) in fds_to_keep`` when it holds a duplicate,
+    is unsorted, or names a descriptor that has since been closed (both are
+    common when low fd numbers get recycled on macOS). None of those states
+    are useful to pass, so the list is cleaned here instead of crashing.
+    """
+    seen: set[int] = set()
+    kept: list[int] = []
+    for fd in fds:
+        try:
+            fd_int = int(fd)
+        except (TypeError, ValueError):
+            continue
+        if fd_int < 0 or fd_int in seen:
+            continue
+        try:
+            os.fstat(fd_int)
+        except OSError:
+            continue  # already closed: nothing to pass into the child
+        seen.add(fd_int)
+        kept.append(fd_int)
+    return tuple(sorted(kept))
+
+
+def _install_spawn_guard() -> None:
+    """Make multiprocessing spawns immune to ``bad value(s) in fds_to_keep``.
+
+    faster-whisper/ctranslate2 (or any other dependency loaded at transcribe
+    time) may start a ``multiprocessing`` child; ``spawnv_passfds`` forwards its
+    raw fd list unchanged. Installed once and only around STT work, so the rest
+    of the app is untouched.
+    """
+    global _spawn_guard_installed
+    if _spawn_guard_installed:
+        return
+    _spawn_guard_installed = True
+    try:
+        import multiprocessing.util as _util
+    except Exception:
+        return
+    original = getattr(_util, "spawnv_passfds", None)
+    if original is None:
+        return
+
+    def _guarded(path, args, passfds):
+        return original(path, args, _sanitize_pass_fds(passfds))
+
+    try:
+        _util.spawnv_passfds = _guarded  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+
+def _log_traceback(where: str, exc: BaseException) -> None:
+    """Append the full traceback so a swallowed one-liner stays debuggable.
+
+    Callers reduce transcribe failures to ``str(exc)`` (the message only), which
+    hid the genuine crash site for ``bad value(s) in fds_to_keep``. Best effort;
+    never raises.
+    """
+    import traceback
+
+    try:
+        from sk.config import CONFIG_DIR
+
+        path = CONFIG_DIR / "voice-errors.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(f"\n=== {where} @ {time.time():.0f} ===\n")
+            f.writelines(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    except Exception:
+        pass
+
 
 def transcribe(wav_path: str, model_size: str = STT_MODEL_DEFAULT) -> str:
-    """Transcribe wav with local faster-whisper (int8 CPU). Downloads model once."""
-    import os
+    """Transcribe wav with local faster-whisper (int8 CPU). Downloads model once.
 
+    A spawn guard is installed first so a dependency's multiprocessing spawn
+    cannot die on duplicate/recycled descriptors, and any failure is logged with
+    its full traceback to ``~/.sidekick/voice-errors.log`` (callers only show the
+    one-line message).
+    """
+    _install_spawn_guard()
+    try:
+        return _transcribe_impl(wav_path, model_size)
+    except Exception as exc:
+        _log_traceback("transcribe", exc)
+        raise
+
+
+def _transcribe_impl(wav_path: str, model_size: str) -> str:
     try:
         size = os.path.getsize(wav_path)
     except OSError:

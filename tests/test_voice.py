@@ -186,6 +186,9 @@ def test_transcribe_stubbed(monkeypatch, tmp_path):
 
 
 def test_transcribe_missing_dep(monkeypatch, tmp_path):
+    import sk.config as _cfg
+
+    monkeypatch.setattr(_cfg, "CONFIG_DIR", tmp_path)
     monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
     big = tmp_path / "big.wav"
     big.write_bytes(b"RIFF" + b"\x00" * 6000)
@@ -272,7 +275,10 @@ def test_mic_level_good(monkeypatch, tmp_path):
     assert res["verdict"] == "good" and res["ok"] is True
 
 
-def test_transcribe_empty_file(tmp_path):
+def test_transcribe_empty_file(tmp_path, monkeypatch):
+    import sk.config as _cfg
+
+    monkeypatch.setattr(_cfg, "CONFIG_DIR", tmp_path)
     small = tmp_path / "tiny.wav"
     small.write_bytes(b"RIFF")
     import pytest
@@ -315,3 +321,55 @@ def test_install_stt_success(monkeypatch):
     ok, _ = voice.install_stt()
     assert ok is True
     assert seen["argv"][0] in ("uv", _sys.executable)
+
+
+def test_sanitize_pass_fds():
+    """Dupes/negatives/closed fds are dropped; valid ones survive sorted."""
+    import os as _os
+
+    probe = _os.open("/dev/null", _os.O_RDONLY)
+    stale = _os.dup(probe)
+    _os.close(stale)  # numeric slot now closed
+    try:
+        cleaned = voice._sanitize_pass_fds([probe, probe, -1, stale, 1, probe])
+        assert cleaned == (1, probe)
+    finally:
+        _os.close(probe)
+
+
+def test_spawn_guard_sanitizes_before_spawn(monkeypatch):
+    """spawnv_passfds receives a duplicate -> sanitized tuple -> no ValueError."""
+    import multiprocessing.util as _util
+    import os as _os
+
+    probe = _os.open("/dev/null", _os.O_RDONLY)
+    received: list = []
+
+    def spy(path, args, passfds):
+        received.append(tuple(passfds))
+        return "mocked"
+
+    try:
+        monkeypatch.setattr(_util, "spawnv_passfds", spy)
+        voice._spawn_guard_installed = False
+        voice._install_spawn_guard()
+        # a duplicate fd list would crash _posixsubprocess.fork_exec unguarded
+        _util.spawnv_passfds(b"/bin/true", [b"/bin/true"], (probe, probe))
+        assert received == [(probe,)]
+    finally:
+        _os.close(probe)
+
+
+def test_transcribe_logs_full_traceback(monkeypatch, tmp_path):
+    """The swallowed one-liner gets a full traceback in voice-errors.log."""
+    import sk.config as _cfg
+
+    monkeypatch.setattr(_cfg, "CONFIG_DIR", tmp_path)
+    import pytest
+
+    with pytest.raises(RuntimeError, match="recording file missing"):
+        voice.transcribe(str(tmp_path / "nope.wav"))
+    log = (tmp_path / "voice-errors.log").read_text()
+    assert "=== transcribe @ " in log
+    assert "Traceback (most recent call last)" in log
+    assert "Recording file missing" in log or "runtime" in log.lower()
