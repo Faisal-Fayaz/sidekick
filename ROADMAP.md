@@ -24,15 +24,6 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Queued → `v0.5.0` (Smarter agent: small models that feel big)
-
-GitHub milestone: [`v0.5.0`](https://github.com/Faisal01011/sidekick/milestones).
-
-- [ ] Parallel tool calls — run independent reads concurrently (~2–3x latency win on grounded answers).
-- [ ] Prompt caching — cache the repeated system prompt (Anthropic + compatible APIs). 10x cheaper, faster agent turns.
-- [ ] Plan-review step — show the multi-tool plan, ask `[y/N]` before destructive/foreign actions. The make-or-break trust feature.
-- [ ] Session compaction — summarize-and-trim long sessions so small-context local models don't degrade. Serves small-model-friendly directly.
-
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
@@ -84,6 +75,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.5.0` — parallel tool dispatch, Anthropic prompt caching, plan-review gate, rolling session compaction (schema v4).
 - `v0.4.0` — per-project `.sidekick.toml` + memory namespaces (schema v3), `sk export` transcripts, `sk upgrade` self-update, `sk init` wizard, macOS cwd-discovery test fix.
 - `v0.3.0` — `sk audit` + `tool_runs` schema v2, native Anthropic provider, mypy cleanup + tighter baseline, connect picker fix, API error surfacing, bare-`sk` TUI default, `tui/` split.
 - `v0.1.2` — release-job fix (checkout before tagging).
