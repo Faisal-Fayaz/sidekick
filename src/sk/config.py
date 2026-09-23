@@ -58,7 +58,7 @@ def load_project_values(path: str | Path | None) -> tuple[dict[str, object], lis
     if not isinstance(raw, dict):
         return ({}, [f"ignoring malformed {path}: top level must be a table"])
     vals: dict[str, object] = {}
-    for key in ("provider", "model", "max_steps", "temperature"):
+    for key in ("provider", "model", "max_steps", "temperature", "history_budget_tokens"):
         if key in raw:
             vals[key] = raw[key]
     for key in PROJECT_BLOCKED_KEYS:
@@ -180,6 +180,7 @@ DEFAULTS: dict[str, str | int | float] = {
     "api_key": "",
     "max_steps": 5,
     "temperature": 0.2,
+    "history_budget_tokens": 3000,
 }
 
 
@@ -191,6 +192,7 @@ class Config:
     api_key: str = str(DEFAULTS["api_key"])
     max_steps: int = int(DEFAULTS["max_steps"])
     temperature: float = float(DEFAULTS["temperature"])
+    history_budget_tokens: int = int(DEFAULTS["history_budget_tokens"])
     # project layer (from .sidekick.toml; empty when outside a project)
     project_root: str = ""
     project_docs: tuple[str, ...] = ()
@@ -247,6 +249,9 @@ class Config:
             api_key=str(api_key or vals.get("api_key", "")),
             max_steps=int(str(vals.get("max_steps", DEFAULTS["max_steps"]))),
             temperature=float(str(vals.get("temperature", DEFAULTS["temperature"]))),
+            history_budget_tokens=int(
+                str(vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]))
+            ),
             project_root=str(project_file.parent) if project_file else "",
             project_docs=tuple(vals.get("project_docs", [])),  # type: ignore[arg-type]
             memory_namespace=str(vals.get("memory_namespace", "")),
@@ -284,6 +289,7 @@ class Config:
             "api_key": self.api_key,
             "max_steps": self.max_steps,
             "temperature": self.temperature,
+            "history_budget_tokens": self.history_budget_tokens,
         }
         if _HAS_TOMLI_W:
             with open(CONFIG_PATH, "wb") as f:

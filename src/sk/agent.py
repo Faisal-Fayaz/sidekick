@@ -761,6 +761,102 @@ def _stream_chat(
     return _Msg(acc_text, tool_calls, acc_reason, finish)
 
 
+def estimate_tokens(text: str) -> int:
+    """~4 chars/token. Documented approximation: exact tokenizers are
+    model-specific new deps, and the codebase already budgets by chars."""
+    return max(1, (len(text or "") + 3) // 4)
+
+
+_SUMMARY_PROMPT = (
+    "Condense this chat history into a rolling summary for future turns. "
+    "Reply with ONLY the summary, under 400 words: key facts, user preferences, "
+    "decisions made, open todos and questions."
+)
+
+
+def _render_turns(msgs: list[dict]) -> str:
+    return "\n".join(f"{m.get('role', '?')}: {m.get('content', '')}" for m in msgs)
+
+
+def _as_role_content(msgs: list[dict]) -> list[dict]:
+    return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in msgs]
+
+
+def compact_history(
+    prior: str, msgs: list[dict], budget_tokens: int, summarizer
+) -> tuple[list[dict], str | None]:
+    """Budget-bounded prompt view of oldest-first turns. Pure logic; summarizer
+    does the single model call. Returns (prompt_msgs, new_summary|None).
+
+    Under budget: everything passes through, no summarizer call. Over budget:
+    task anchor + newest turns fitting half the budget stay verbatim, the
+    middle folds into the prior summary. Empty middle or summarizer failure
+    falls back to plain truncation (compaction must never break a turn).
+    """
+    as_role = _as_role_content(msgs)
+    base = (
+        [{"role": "user", "content": f"[Session summary so far]:\n{prior}"}]
+        if (prior or "").strip()
+        else []
+    )
+    if estimate_tokens(_render_turns(base + as_role)) <= budget_tokens:
+        return (base + as_role, None)
+    n = len(msgs)
+    if n == 0:
+        return (base, None)
+    ai = next((i for i, m in enumerate(msgs) if m.get("role") == "user"), 0)
+    half = max(500, budget_tokens // 2)
+    acc, ri = 0, n
+    while ri > 0 and (acc + estimate_tokens(msgs[ri - 1].get("content", "")) <= half or ri > n - 2):
+        acc += estimate_tokens(msgs[ri - 1].get("content", ""))
+        ri -= 1
+    anchor = [] if ai >= ri else [msgs[ai]]
+    middle = msgs[ai + 1 : ri]
+    if not middle:
+        return (base + _as_role_content(anchor + msgs[ri:]), None)
+    context = (prior + "\n" if (prior or "").strip() else "") + _render_turns(middle)
+    try:
+        new_summary = summarizer(context).strip()
+    except Exception:
+        return (base + _as_role_content(anchor + msgs[ri:]), None)
+    if not new_summary:
+        return (base + _as_role_content(anchor + msgs[ri:]), None)
+    out = [{"role": "user", "content": f"[Session summary so far]:\n{new_summary}"}]
+    out += _as_role_content(anchor + msgs[ri:])
+    return (out, new_summary)
+
+
+def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> list[dict]:
+    """Rolling-compaction view for one turn over the full session. Never raises.
+
+     Reads the prior summary + watermark, compacts only new overflow, persists
+     the merged summary. Falls back to the passed history on any failure.
+    DB history stays complete — compaction is a view, never destructive."""
+    try:
+        budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        if not (session or "").strip():
+            prompt, _ = compact_history("", history, budget, summarize_fn)
+            return prompt
+        from .store import get_history_full, get_summary, save_summary
+
+        full = get_history_full(session)
+        if not full:
+            return history
+        prior, up_to = get_summary(session)
+        uncovered = [m for m in full if m.get("id", 0) > up_to]
+        if not uncovered:
+            if (prior or "").strip():
+                return [{"role": "user", "content": f"[Session summary so far]:\n{prior}"}]
+            return history
+        prompt, new_summary = compact_history(prior, uncovered, budget, summarize_fn)
+        if new_summary is not None:
+            top = max([m.get("id", 0) for m in full] + [up_to])
+            save_summary(session, new_summary, top)
+        return prompt
+    except Exception:
+        return history
+
+
 def build_messages(
     user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False
 ) -> list[dict]:
@@ -898,6 +994,31 @@ def run_agent(
             review_plan=review_plan,
         )
     client = get_client(cfg)
+    # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
+    # Token cap is provider-aware: tight on CPU offload, roomy on cloud GPUs
+    # so plans don't get cut off mid-tool-call.
+    # (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
+    extra = _extra_body(cfg)
+    max_tokens = 350 if cfg.provider in ("ollama", "lmstudio") else 800
+
+    def _summarize(text: str) -> str:
+        m = _stream_chat(
+            client,
+            cfg.model,
+            [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
+            None,
+            cfg.temperature,
+            400,
+            extra,
+            None,
+            None,
+        )
+        out = ((m.content or "") + "\n" + (m.reasoning or "")).strip()
+        if not out:
+            raise RuntimeError("empty summary")
+        return out
+
+    history = prepare_history(session, history, cfg, _summarize)
     messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
     try:
         from .store import log_tool_run
@@ -914,12 +1035,6 @@ def run_agent(
         pass
 
     final_text = ""
-    # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
-    # Token cap is provider-aware: tight on CPU offload, roomy on cloud GPUs
-    # so plans don't get cut off mid-tool-call.
-    # (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
-    extra = _extra_body(cfg)
-    max_tokens = 350 if cfg.provider in ("ollama", "lmstudio") else 800
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
     for _ in range(cfg.max_steps):

@@ -13,7 +13,8 @@ DB_PATH = Path.home() / ".sidekick" / "history.db"
 # v1 = base tables (messages/memories/todos/shell_history + memories_fts).
 # v2 = tool_runs audit log (session, tool, target, approved, provider, host).
 # v3 = memories.namespace for per-project scoping (Config.load publishes it).
-SCHEMA_VERSION = 3
+# v4 = session_summaries rolling compaction watermarks.
+SCHEMA_VERSION = 4
 
 # Process-wide memory namespace, published by Config.load() from the active
 # project file (or "" outside projects). Callers may pass an explicit
@@ -116,6 +117,9 @@ def _migrate(conn: sqlite3.Connection) -> int:
     if v < 3:
         _migrate_2_to_3(conn)
         v = 3
+    if v < 4:
+        _migrate_3_to_4(conn)
+        v = 4
     _set_version(conn, v)
     conn.commit()
     return v
@@ -143,6 +147,18 @@ def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
     cols = [row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()]
     if "namespace" not in cols:
         conn.execute("ALTER TABLE memories ADD COLUMN namespace TEXT NOT NULL DEFAULT ''")
+
+
+def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
+    """v4: session_summaries rolling compaction watermarks. Idempotent."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS session_summaries (
+            session TEXT PRIMARY KEY,
+            summary TEXT NOT NULL DEFAULT '',
+            up_to_id INTEGER NOT NULL DEFAULT 0,
+            ts REAL NOT NULL
+        )"""
+    )
 
 
 def _connect() -> sqlite3.Connection:
@@ -245,6 +261,51 @@ def get_history(session: str, limit: int = 20) -> list[dict]:
         return [{"role": r, "content": c} for r, c in reversed(rows)]
     finally:
         conn.close()
+
+
+def get_history_full(session: str, after_id: int = 0, limit: int = 2000) -> list[dict]:
+    """All messages with ids (for compaction watermarks). Oldest-first."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT id, role, content FROM messages WHERE session=? AND id > ?"
+            " ORDER BY id ASC LIMIT ?",
+            (session, after_id, limit),
+        )
+        return [{"id": i, "role": r, "content": c} for i, r, c in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_summary(session: str) -> tuple[str, int]:
+    """Rolling summary + watermark (up_to_id). ("", 0) when never compacted."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT summary, up_to_id FROM session_summaries WHERE session=?", (session,)
+        )
+        row = cur.fetchone()
+        return (row[0], row[1]) if row else ("", 0)
+    finally:
+        conn.close()
+
+
+def save_summary(session: str, summary: str, up_to_id: int) -> None:
+    """Upsert rolling summary. Best-effort: never raises (compaction is optional)."""
+    try:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO session_summaries (session, summary, up_to_id, ts)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT(session) DO UPDATE SET"
+                " summary=excluded.summary, up_to_id=excluded.up_to_id, ts=excluded.ts",
+                (session, summary, up_to_id, time.time()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def save_memory(content: str, namespace: str | None = None) -> str:

@@ -193,7 +193,13 @@ def run_anthropic_agent(
     review_plan=None,
 ) -> str:
     """One agent turn over the native Messages API. Same contract as run_agent."""
-    from .agent import _maybe_review_plan, _provider_host, build_messages
+    from .agent import (
+        _SUMMARY_PROMPT,
+        _maybe_review_plan,
+        _provider_host,
+        build_messages,
+        prepare_history,
+    )
     from .store import log_tool_run
     from .tools import TOOLS_SCHEMA
 
@@ -210,6 +216,27 @@ def run_anthropic_agent(
         )
     except Exception:
         pass
+
+    def _summarize(text: str) -> str:
+        resp = _post(
+            cfg.effective_base_url(),
+            cfg.effective_api_key(),
+            {
+                "model": cfg.model,
+                "max_tokens": 400,
+                "messages": [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
+            },
+        )
+        out = "".join(
+            b.get("text", "")
+            for b in (resp.get("content", []) if isinstance(resp, dict) else [])
+            if isinstance(b, dict) and b.get("type") == "text"
+        ).strip()
+        if not out:
+            raise RuntimeError("empty summary")
+        return out
+
+    history = prepare_history(session, history, cfg, _summarize)
     system, messages = openai_messages_to_anthropic(
         build_messages(user_msg, history, cfg, auto_approve)
     )

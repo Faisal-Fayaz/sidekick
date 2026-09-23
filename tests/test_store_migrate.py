@@ -20,7 +20,7 @@ def test_fresh_db_stamped_current(tmp_path, monkeypatch):
     conn = store._connect()
     conn.close()
     assert _version(db) == store.SCHEMA_VERSION
-    assert store.SCHEMA_VERSION == 3
+    assert store.SCHEMA_VERSION == 4
 
 
 def test_preversioning_db_upgrades_preserving_data(tmp_path, monkeypatch):
@@ -89,7 +89,30 @@ def test_v2_to_v3_adds_namespace_preserving_data(tmp_path, monkeypatch):
     store.save_memory("new fact")
     assert set(store.recall_memories("fact")) == {"old fact", "new fact"}
     store.set_default_namespace("")
-    assert _version(db) == 3
+    assert _version(db) == store.SCHEMA_VERSION
+
+
+def test_v3_to_v4_adds_summaries_preserving_data(tmp_path, monkeypatch):
+    db = tmp_path / "history.db"
+    monkeypatch.setattr(store, "DB_PATH", db)
+    # true v3 db: no session_summaries table, stamped 3, with messages
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " session TEXT, role TEXT, content TEXT, ts REAL)"
+    )
+    conn.execute(
+        "INSERT INTO messages (session, role, content, ts) VALUES ('s', 'user', 'hi', 1.0)"
+    )
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+
+    assert store.get_summary("s") == ("", 0)
+    store.save_summary("s", "greeting exchanged", 1)
+    assert store.get_summary("s") == ("greeting exchanged", 1)
+    assert store.get_history("s") == [{"role": "user", "content": "hi"}]
+    assert _version(db) == 4
 
 
 def test_newer_db_left_untouched(tmp_path, monkeypatch):
