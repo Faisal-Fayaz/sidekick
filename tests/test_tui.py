@@ -974,3 +974,90 @@ def test_mic_roundtrip(monkeypatch):
 
 def test_mic_no_stt_hint(monkeypatch):
     _run(_pilot_mic_no_stt(monkeypatch))
+
+
+async def _pilot_status_bar():
+    from textual.widgets import Static
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        bar = app.query_one("#status-bar", Static)
+        assert bar.display
+        text = str(bar.render())
+        assert app.sub_title in text  # bar mirrors sub_title (session shown short)
+        app._stats = "12s · ~3tok"
+        app._sub()
+        await pilot.pause()
+        assert "12s" in str(bar.render())
+
+
+async def _pilot_sessions_drawer(monkeypatch):
+    import sk.store as store
+    from textual.widgets import ListView
+
+    from sk.tui import ChatArea
+    from sk.tui import SidekickTUI as _T
+
+    store.save_message("drawer-a", "user", "hello alpha")
+    store.save_message("drawer-b", "user", "hello beta")
+    app = _T()
+    async with app.run_test() as pilot:
+        drawer = app.query_one("#sessions-drawer", ListView)
+        area = app.query_one("#chat-input", ChatArea)
+        assert not drawer.display
+        await pilot.press("f3")
+        await pilot.pause()
+        assert drawer.display
+        assert set(app._drawer_sessions) >= {"drawer-a", "drawer-b"}
+        # select a row -> switches session and renders its tail
+        drawer.index = app._drawer_sessions.index("drawer-b")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.session == "drawer-b"
+        assert not drawer.display  # auto-hides after select
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "hello beta" in blob
+        # esc closes an open drawer and refocuses input
+        await pilot.press("f3")
+        await pilot.pause()
+        assert drawer.display
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not drawer.display
+        assert area.has_focus
+
+
+async def _pilot_drawer_lists_new_session(monkeypatch):
+    import sk.store as store
+    from textual.widgets import ListView
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        drawer = app.query_one("#sessions-drawer", ListView)
+        await pilot.press("f3")
+        await pilot.pause()
+        before = set(app._drawer_sessions)
+        await pilot.press("f3")  # close
+        await pilot.pause()
+        store.save_message("drawer-fresh", "user", "brand new")
+        await pilot.press("f3")  # reopen refreshes
+        await pilot.pause()
+        assert drawer.display
+        assert "drawer-fresh" in set(app._drawer_sessions) - before
+
+
+def test_status_bar():
+    _run(_pilot_status_bar())
+
+
+def test_sessions_drawer():
+    _run(_pilot_sessions_drawer(None))
+
+
+def test_drawer_lists_new_session():
+    _run(_pilot_drawer_lists_new_session(None))

@@ -9,7 +9,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.widgets import Footer, Header, Label, ListItem, ListView, RichLog, Static, TextArea
+from textual.widgets import Header, Label, ListItem, ListView, RichLog, Static, TextArea
 
 from .helpers import _load_history, _now, _role, _rule, _w, is_affirmative, log_error
 from .theme import install_sidekick_theme
@@ -27,6 +27,7 @@ class SidekickTUI(App):
         ("ctrl+end", "scroll_log_bottom", "bottom"),
         ("f1", "toggle_help", "help"),
         ("f2", "toggle_theme", "theme"),
+        ("f3", "toggle_sessions", "sessions"),
         ("escape", "close_help", "close"),
     ]
     CSS = """
@@ -39,6 +40,8 @@ class SidekickTUI(App):
     ChatArea:focus { border: solid $primary; }
     #mic-status { width: 22; height: 5; border: solid $primary-muted; color: $text-muted; content-align: center middle; }
     #mic-status.recording { border: solid $error; color: $error; }
+    #status-bar { height: 1; color: $text-muted; background: $surface; }
+    #sessions-drawer { dock: left; width: 44; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     """
 
     def __init__(self, model: str = "", session: str = ""):
@@ -55,6 +58,7 @@ class SidekickTUI(App):
         self._stats: str = ""
         self._pending_approval: dict[str, object] | None = None
         self._plan_approved: frozenset[str] | None = None
+        self._drawer_sessions: list[str] = []
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -67,6 +71,7 @@ class SidekickTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ListView(id="sessions-drawer")
         yield ChatLog(id="chat-log", wrap=True, highlight=True)
         yield TextArea(id="live", read_only=True, show_line_numbers=False)
         yield ListView(id="slash-list")
@@ -74,7 +79,7 @@ class SidekickTUI(App):
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
             yield Static("ctrl+g\nto talk", id="mic-status")
-        yield Footer()
+        yield Static("", id="status-bar")
 
     def _help_text(self) -> str:
         from textual.binding import Binding
@@ -135,7 +140,91 @@ class SidekickTUI(App):
             pass
 
     def action_close_help(self) -> None:
-        self.close_help_if_open()
+        if self.close_help_if_open():
+            return
+        self._hide_sessions_drawer()
+
+    def _sessions_visible(self) -> bool:
+        try:
+            return bool(self.query_one("#sessions-drawer", ListView).display)
+        except Exception:
+            return False
+
+    def _refresh_sessions(self) -> None:
+        from sk.store import list_sessions
+
+        try:
+            lst = self.query_one("#sessions-drawer", ListView)
+        except Exception:
+            return
+        try:
+            rows = list_sessions(limit=20)
+        except Exception:
+            rows = []
+        self._drawer_sessions = [r["session"] for r in rows]
+        lst.clear()
+        for r in rows:
+            mark = "● " if r["session"] == self.session else "○ "
+            lst.append(ListItem(Label(f"{mark}{r['preview'][:32]} ({r['count']})")))
+
+    def action_toggle_sessions(self) -> None:
+        try:
+            lst = self.query_one("#sessions-drawer", ListView)
+        except Exception:
+            return
+        if lst.display:
+            self._hide_sessions_drawer()
+            return
+        self._refresh_sessions()
+        lst.styles.display = "block"
+        try:
+            lst.focus()
+        except Exception:
+            pass
+
+    def _hide_sessions_drawer(self) -> None:
+        try:
+            self.query_one("#sessions-drawer", ListView).styles.display = "none"
+        except Exception:
+            pass
+        try:
+            self.query_one("#chat-input", ChatArea).focus()
+        except Exception:
+            pass
+
+    @on(ListView.Selected, "#sessions-drawer")
+    def _sessions_chosen(self, ev: ListView.Selected) -> None:
+        try:
+            idx = ev.list_view.index if ev.list_view.index is not None else 0
+            session_id = self._drawer_sessions[idx]
+        except Exception:
+            return
+        self._hide_sessions_drawer()
+        self._show_session(session_id, "")
+
+    def _show_session(self, session_id: str, notice: str = "") -> None:
+        """Adopt a session + render its tail. Shared by /resume and the drawer."""
+        from sk.store import get_history as _gh
+
+        log = self.query_one("#chat-log", RichLog)
+        self.session = session_id
+        self._sub()
+        log.clear()
+        _role(log, "sys", f"now on `{self.session}`")
+        for m in _gh(self.session)[-10:]:
+            role = "you" if m["role"] == "user" else "sidekick"
+            if role == "sidekick":
+                _role(log, role, "")
+                try:
+                    from rich.markdown import Markdown
+
+                    log.write(Markdown(m["content"][:1500]))
+                except Exception:
+                    _role(log, role, m["content"][:1500])
+            else:
+                _role(log, role, m["content"][:1500])
+        if notice:
+            _role(log, "", notice)
 
     def close_help_if_open(self) -> bool:
         """Hide the help panel if visible. Returns True when it did."""
@@ -465,6 +554,14 @@ class SidekickTUI(App):
         prov = f"{cfg.provider} · " if cfg.provider not in ("ollama", "") else ""
         short = self.session[-13:] if len(self.session) > 16 else self.session
         self.sub_title = f"{prov}{model} · {mode} · {short} · /help{tail}"
+        self._render_status_bar()
+
+    def _render_status_bar(self) -> None:
+        """Mirror sub_title into the bottom status strip. Best effort."""
+        try:
+            self.query_one("#status-bar", Static).update(self.sub_title)
+        except Exception:
+            pass
 
     def _approve(self, name: str, args: dict) -> bool:
         """Approval gate for worker threads. Reads auto-pass; writes either
@@ -748,26 +845,7 @@ class SidekickTUI(App):
                 self.exit()
                 return
             if out.switch_session:
-                from sk.store import get_history as _gh
-
-                self.session = out.switch_session
-                self._sub()
-                log.clear()
-                _role(log, "sys", f"now on `{self.session}`")
-                for m in _gh(self.session)[-10:]:
-                    role = "you" if m["role"] == "user" else "sidekick"
-                    if role == "sidekick":
-                        _role(log, role, "")
-                        try:
-                            from rich.markdown import Markdown
-
-                            log.write(Markdown(m["content"][:1500]))
-                        except Exception:
-                            _role(log, role, m["content"][:1500])
-                    else:
-                        _role(log, role, m["content"][:1500])
-                if out.text:
-                    _role(log, "", out.text)
+                self._show_session(out.switch_session, out.text)
                 return
             if out.clear_view:
                 log.clear()

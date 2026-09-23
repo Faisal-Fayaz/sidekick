@@ -49,5 +49,11 @@ async def main() -> None:
         app.save_screenshot(f"docs/tui-chat{SUFFIX}.svg")
         print("shot 2: conversation")
 
+        # 3. sessions drawer open (whatever live sessions exist; empty is fine)
+        app.action_toggle_sessions()
+        await pilot.pause()
+        app.save_screenshot(f"docs/tui-sessions{SUFFIX}.svg")
+        print("shot 3: sessions drawer")
+
 
 asyncio.run(main())
