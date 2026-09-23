@@ -430,10 +430,22 @@ def test_tool_unsupported_falls_back_to_text_tools(monkeypatch, tmp_path):
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     agent._tools_unsupported.clear()
-    cfg = Config(model="no-tools-model", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
+    cfg = Config(
+        model="no-tools-model", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0
+    )
     calls = {"n": 0, "tools": [None]}
 
-    def fake_stream(client, model, messages, tools, temperature, max_tokens, extra, on_token=None, on_reasoning=None):
+    def fake_stream(
+        client,
+        model,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        extra,
+        on_token=None,
+        on_reasoning=None,
+    ):
         calls["n"] += 1
         calls["tools"].append(tools)
         if calls["n"] == 1:
@@ -461,10 +473,22 @@ def test_tool_unsupported_cached_between_turns(monkeypatch, tmp_path):
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     agent._tools_unsupported.add("no-tools-model")
-    cfg = Config(model="no-tools-model", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
+    cfg = Config(
+        model="no-tools-model", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0
+    )
     seen = {"tools_arg": "unset"}
 
-    def fake_stream(client, model, messages, tools, temperature, max_tokens, extra, on_token=None, on_reasoning=None):
+    def fake_stream(
+        client,
+        model,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        extra,
+        on_token=None,
+        on_reasoning=None,
+    ):
         seen["tools_arg"] = tools
         return agent._Msg("ok", None, "", "stop")
 

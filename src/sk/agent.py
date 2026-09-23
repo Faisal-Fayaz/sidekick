@@ -1063,7 +1063,17 @@ def run_agent(
     tools_enabled = cfg.model not in _tools_unsupported
     for _ in range(cfg.max_steps):
         try:
-            msg = _stream_chat(client, cfg.model, messages, TOOLS_SCHEMA if tools_enabled else None, cfg.temperature, max_tokens, extra, on_token, on_reasoning)
+            msg = _stream_chat(
+                client,
+                cfg.model,
+                messages,
+                TOOLS_SCHEMA if tools_enabled else None,
+                cfg.temperature,
+                max_tokens,
+                extra,
+                on_token,
+                on_reasoning,
+            )
         except Exception as e:
             if tools_enabled and _tools_rejected(e):
                 _tools_unsupported.add(cfg.model)
