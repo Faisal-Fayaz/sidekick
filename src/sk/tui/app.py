@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from rich.markdown import Markdown
+from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -55,6 +56,7 @@ class SidekickTUI(App):
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
         self._live_n: int = 0
+        self._live_rendered_at: float = 0.0
         self._stats: str = ""
         self._pending_approval: dict[str, object] | None = None
         self._plan_approved: frozenset[str] | None = None
@@ -73,7 +75,7 @@ class SidekickTUI(App):
         yield Header()
         yield ListView(id="sessions-drawer")
         yield ChatLog(id="chat-log", wrap=True, highlight=True)
-        yield TextArea(id="live", read_only=True, show_line_numbers=False)
+        yield RichLog(id="live", wrap=True, highlight=False)
         yield ListView(id="slash-list")
         yield RichLog(id="help-panel", wrap=True, highlight=False)
         with Horizontal(id="input-row"):
@@ -704,17 +706,22 @@ class SidekickTUI(App):
         return pending
 
     def _ask_approval(self, name: str, path: str, preview: str, timeout: int = 300) -> None:
+        from rich.panel import Panel as _Panel
         from rich.text import Text as _Text
 
+        from .theme import active_roles
+
+        roles = active_roles()
+        warn_color = roles.get("warn", "bold yellow").split()[-1]
         log = self.query_one("#chat-log", RichLog)
         log.write(
-            _Text(
-                f"allow {name} -> {path}? [y/N] (y or --yes approves, {timeout}s)",
-                style="reverse bold yellow",
+            _Panel(
+                _Text(preview if preview else "(no preview)"),
+                title=f"allow {name} -> {path}? \\[y/N]",
+                subtitle=f"y or --yes approves · {timeout}s (timeout denies)",
+                border_style=warn_color,
             )
         )
-        if preview:
-            _w(log, f"  {preview}")
         try:
             self.query_one("#chat-input", ChatArea).focus()
         except Exception:
@@ -865,10 +872,12 @@ class SidekickTUI(App):
         self._live_n = 0
         self._think_dots = 0
         self._turn_start = time.monotonic()
+        self._live_rendered_at = 0.0
         try:
-            live = self.query_one("#live", TextArea)
+            live = self.query_one("#live", RichLog)
             live.styles.display = "block"
-            live.text = "· thinking"
+            live.clear()
+            live.write("· thinking")
         except Exception:
             pass
         try:
@@ -887,8 +896,9 @@ class SidekickTUI(App):
             return
         try:
             self._think_dots = (self._think_dots + 1) % 4
-            live = self.query_one("#live", TextArea)
-            live.text = "· thinking" + "." * self._think_dots
+            live = self.query_one("#live", RichLog)
+            live.clear()
+            live.write("· thinking" + "." * self._think_dots)
         except Exception:
             pass
 
@@ -901,18 +911,24 @@ class SidekickTUI(App):
         self._think_timer = None
 
     def _push_live(self) -> None:
+        """Progressive Markdown render, throttled to ~2Hz. Raw tokens accumulate
+        silently between renders; unclosed fences render as code until closed."""
         try:
-            live = self.query_one("#live", TextArea)
-            body = "".join(self._live_parts)
+            now = time.monotonic()
+            if self._live_rendered_at and now - self._live_rendered_at < 0.5:
+                return
+            self._live_rendered_at = now
+            live = self.query_one("#live", RichLog)
+            live.clear()
             head = "".join(self._live_reason)[-500:]
-            live.text = (("…" + head + "\n───\n") if head else "") + body[-2000:]
+            if head:
+                live.write(Text("…" + head, style="dim"))
+                live.write(Text("───", style="dim"))
+            body = "".join(self._live_parts)[-2000:]
             try:
-                lines = live.text.split("\n")
-                end = (len(lines) - 1, len(lines[-1]))
-                live.selection = type(live.selection)(end, end)
+                live.write(Markdown(body))
             except Exception:
-                pass
-            live.scroll_end(animate=False)
+                live.write(Text(body))
         except Exception:
             pass
 
@@ -994,9 +1010,10 @@ class SidekickTUI(App):
     def _hide_live(self) -> None:
         self._live_parts = []
         self._live_reason = []
+        self._live_rendered_at = 0.0
         self._stop_think_timer()
         try:
-            live = self.query_one("#live", TextArea)
+            live = self.query_one("#live", RichLog)
             live.clear()
             live.styles.display = "none"
         except Exception:

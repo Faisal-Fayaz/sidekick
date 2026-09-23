@@ -136,7 +136,8 @@ async def _pilot_thinking_animates(monkeypatch):
                 break
         assert started.is_set()
         live = app.query_one("#live")
-        assert "thinking" in live.text  # animated indicator before tokens
+        live_blob = "\n".join(str(ln) for ln in live.lines)
+        assert "thinking" in live_blob  # animated indicator before tokens
         release.set()
         for _ in range(30):
             await pilot.pause()
@@ -1061,3 +1062,84 @@ def test_sessions_drawer():
 
 def test_drawer_lists_new_session():
     _run(_pilot_drawer_lists_new_session(None))
+
+
+async def _pilot_approval_card():
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._ask_approval("write_file", "/tmp/x", "hello content", 300)
+        await pilot.pause()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        assert "allow write_file" in blob
+        assert "/tmp/x" in blob and "[y/N]" in blob
+        assert "timeout denies" in blob
+
+
+async def _pilot_live_throttle():
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        live = app.query_one("#live", RichLog)
+        app._prime_live()  # display:block, otherwise RichLog defers rendering
+        await pilot.pause()
+        app._stop_think_timer()  # dots would interleave with assertions
+        app._live_parts = ["hello **world**"]
+        app._live_reason = []
+        app._push_live()
+        await pilot.pause()
+        first_ts = app._live_rendered_at
+        assert first_ts > 0
+        before = len(live.lines)
+        assert before >= 1
+        for _ in range(5):  # flood within the throttle window: no re-renders
+            app._push_live()
+        await pilot.pause()
+        assert len(live.lines) == before
+        assert app._live_rendered_at == first_ts
+        app._live_rendered_at = 0  # force expiry
+        app._push_live()
+        await pilot.pause()
+        assert len(live.lines) == before  # clear + single rewrite, no growth
+        blob = "\n".join(str(ln) for ln in live.lines)
+        assert "world" in blob
+
+
+async def _pilot_live_fence_and_reason():
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        live = app.query_one("#live", RichLog)
+        app._prime_live()  # display:block, otherwise RichLog defers rendering
+        await pilot.pause()
+        app._stop_think_timer()  # dots would interleave with assertions
+        app._live_parts = ["```python\nprint(1)\n"]  # unclosed fence: must not crash
+        app._live_reason = ["hmm thinking"]
+        app._live_rendered_at = 0
+        app._push_live()  # must not raise
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in live.lines)
+        assert "hmm thinking" in blob and "print" in blob  # highlighted code splits tokens
+
+
+def test_approval_card():
+    _run(_pilot_approval_card())
+
+
+def test_live_throttle():
+    _run(_pilot_live_throttle())
+
+
+def test_live_fence_and_reason():
+    _run(_pilot_live_fence_and_reason())
