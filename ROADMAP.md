@@ -24,6 +24,12 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
+## Queued → `v0.7.0` (MCP server: the local brain, everywhere)
+
+GitHub milestone: [`v0.7.0`](https://github.com/Faisal01011/sidekick/milestones).
+
+- [ ] MCP server — `sk mcp [--allow-writes]`: hand-rolled JSON-RPC 2.0 over stdio, zero new deps. All 17 tools with existing safety policy; reads auto-run, writes need the flag.
+
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
@@ -42,7 +48,6 @@ Thesis: own the users cloud agents structurally can't serve
 - **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
-- **MCP server** — wrap the 17 tools + safety policy for Claude Desktop, Copilots, IDEs. Biggest single leverage point.
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
 - **Keyring + spend caps** — OS keyring backend with file fallback; per-session cost display for BYO-key users.
 - **Opt-in crash telemetry** — no data by default, explicit flag only.
@@ -65,7 +70,6 @@ Thesis: own the users cloud agents structurally can't serve
 - **Security threat model** — documented adversary model (shell gating, SSRF, prompt injection) + what a future audit should probe.
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
 - **Plugin ecosystem design** — manifest format, entrypoints, sandboxing for user-defined tools. The detailed design behind the bullet.
-- **MCP server design** — protocol mapping (tools, roots, sampling), phased delivery for the biggest leverage bet.
 - **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+.
 - **Sustainability options** — licensing, seats vs support, what stays open-core if enterprise flavor ever happens. Early thinking, no commitments.
 
