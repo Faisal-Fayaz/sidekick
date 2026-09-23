@@ -7,6 +7,7 @@ import time
 from rich.markdown import Markdown
 from textual import on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header, Label, ListItem, ListView, RichLog, Static, TextArea
 
@@ -19,24 +20,25 @@ class SidekickTUI(App):
     TITLE = "sidekick"
     BINDINGS = [
         ("ctrl+y", "copy_last", "copy last answer"),
-        ("ctrl+t", "mic", "push to talk"),
-        ("ctrl+b", "scroll_log_up", "scroll up"),
-        ("ctrl+f", "scroll_log_down", "scroll down"),
+        ("ctrl+g", "mic", "push to talk"),
+        Binding("pageup", "scroll_log_up", "scroll up", priority=True),
+        Binding("pagedown", "scroll_log_down", "scroll down", priority=True),
         ("ctrl+home", "scroll_log_top", "top"),
         ("ctrl+end", "scroll_log_bottom", "bottom"),
         ("f1", "toggle_help", "help"),
+        ("f2", "toggle_theme", "theme"),
         ("escape", "close_help", "close"),
     ]
     CSS = """
-    RichLog { height: 1fr; border: solid #1d3327; }
-    #live { height: auto; max-height: 10; border: solid #1d3327; display: none; }
-    #slash-list { height: auto; max-height: 8; border: solid #1d3327; display: none; }
-    #help-panel { height: auto; max-height: 14; border: solid #7c3aed; display: none; }
+    RichLog { height: 1fr; border: solid $primary-muted; }
+    #live { height: auto; max-height: 10; border: solid $primary-muted; display: none; }
+    #slash-list { height: auto; max-height: 8; border: solid $primary-muted; display: none; }
+    #help-panel { height: auto; max-height: 14; border: solid $secondary; display: none; }
     #input-row { height: 5; }
-    ChatArea { width: 1fr; height: 5; border: solid #1d3327; }
-    ChatArea:focus { border: solid #00ff9d; }
-    #mic-status { width: 22; height: 5; border: solid #1d3327; color: #9b9bab; content-align: center middle; }
-    #mic-status.recording { border: solid #ff5555; color: #ff5555; }
+    ChatArea { width: 1fr; height: 5; border: solid $primary-muted; }
+    ChatArea:focus { border: solid $primary; }
+    #mic-status { width: 22; height: 5; border: solid $primary-muted; color: $text-muted; content-align: center middle; }
+    #mic-status.recording { border: solid $error; color: $error; }
     """
 
     def __init__(self, model: str = "", session: str = ""):
@@ -71,19 +73,34 @@ class SidekickTUI(App):
         yield RichLog(id="help-panel", wrap=True, highlight=False)
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
-            yield Static("ctrl+t\nto talk", id="mic-status")
+            yield Static("ctrl+g\nto talk", id="mic-status")
         yield Footer()
 
     def _help_text(self) -> str:
+        from textual.binding import Binding
+
         from sk.slash import COMMANDS
 
-        keys = [
-            "Enter send · ctrl+j / alt+enter newline · ↑/↓ history+autocomplete",
-            "ctrl+y copy · ctrl+t talk · ctrl+b/f scroll · ctrl+home/end jump",
-            "Esc closes this panel · F1 toggles it",
-        ]
+        def entries(bindings) -> list[str]:
+            out = []
+            for b in bindings:
+                if isinstance(b, tuple):
+                    key, _action, desc = b
+                elif isinstance(b, Binding):
+                    key, desc = b.key, b.description
+                else:  # pragma: no cover - defensive
+                    continue
+                if desc:
+                    out.append(f"{key} {desc}")
+            return out
+
+        keys = entries(type(self).BINDINGS) + entries(ChatArea.BINDINGS)
+        # NOTE: remove the migration block after one release cycle.
+        migrated = (
+            "Recently changed: scroll was ctrl+b/f → pageup/pagedown · talk was ctrl+t → ctrl+g"
+        )
         cmds = [f"/{n} — {d}" for n, d in COMMANDS]
-        return "KEYS\n" + "\n".join(keys) + "\n\nCOMMANDS\n" + "\n".join(cmds)
+        return "KEYS\n" + "\n".join(keys) + "\n\n" + migrated + "\n\nCOMMANDS\n" + "\n".join(cmds)
 
     def action_toggle_help(self) -> None:
         try:
@@ -95,6 +112,25 @@ class SidekickTUI(App):
             panel.write(self._help_text())
             panel.styles.display = "block"
             panel.scroll_home(animate=False)
+        except Exception:
+            pass
+
+    def action_toggle_theme(self) -> None:
+        """F2: flip dark <-> light, persist to config. Existing log lines keep
+        their baked-in colors; new output uses the new palette."""
+        from sk.config import Config
+
+        from .theme import mode_for_name, toggle_theme
+
+        name = toggle_theme(self)
+        try:
+            cfg = Config.load()
+            cfg.theme = mode_for_name(name)
+            cfg.save()
+        except Exception:
+            pass
+        try:
+            self._sub()
         except Exception:
             pass
 
@@ -223,7 +259,7 @@ class SidekickTUI(App):
         log = self.query_one("#chat-log", RichLog)
         _w(
             log,
-            "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+t to talk · ctrl+b/f scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).",
+            "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+g to talk · pgup/pgdn scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).",
         )
         if self._continued:
             from sk.store import get_history
@@ -266,7 +302,7 @@ class SidekickTUI(App):
         self._mic_toggle()
 
     def _mic_status(self, text: str, recording: bool = False, state: str = "idle") -> None:
-        """Mic status pill (display-only; ctrl+t is the trigger)."""
+        """Mic status pill (display-only; ctrl+g is the trigger)."""
         self.mic_state = state
         try:
             pill = self.query_one("#mic-status", Static)
@@ -341,7 +377,7 @@ class SidekickTUI(App):
             self._rec_start = _t.monotonic()
             self._mic_status("■ REC\n0s", recording=True, state="recording")
             self._rec_timer = self.set_interval(1.0, self._rec_tick)
-            _role(log, "", "recording... press ctrl+t to stop")
+            _role(log, "", "recording... press ctrl+g to stop")
         else:
             self._mic_stop()
 
@@ -367,7 +403,7 @@ class SidekickTUI(App):
             self._rec_timer = None
         self._mic_status("…busy…", state="busy")
         if proc is None:
-            self._mic_status("ctrl+t\nto talk")
+            self._mic_status("ctrl+g\nto talk")
             return
         err = _voice.stop_recording(proc, wav_path=self._rec_wav)
         if err:
@@ -402,12 +438,12 @@ class SidekickTUI(App):
             self._drop_transcript(text)
 
     def _mic_failed(self, msg: str) -> None:
-        self._mic_status("ctrl+t\nto talk")
+        self._mic_status("ctrl+g\nto talk")
         _role(self.query_one("#chat-log", RichLog), "error", msg)
 
     def _drop_transcript(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
-        self._mic_status("ctrl+t\nto talk")
+        self._mic_status("ctrl+g\nto talk")
         area = self.query_one("#chat-input", ChatArea)
         cur = area.text.strip()
         area.text = (cur + " " + text).strip() if cur else text
@@ -418,8 +454,11 @@ class SidekickTUI(App):
     def _sub(self) -> None:
         from sk.config import Config
 
+        from .theme import name_for_mode, set_theme
+
         cfg = Config.load()
         self._cfg = cfg
+        set_theme(self, name_for_mode(cfg.theme))
         model = self.model_override or cfg.model
         mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""

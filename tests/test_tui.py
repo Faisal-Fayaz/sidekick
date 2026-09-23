@@ -13,13 +13,72 @@ def test_role_builder_styles():
     from sk.tui import _line
 
     you = _line("12:00", "you", "hi [x]")
-    assert any("green" in str(s.style) for s in you.spans)
+    assert any("34f5a2" in str(s.style) for s in you.spans)
     assert "hi [x]" in you.plain  # brackets literal, body neutral
     bot = _line("12:00", "sidekick", "hello")
-    assert any("cyan" in str(s.style) for s in bot.spans)
+    assert any("9d7bff" in str(s.style) for s in bot.spans)
     tool = _line("12:00", "tool", "○ tool: x")
-    assert any("dim" in str(s.style) for s in tool.spans)
+    assert any("8fa698" in str(s.style) for s in tool.spans)
     assert _line("12:00", "", "plain").plain.startswith("[12:00] ")
+
+
+def test_help_text_covers_all_bindings():
+    """Help can't rot: every keybinding appears in the F1 text."""
+    from sk.tui import SidekickTUI
+    from sk.tui.widgets import ChatArea
+
+    def keys(bindings):
+        out = set()
+        for b in bindings:
+            out.add(b[0] if isinstance(b, tuple) else b.key)
+        return out
+
+    app = SidekickTUI()
+    text = app._help_text()
+    for key in keys(SidekickTUI.BINDINGS) | keys(ChatArea.BINDINGS):
+        assert key in text, f"binding {key!r} missing from help"
+    assert "pageup" in text and "ctrl+g" in text
+    assert "Recently changed" in text  # keymap migration note
+
+
+def test_theme_toggle_and_roles():
+    from sk.tui import theme as theme_mod
+    from sk.tui.theme import (
+        DARK_NAME,
+        LIGHT_NAME,
+        active_roles,
+        current_name,
+        mode_for_name,
+        name_for_mode,
+        set_theme,
+        toggle_theme,
+    )
+
+    assert name_for_mode("light") == LIGHT_NAME
+    assert name_for_mode("dark") == DARK_NAME
+    assert name_for_mode("bogus") == DARK_NAME
+    assert mode_for_name(LIGHT_NAME) == "light"
+    assert mode_for_name(DARK_NAME) == "dark"
+
+    class FakeApp:
+        def __init__(self):
+            self.theme = DARK_NAME
+
+        def register_theme(self, theme):
+            pass
+
+    fake = FakeApp()
+    try:
+        set_theme(fake, LIGHT_NAME)
+        assert current_name() == LIGHT_NAME
+        assert "0a7d4f" in active_roles()["you"]
+        assert toggle_theme(fake) == DARK_NAME
+        assert "34f5a2" in active_roles()["you"]
+        assert set_theme(fake, "bogus") == DARK_NAME  # unknown keeps current
+    finally:
+        # restore suite-wide default for other tests
+        set_theme(fake, DARK_NAME)
+        theme_mod._current = DARK_NAME
 
 
 async def _pilot_checks():
@@ -189,7 +248,7 @@ async def _pilot_streaming(monkeypatch):
                 pass
         blob = _blob(app)
         assert "Hi" in blob
-        assert "green" in blob and "cyan" in blob  # role colors rendered
+        assert "you>" in blob and "sidekick>" in blob  # role markers rendered
         assert re.search(r"\d+s · ~\d+tok", app.sub_title)
 
 
@@ -816,11 +875,11 @@ async def _pilot_scroll_keys():
         area.focus()
         await pilot.pause()
         assert log.scroll_y == log.max_scroll_y  # tail-followed on write
-        await pilot.press("ctrl+b")
+        await pilot.press("pageup")
         await pilot.pause()
         assert log.scroll_y < log.max_scroll_y
         up_at = log.scroll_y
-        await pilot.press("ctrl+f")
+        await pilot.press("pagedown")
         await pilot.pause()
         assert log.scroll_y > up_at
         await pilot.press("ctrl+home")
@@ -861,7 +920,7 @@ async def _pilot_mic_roundtrip(monkeypatch):
     _mock_voice(monkeypatch)
     app = _T()
     async with app.run_test() as pilot:
-        app.action_mic()  # ctrl+t path: pill is display-only
+        app.action_mic()  # ctrl+g path: pill is display-only
         await pilot.pause()
         assert app.mic_state == "recording"
         app.action_mic()  # stop

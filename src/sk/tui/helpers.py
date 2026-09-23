@@ -7,14 +7,11 @@ import time
 from rich.text import Text
 from textual.widgets import RichLog
 
-ROLE_STYLES = {
-    "you": "bold green",
-    "sidekick": "bold cyan",
-    "tool": "dim",
-    "sys": "dim",
-    "warn": "bold yellow",
-    "error": "bold red",
-}
+from .theme import active_roles
+
+
+def _role_style(role: str) -> str:
+    return active_roles().get(role, "")
 
 
 def _w(log: RichLog, s: str, markup: bool = False) -> None:
@@ -46,7 +43,7 @@ def _line(when: str, role: str, body: str) -> Text:
     t = Text()
     t.append(f"[{when}] ", style="dim")
     if role:
-        t.append(f"{role}> ", style=ROLE_STYLES.get(role, ""))
+        t.append(f"{role}> ", style=_role_style(role))
     t.append(body)
     return t
 

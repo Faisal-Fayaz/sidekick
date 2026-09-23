@@ -180,6 +180,7 @@ DEFAULTS: dict[str, str | int | float] = {
     "api_key": "",
     "max_steps": 5,
     "temperature": 0.2,
+    "theme": "dark",
     "history_budget_tokens": 3000,
 }
 
@@ -192,6 +193,7 @@ class Config:
     api_key: str = str(DEFAULTS["api_key"])
     max_steps: int = int(DEFAULTS["max_steps"])
     temperature: float = float(DEFAULTS["temperature"])
+    theme: str = str(DEFAULTS["theme"])
     history_budget_tokens: int = int(DEFAULTS["history_budget_tokens"])
     # project layer (from .sidekick.toml; empty when outside a project)
     project_root: str = ""
@@ -240,6 +242,9 @@ class Config:
         prov = str(provider or vals.get("provider", DEFAULTS["provider"])).strip().lower()
         if prov not in PRESETS:
             prov = "custom"
+        theme = str(vals.get("theme", DEFAULTS["theme"])).strip().lower()
+        if theme not in ("dark", "light"):
+            theme = "dark"
         cfg = cls(
             provider=prov,
             model=str(
@@ -252,6 +257,7 @@ class Config:
             history_budget_tokens=int(
                 str(vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]))
             ),
+            theme=theme,
             project_root=str(project_file.parent) if project_file else "",
             project_docs=tuple(vals.get("project_docs", [])),  # type: ignore[arg-type]
             memory_namespace=str(vals.get("memory_namespace", "")),
@@ -289,6 +295,7 @@ class Config:
             "api_key": self.api_key,
             "max_steps": self.max_steps,
             "temperature": self.temperature,
+            "theme": self.theme,
             "history_budget_tokens": self.history_budget_tokens,
         }
         if _HAS_TOMLI_W:

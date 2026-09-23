@@ -79,6 +79,19 @@ def test_extra_body_local_only():
         assert _extra_body(cfg) == {}, prov  # cloud 400s on Ollama-only 'options'
 
 
+def test_theme_default_and_validation(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "c.toml")
+    assert Config.load().theme == "dark"
+    (tmp_path / "c.toml").write_text('theme = "light"\n')
+    assert Config.load().theme == "light"
+    (tmp_path / "c.toml").write_text('theme = "neon"\n')
+    assert Config.load().theme == "dark"
+    cfg = Config.load()
+    cfg.theme = "light"
+    cfg.save()
+    assert Config.load().theme == "light"
+
+
 def test_env_overrides(monkeypatch, tmp_path):
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "c.toml")
     monkeypatch.setenv("SIDEKICK_PROVIDER", "deepseek")

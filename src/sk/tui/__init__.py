@@ -17,7 +17,14 @@ from .helpers import (
     log_error,
 )
 from .launch import launch
-from .theme import install_sidekick_theme
+from .theme import (
+    current_name,
+    install_sidekick_theme,
+    mode_for_name,
+    name_for_mode,
+    set_theme,
+    toggle_theme,
+)
 from .widgets import ChatArea, ChatLog
 
 __all__ = [
@@ -26,6 +33,11 @@ __all__ = [
     "ChatLog",
     "launch",
     "install_sidekick_theme",
+    "set_theme",
+    "toggle_theme",
+    "current_name",
+    "name_for_mode",
+    "mode_for_name",
     "is_affirmative",
     "log_error",
     "_line",
