@@ -6,7 +6,7 @@ chat-completions, so this module translates at the boundary:
 - TOOLS_SCHEMA (OpenAI functions) -> Anthropic tools [{name, description, input_schema}]
 - OpenAI messages (system/user/assistant/tool roles) -> (system, messages)
   with strict role alternation (consecutive same-role merged)
-- tool_use blocks -> existing _run_tool_cached (approval + audit preserved)
+- tool_use blocks -> existing _run_tools_batch (approval + audit preserved)
 
 Freshness: answers stream per-turn, not per-token (one on_token call with the
 full text). Same visible behavior otherwise: max_steps loop, approval gates,
@@ -173,7 +173,7 @@ def run_anthropic_agent(
     session: str = "",
 ) -> str:
     """One agent turn over the native Messages API. Same contract as run_agent."""
-    from .agent import _provider_host, _run_tool_cached, build_messages
+    from .agent import _provider_host, build_messages
     from .store import log_tool_run
     from .tools import TOOLS_SCHEMA
 
@@ -226,12 +226,19 @@ def run_anthropic_agent(
                 pass
         if not uses:
             return text or "(empty)"
-        # tool turn: append assistant tool_use + dispatch each, then continue
+        # tool turn: append assistant tool_use + dispatch batch, then continue
         messages.append({"role": "assistant", "content": blocks})
-        for u in uses:
-            name = u.get("name", "")
-            args = u.get("input", {}) if isinstance(u.get("input"), dict) else {}
-            result, _ = _run_tool_cached(name, args, approve, on_tool, seen, session, cfg)
+        from .agent import _run_tools_batch
+
+        batch = [
+            (
+                u.get("name", ""),
+                u.get("input", {}) if isinstance(u.get("input"), dict) else {},
+            )
+            for u in uses
+        ]
+        outs = _run_tools_batch(batch, approve, on_tool, seen, session, cfg)
+        for u, (result, _) in zip(uses, outs):
             messages.append(
                 {
                     "role": "user",

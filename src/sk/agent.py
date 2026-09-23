@@ -386,6 +386,72 @@ def _provider_host(cfg) -> str:
         return ""
 
 
+def _run_tools_batch(
+    calls: list[tuple[str, dict]],
+    approve,
+    on_tool,
+    seen: dict[str, str],
+    session: str = "",
+    cfg=None,
+    max_workers: int = 4,
+) -> list[tuple[str, bool]]:
+    """Run one turn's tool calls, returning [(result, repeated)] in input order.
+
+    Approval-gated tools prompt interactively, so they always run serially in
+    order (parallel prompts would overlap). Everything else — reads, web,
+    memory — runs concurrently in a bounded thread pool. Cache hits resolve
+    immediately without executing. on_tool notifications replay serially in
+    input order (they are display-only). Worker crashes become Error strings,
+    never exceptions: one tool failing must not kill its siblings.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    provider = getattr(cfg, "provider", "") if cfg is not None else ""
+    host = _provider_host(cfg) if cfg is not None else ""
+    keys = [_tool_target(name, args) for name, args in calls]
+    results: list[tuple[str, bool] | None] = [None] * len(calls)
+    fresh: list[int] = []
+    for i, key in enumerate(keys):
+        if key in seen:
+            results[i] = (
+                f"[cached — already ran above]\n{seen[key][:2000]}\nSynthesize the final answer now. Do not call more tools.",
+                True,
+            )
+        else:
+            fresh.append(i)
+
+    def needs_gate(i: int) -> bool:
+        name = calls[i][0]
+        return name in APPROVAL_TOOLS and approve is not None
+
+    def run_one(i: int) -> str:
+        name, args = calls[i]
+        try:
+            result, _ = _gated_dispatch(
+                name, args, approve, session=session, provider=provider, host=host
+            )
+            return result
+        except Exception as e:
+            return f"Error: tool '{name}' crashed: {e}"
+
+    gated = [i for i in fresh if needs_gate(i)]
+    free = [i for i in fresh if not needs_gate(i)]
+    if free:
+        with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(free)))) as pool:
+            for i, result in zip(free, pool.map(run_one, free)):
+                results[i] = (result, False)
+    for i in gated:
+        results[i] = (run_one(i), False)
+    for i in fresh:
+        seen[keys[i]] = results[i][0]  # type: ignore[index]
+        if on_tool is not None:
+            try:
+                on_tool(calls[i][0], calls[i][1])
+            except Exception:
+                pass
+    return [r for r in results if r is not None]
+
+
 def _run_tool_cached(
     name: str, args: dict, approve, on_tool, seen: dict[str, str], session: str = "", cfg=None
 ) -> tuple[str, bool]:
@@ -815,10 +881,11 @@ def run_agent(
         text_tools = _parse_text_tools(msg_text)
         if getattr(msg, "tool_calls", None) is None and text_tools:
             messages.append({"role": "assistant", "content": msg_text})
-            combined: list[str] = []
-            for tname, targs in text_tools[:4]:  # cap 4 per turn
-                result, _ = _run_tool_cached(tname, targs, approve, on_tool, seen, session, cfg)
-                combined.append(f"[tool {tname} result]\n{result}")
+            batch = list(text_tools[:4])  # cap 4 per turn
+            outs = _run_tools_batch(batch, approve, on_tool, seen, session, cfg)
+            combined = [
+                f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
+            ]
             messages.append(
                 {
                     "role": "user",
@@ -857,14 +924,18 @@ def run_agent(
                 ],
             }
         )
+        parsed: list[tuple[str, str, dict]] = []
         for tc in msg.tool_calls:  # type: ignore
-            name = tc.function.name
             try:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            result, _ = _run_tool_cached(name, args, approve, on_tool, seen, session, cfg)
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            parsed.append((tc.id, tc.function.name, args))
+        outs = _run_tools_batch(
+            [(name, args) for _, name, args in parsed], approve, on_tool, seen, session, cfg
+        )
+        for (tid, _, _), (result, _) in zip(parsed, outs):
+            messages.append({"role": "tool", "tool_call_id": tid, "content": result})
 
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis
