@@ -135,7 +135,7 @@ sk connect     # pick provider → paste key (hidden) → pick model → ping. D
 
 One guided flow: numbered provider list (local ones skip keys), live validation *before* anything saves, curated model list (TTS/image junk filtered, recommended pre-highlighted, Enter accepts), and a 5-token ping instead of a full agent turn. Advanced paths still work: `sk auth add/list/status/remove`, `sk model`, `sk setup` (connect + hook), `sk config --provider openai --api-key sk-...`, `/provider groq` inside chat.
 
-Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|custom` (`anthropic` speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`.
+Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|custom` (`anthropic` speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. The Anthropic backend marks the static system prompt + tool definitions cacheable (repeat turns up to 10x cheaper); OpenAI-compatible providers cache matching prefixes automatically server-side.
 
 ## Command reference
 
@@ -177,7 +177,7 @@ flowchart TB
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```
 
-Design bets that paid off: **deterministic grounding beats prompt instructions** (small models ignore rules but can't argue with injected facts), **text-JSON fallback** (coders emit tools as text over the OpenAI endpoint), **FTS5 over vectors** (zero deps, instant, no embedding server on a 4GB box).
+Design bets that paid off: **deterministic grounding beats prompt instructions** (small models ignore rules but can't argue with injected facts), **text-JSON fallback** (coders emit tools as text over the OpenAI endpoint), **FTS5 over vectors** (zero deps, instant, no embedding server on a 4GB box), **parallel reads** (approval-gated tools stay serial; independent reads run concurrently with failures isolated).
 
 ## Safety
 
