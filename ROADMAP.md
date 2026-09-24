@@ -57,10 +57,8 @@ Thesis: own the users cloud agents structurally can't serve
 - **Usage + cost stats** — `sk stats`: turns, tools, tokens, local-vs-cloud ratio with cost estimates. No-surprise-bills made visible.
 - **Session fork** — branch a session at any turn to explore alternatives without losing the thread. Small, power-user.
 - **Session allowlist** — per-session auto-approve list (`--allow`). Safety customization between yolo and per-prompt confirms.
-- **v0.4.0 build plans** — detailed implementation plan per Adoption issue (#12 init, #13 upgrade, #14 per-project config, #15 export), written when coding starts.
-- **TUI reskin design** — Tranche A2: theme system, palette, spacing/typography, keymap rationalization choices (needs owner eye on design).
 - **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc.
-- **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 219-test suite into a system.
+- **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 300+-test suite into a system.
 - **Security threat model** — documented adversary model (shell gating, SSRF, prompt injection) + what a future audit should probe.
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
 - **Plugin ecosystem design** — manifest format, entrypoints, sandboxing for user-defined tools. The detailed design behind the bullet.
