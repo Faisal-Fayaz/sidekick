@@ -24,12 +24,6 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Queued → `v0.7.0` (MCP server: the local brain, everywhere)
-
-GitHub milestone: [`v0.7.0`](https://github.com/Faisal01011/sidekick/milestones).
-
-- [ ] MCP server — `sk mcp [--allow-writes]`: hand-rolled JSON-RPC 2.0 over stdio, zero new deps. All 17 tools with existing safety policy; reads auto-run, writes need the flag.
-
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
@@ -79,6 +73,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- MCP server over stdio (17 tools, safe defaults) — merged to main after v0.9.0, rides the next release.
 - `v0.6.0` — TUI reskin: dual dark/light themes, role rework, keymap rationalization, generated F1 help, status bar, sessions drawer.
 - `v0.5.0` — parallel tool dispatch, Anthropic prompt caching, plan-review gate, rolling session compaction (schema v4).
 - `v0.4.0` — per-project `.sidekick.toml` + memory namespaces (schema v3), `sk export` transcripts, `sk upgrade` self-update, `sk init` wizard, macOS cwd-discovery test fix.
