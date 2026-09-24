@@ -115,6 +115,18 @@ sk mic-test                                             # peak dB + silent/quiet
 
 Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS), transcription via local faster-whisper int8, transcript lands editable in the prompt. In the TUI, `ctrl+g` (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted after each take.
 
+## MCP server
+
+```bash
+sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps
+```
+
+All 17 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run; shell/writes/delete need `--allow-writes`, else a clean denied error. Stdout carries protocol only. Claude Desktop snippet:
+
+```json
+{ "mcpServers": { "sidekick": { "command": "sk", "args": ["mcp"] } } }
+```
+
 ## Providers (BYO key)
 
 ```bash
@@ -141,6 +153,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthro
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk skills` / `sk skills-search` / `sk skills-install superpowers` / `sk daemon [--once]` / `sk daemon-install` | Skill packs (obra/superpowers) / background watcher (systemd) |
+| `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
 | `sk doctor` / `sk models` / `sk config` / `sk version` / `sk upgrade [--check]` | Health / models / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
 

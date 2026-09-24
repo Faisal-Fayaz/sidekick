@@ -12,7 +12,7 @@ from .approvers import _make_approver, _make_approver_state, _make_on_token, _ma
 from .base import _cfg, app, console
 
 # side-effect imports: register all @app.command()s
-from .commands import auth, chat, daemon, memory, run, skills, system  # noqa: F401
+from .commands import auth, chat, daemon, mcp, memory, run, skills, system  # noqa: F401
 
 # names used externally (tui.py, tests): re-export from their new homes
 from .commands.auth import _ask_key, _connect_flow, _pick_model_name, _pick_provider
