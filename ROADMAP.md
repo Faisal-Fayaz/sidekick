@@ -24,11 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.14.0 (skills compound)
-
-1. **Plugin ecosystem design (#48)** — manifest format, entrypoints, sandboxing; constrains #49.
-2. **User-defined tools (#49)** — custom local tools in config/skill files, safety gates inherited.
-3. **Skill registry (#50)** — discover installable packs beyond superpowers, offline-first.
+## Next — v0.15.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -66,6 +62,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.14.0` — skills compound: plugin design (#48), user-defined tools (#49), skill registry (#50).
 - `v0.13.0` — groq provider fix (contributor branch).
 - `v0.12.0` — daemon compounds: scheduled tasks (#38), background runs (#39), session allowlist (#40), teammate-pilot digest (#41).
 - `v0.11.0` — daemon remainder (#34: launchd + notifier with DND) + test-infra remainder (#35: pre-commit, property tests, coverage).
