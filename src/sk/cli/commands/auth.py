@@ -79,22 +79,35 @@ def auth_add(
     console.print(f"[green]✓ {msg}[/green]" if ok else f"[red]✗ {msg}[/red]")
     if not ok:
         raise typer.Exit(1)
-    cfg.provider, cfg.base_url, cfg.api_key = p, "", k
+    from sk.auth import store_api_key
+
+    where = store_api_key(p, k)
+    cfg.provider, cfg.base_url = p, ""
+    cfg.api_key = "" if where == "keyring" else k
     if not cfg.model or cfg.model in (PRESETS.get(cfg.provider, {}).get("model", ""),):
         cfg.model = PRESETS[p]["model"]
     cfg.save()
-    console.print(f"[green]saved. Model is {cfg.model} — change with `sk model`.[/green]")
+    console.print(
+        f"[green]saved to keyring. Model is {cfg.model} — change with `sk model`.[/green]"
+        if where == "keyring"
+        else f"[green]saved. Model is {cfg.model} — change with `sk model`.[/green]"
+    )
 
 
 @auth_app.command("list")
 def auth_list():
     """Show providers + masked key state."""
+    from sk.auth import key_source
     from sk.config import PRESETS
 
     cfg = _cfg()
     for n in PRESETS:
         cur = "← current" if n == cfg.provider else ""
-        key = Config.mask(cfg.effective_api_key()) if n == cfg.provider else "—"
+        key = (
+            f"{Config.mask(cfg.effective_api_key())} ({key_source(cfg)})"
+            if n == cfg.provider
+            else "—"
+        )
         console.print(f"• [cyan]{n}[/cyan] key={key} {cur}")
 
 
@@ -138,7 +151,10 @@ def auth_remove(provider: str = typer.Argument("", help="Provider, omit for curr
     if p == cfg.provider:
         cfg.api_key, cfg.base_url, cfg.model = "", "", PRESETS[p]["model"]
         cfg.save()
-    console.print(f"[yellow]forgot {p}.[/yellow]")
+    from sk.auth import forget_api_key
+
+    forget_api_key(p)
+    console.print(f"[yellow]forgot {p} (keyring + file).[/yellow]")
 
 
 def _pick_model_name(p: str, names: list[str], cfg) -> str:
@@ -197,10 +213,18 @@ def _connect_flow() -> Config:
         console.print(f"[green]✓ {msg}[/green]" if ok else f"[red]✗ {msg}[/red]")
         if not ok:
             raise typer.Exit(1)
-        cfg.provider, cfg.base_url, cfg.api_key = p, "", k
+        from sk.auth import store_api_key
+
+        where = store_api_key(p, k)
+        cfg.provider, cfg.base_url = p, ""
+        cfg.api_key = "" if where == "keyring" else k
         cfg.model = PRESETS[p]["model"]
         cfg.save()
-        console.print("[green]key saved (chmod 600).[/green]")
+        console.print(
+            "[green]key saved to keyring.[/green]"
+            if where == "keyring"
+            else "[green]key saved (chmod 600).[/green]"
+        )
     from sk.auth import chat_models, fetch_models
 
     try:

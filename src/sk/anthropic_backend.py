@@ -197,6 +197,7 @@ def run_anthropic_agent(
         _SUMMARY_PROMPT,
         _maybe_review_plan,
         _provider_host,
+        _spend_blocked,
         build_messages,
         prepare_history,
     )
@@ -205,6 +206,14 @@ def run_anthropic_agent(
 
     _ = on_reasoning  # thinking blocks not requested in v1; sink kept for signature parity
     session = session or ""
+    blocked = _spend_blocked(session, cfg)
+    if blocked is not None:
+        if on_token is not None:
+            try:
+                on_token(blocked)
+            except Exception:
+                pass
+        return blocked
     try:
         log_tool_run(
             session,

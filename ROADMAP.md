@@ -24,6 +24,13 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
+## Next — v0.10.0 (bundle release, balanced)
+
+1. **Bundle unreleased main** — `sk run --json`, `/fork`, `sk models pull/prune`, capability profiles, `sk stats`, MCP server + docs.
+2. **Close #30 keyring + spend caps** — OS keyring first, file fallback, per-session cap enforced in both agent paths.
+3. **Start #34 daemon remainder** — launchd unit (macOS) + notifier abstraction with logged fallback.
+4. **Start #35 test-infra remainder** — pre-commit, 1+ property test (allowlist/SSRF), coverage reported.
+
 ## Later
 
 Parking lot — real ideas, no version attached. Promote to `Next` by PR.
@@ -31,13 +38,11 @@ Thesis: own the users cloud agents structurally can't serve
 (offline, regulated, no-API-bill) — don't chase their feature list.
 
 - **Air-gapped install** — offline bundle (vendored wheels + model docs) for locked-down environments. The #1 enterprise gate.
-- **Per-model capability profiles** — teach the router what each small model can/can't do (built on the eval harness) instead of hoping.
 - **Team memory + shared skills** — org-wide `SKILL.md` packs and memory with permissions. Where seats and revenue appear.
 - **Thin IDE extension** — VS Code client talking to the local daemon. Same offline brain, meets users where they live.
 - **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
 - **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
 - **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
-- **Scriptable runs** — `sk run --json` with stable exit codes for pipes and scripts. Unix-philosophy composability, zero new deps.
 - **Background runs** — `sk run --bg` with daemon + desktop notification on completion. Stepping stone to daemon-as-teammate.
 - **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
@@ -50,12 +55,9 @@ Thesis: own the users cloud agents structurally can't serve
 - **TUI overhaul, tranche B2** — approval cards + streaming Markdown (A1/A2/B1 shipped in v0.6.0).
 - **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
 - **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
-- **Model manager** — `sk models pull/prune` wrapping Ollama. Closes the loop `brief` opens when it warns disk is 90% full of old models.
 - **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked.
 - **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe.
 - **Scheduled tasks** — natural-language schedules for the daemon ("brief me every morning"). Stepping stone to daemon-as-teammate.
-- **Usage + cost stats** — `sk stats`: turns, tools, tokens, local-vs-cloud ratio with cost estimates. No-surprise-bills made visible.
-- **Session fork** — branch a session at any turn to explore alternatives without losing the thread. Small, power-user.
 - **Session allowlist** — per-session auto-approve list (`--allow`). Safety customization between yolo and per-prompt confirms.
 - **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc.
 - **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 300+-test suite into a system.
@@ -71,6 +73,10 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- Unreleased on `main` after `v0.9.0` (rides `v0.10.0`) — `sk run --json` envelope + exit codes, `/fork` session branch, `sk models pull/prune`, per-model capability profiles, `sk stats` usage + cost, MCP server over stdio.
+- `v0.9.0` — mac audio capture fix (contributor branch).
+- `v0.8.0` — copy text styles fix (contributor branch).
+- `v0.7.0` — text-JSON tool fallback for models without native tool calling, MCP server milestone docs.
 - MCP server over stdio (17 tools, safe defaults) — merged to main after v0.9.0, rides the next release.
 - `v0.6.0` — TUI reskin: dual dark/light themes, role rework, keymap rationalization, generated F1 help, status bar, sessions drawer.
 - `v0.5.0` — parallel tool dispatch, Anthropic prompt caching, plan-review gate, rolling session compaction (schema v4).

@@ -448,6 +448,32 @@ def _provider_host(cfg) -> str:
         return ""
 
 
+def _spend_blocked(session: str, cfg) -> str | None:
+    """Refusal message when the session hit its spend cap, else None.
+
+    Unpriced usage (local models, unknown rates) costs 0 and never blocks.
+    Best-effort: any accounting failure means 'no data' = allow.
+    """
+    try:
+        cap = float(getattr(cfg, "spend_cap_usd", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if cap <= 0:
+        return None
+    try:
+        from .store import usage_stats
+
+        spend = float(usage_stats(session or "").get("cost_usd") or 0.0)
+    except Exception:
+        return None
+    if spend >= cap:
+        return (
+            f"Spend cap reached: session ${spend:.4f} ≥ cap ${cap:.2f}. "
+            f"Raise with `sk config --spend-cap N` (0 = unlimited)."
+        )
+    return None
+
+
 def _run_tools_batch(
     calls: list[tuple[str, dict]],
     approve,
@@ -990,6 +1016,14 @@ def run_agent(
     turns with destructive actions (skipped when None or auto_approve).
     """
     session = session or audit_session.get()
+    blocked = _spend_blocked(session, cfg)
+    if blocked is not None:
+        if on_token is not None:
+            try:
+                on_token(blocked)  # type: ignore
+            except Exception:
+                pass
+        return blocked
     quick = _quick_reply(user_msg)
     if quick is not None:
         if on_token is not None:
