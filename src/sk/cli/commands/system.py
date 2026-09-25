@@ -265,6 +265,7 @@ def config(
     base_url: str = typer.Option(
         "", help="Custom base URL (sets provider=custom unless --provider given)"
     ),
+    spend_cap: str = typer.Option("", help="Per-session spend cap USD, 0 = unlimited"),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
     """View/set config. Keys are chmod-600’d; env vars always win."""
@@ -290,9 +291,22 @@ def config(
             cfg.provider = "custom"
         changed = True
     if api_key:
-        cfg.api_key = api_key.strip()
+        from sk.auth import store_api_key
+
+        where = store_api_key(cfg.provider, api_key.strip())
+        cfg.api_key = "" if where == "keyring" else api_key.strip()
         changed = True
-        console.print("[green]api key saved (file is chmod 600)[/green]")
+        console.print(
+            "[green]api key saved to keyring.[/green]"
+            if where == "keyring"
+            else "[green]api key saved (file is chmod 600).[/green]"
+        )
+    if spend_cap.strip():
+        from sk.config import _parse_spend_cap
+
+        cfg.spend_cap_usd = _parse_spend_cap(spend_cap)
+        changed = True
+        console.print(f"[green]spend cap ${cfg.spend_cap_usd:.2f}/session (0 = unlimited).[/green]")
     if model:
         cfg.model = model
         changed = True
@@ -301,7 +315,7 @@ def config(
         cfg.save()
     if show or not changed:
         console.print(
-            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}"
+            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}"
         )
         if cfg.project_note():
             console.print(f"[dim]{cfg.project_note()}[/dim]")
