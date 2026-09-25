@@ -282,6 +282,7 @@ def run_anthropic_agent(
             for u in uses
         ]
         from .agent import _run_tools_batch
+        from .model_profiles import max_parallel_for
 
         proceed, turn_approve = _maybe_review_plan(
             batch, approve, review_plan, auto_approve, session, cfg.provider, _provider_host(cfg)
@@ -290,7 +291,10 @@ def run_anthropic_agent(
             return "Plan denied by user — nothing was executed."
         # tool turn: append assistant tool_use + dispatch batch, then continue
         messages.append({"role": "assistant", "content": blocks})
-        outs = _run_tools_batch(batch, turn_approve, on_tool, seen, session, cfg)
+        max_parallel = max_parallel_for(getattr(cfg, "model", ""))
+        outs = _run_tools_batch(
+            batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
+        )
         for u, (result, _) in zip(uses, outs):
             messages.append(
                 {

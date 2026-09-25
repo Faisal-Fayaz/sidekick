@@ -106,7 +106,8 @@ ignore_missing_imports = true
 # Baseline (see #9): lenient on annotations, strict on hygiene.
 # Next toward --strict: disallow_untyped_defs (60 errors), disallow_any_generics.
 # CI gate: mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py
-#   src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/
+#   src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py
+#   src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py
 disallow_untyped_defs = false
 warn_unused_ignores = true
 strict_equality = true
