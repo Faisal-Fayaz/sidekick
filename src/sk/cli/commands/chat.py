@@ -42,9 +42,10 @@ def chat(
             expand=False,
         )
     )
+    stream = {"n": 0, "cleared": False, "clear_line": True}
     approve = _make_approver_state(state, cfg.approved_commands, parse_allow_list(allow))
-    on_tool = _make_on_tool()
-    on_token = None if no_stream else _make_on_token()
+    on_tool = _make_on_tool(stream)
+    on_token = None if no_stream else _make_on_token(stream)
     while True:
         try:
             user = console.input("[bold green]you> [/]").strip()
@@ -83,7 +84,7 @@ def chat(
         history = get_history(session)
         save_message(session, "user", user)
 
-        console.print("[dim]thinking... (streams live)[/dim]")
+        console.print("[dim]thinking... (streams live)[/dim]", end="")
         try:
             answer = run_agent(
                 user,
@@ -97,16 +98,19 @@ def chat(
                 review_plan=_make_plan_reviewer(state),
             )
         except Exception as e:
+            console.print("\r\x1b[2K", end="")
             console.print(
                 f"[red]Error talking to {cfg.provider} ({cfg.effective_base_url()} model={cfg.model}): {e}[/red]"
             )
             console.print("[dim]Tip: run `sk doctor` and `ollama serve`[/dim]")
             continue
         save_message(session, "assistant", answer)
-        console.print()
         streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
-        if on_token is None or streamed < len(answer or "") * 0.5:
+        if on_token is None or streamed < len(answer or "") * 0.5 or not (answer or "").strip():
+            console.print("\r\x1b[2K", end="")
             console.print(Markdown(answer or "(empty)"))
+        else:
+            console.print()
         console.print("[dim]--- done ---[/dim]")
         console.print()
 
@@ -156,8 +160,9 @@ def talk(
         )
     )
     approve = _make_approver_state(state, cfg.approved_commands)
-    on_tool = _make_on_tool()
-    on_token = _make_on_token()
+    stream = {"n": 0, "cleared": False, "clear_line": True}
+    on_tool = _make_on_tool(stream)
+    on_token = _make_on_token(stream)
 
     while True:
         try:
@@ -211,7 +216,7 @@ def talk(
             console.print(f"[bold green]heard> [/]{user}")
         history = get_history(session)
         save_message(session, "user", user)
-        console.print("[dim]thinking... (streams live)[/dim]")
+        console.print("[dim]thinking... (streams live)[/dim]", end="")
         try:
             t0 = _t.monotonic()
             answer = run_agent(
@@ -225,16 +230,19 @@ def talk(
                 session=session,
                 review_plan=_make_plan_reviewer(state),
             )
-            console.print(f"[dim]({_t.monotonic() - t0:.0f}s)[/dim]")
+            secs = _t.monotonic() - t0
         except Exception as e:
+            console.print("\r\x1b[2K", end="")
             console.print(f"[red]Error: {e}[/red]")
             continue
         save_message(session, "assistant", answer)
-        console.print()
-        streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
-        if streamed < len(answer or "") * 0.5:
+        streamed = getattr(on_token, "state", {}).get("n", 0)
+        if streamed < len(answer or "") * 0.5 or not (answer or "").strip():
+            console.print("\r\x1b[2K", end="")
             console.print(Markdown(answer or "(empty)"))
-        console.print("[dim]--- done ---[/dim]")
+        else:
+            console.print()
+        console.print(f"[dim]({secs:.0f}s) --- done ---[/dim]")
         console.print()
 
 

@@ -681,28 +681,32 @@ def oops(
     cfg.model = _resolve_model(cfg, model)
 
     console.print(f"[dim]last failure (exit {rc}): {cmd} @ {cwd}[/dim]")
-    console.print("[dim]working... (streams live)[/dim]")
-    on_token = None if no_stream else _make_on_token()
+    console.print("[dim]working... (streams live)[/dim]", end="")
+    stream = {"n": 0, "cleared": False, "clear_line": True}
+    on_token = None if no_stream else _make_on_token(stream)
     try:
         answer = run_agent(
             f"My last shell command failed with exit {rc} in {cwd}: `{cmd}`. Explain the likely cause in 2 lines and give the exact fixed command. No fluff.",
             get_history("oops")[-5:],
             cfg,
-            on_tool=_make_on_tool(),
+            on_tool=_make_on_tool(stream),
             on_token=on_token,
             approve=_make_approver(True, cfg.approved_commands),
             auto_approve=True,
             session="oops",
         )
     except Exception as e:
+        console.print("\r\x1b[2K", end="")
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     save_message("oops", "user", cmd)
     save_message("oops", "assistant", answer)
-    console.print()
     streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
-    if on_token is None or streamed < len(answer or "") * 0.5:
+    if on_token is None or streamed < len(answer or "") * 0.5 or not (answer or "").strip():
+        console.print("\r\x1b[2K", end="")
         console.print(Markdown(answer or "(empty)"))
+    else:
+        console.print()
     console.print("[dim]--- done ---[/dim]")
 
 

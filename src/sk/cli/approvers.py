@@ -87,8 +87,19 @@ def _make_approver_state(
     return approve
 
 
-def _make_on_tool():
+def _make_on_tool(state: dict | None = None):
+    """Print a tool line. If `state` opts into streamed status lines
+    ({"clear_line": True}), wipe the current status line first so stale
+    "thinking..." never survives the turn."""
+    import sys
+
+    def _clear_line() -> None:
+        if state and state.get("clear_line") and not state.get("cleared"):
+            sys.stdout.write("\r\x1b[2K")
+            state["cleared"] = True
+
     def on_tool(name, args):
+        _clear_line()
         # newline first since tokens stream without newlines
         console.print()
         console.print(
@@ -119,12 +130,17 @@ def _make_plan_reviewer(state: dict):
     return review
 
 
-def _make_on_token():
+def _make_on_token(state: dict | None = None):
     import sys
 
-    state = {"n": 0}
+    state = state if state is not None else {}
+    state.setdefault("n", 0)
+    state.setdefault("cleared", False)
 
     def on_token(tok: str):
+        if state.get("clear_line") and not state["cleared"]:
+            sys.stdout.write("\r\x1b[2K")
+            state["cleared"] = True
         state["n"] += len(tok)
         sys.stdout.write(tok)
         sys.stdout.flush()
