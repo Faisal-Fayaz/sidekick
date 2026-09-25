@@ -178,13 +178,19 @@ def clear_session(session: str) -> None:
         conn.close()
 
 
+_id_seq = 0
+
+
 def new_session_id(prefix: str = "tui") -> str:
-    """Fresh session id. Microsecond resolution: two forks/clears within the
-    same second must never share an id (that silently merges histories)."""
+    """Fresh session id. Timestamp + per-process counter: two forks/clears
+    within the same microsecond must never share an id (that silently
+    merges histories; bit macOS CI in #42)."""
     import time as _t
 
+    global _id_seq
+    _id_seq += 1
     stamp = _t.strftime("%Y%m%d-%H%M%S") + f"{_t.time_ns() % 1_000_000:06d}"
-    return f"{prefix}-{stamp}"
+    return f"{prefix}-{stamp}-{_id_seq % 10000:04d}"
 
 
 def list_sessions(limit: int = 20) -> list[dict]:
