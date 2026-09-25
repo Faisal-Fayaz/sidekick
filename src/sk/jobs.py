@@ -33,7 +33,14 @@ def save_jobs(jobs: dict) -> None:
     JOBS_PATH.write_text(json.dumps(jobs))
 
 
-def create_job(task: str, session: str, model: str, yes: bool, spend_cap: float = 0.0) -> str:
+def create_job(
+    task: str,
+    session: str,
+    model: str,
+    yes: bool,
+    spend_cap: float = 0.0,
+    allow: tuple[str, ...] | list[str] = (),
+) -> str:
     """Persist a running job. Returns the job id. Never raises ('' on failure)."""
     try:
         from .store import new_session_id
@@ -46,6 +53,7 @@ def create_job(task: str, session: str, model: str, yes: bool, spend_cap: float 
             "model": model,
             "yes": bool(yes),
             "spend_cap": float(spend_cap or 0.0),
+            "allow": [str(e) for e in (allow or [])],
             "status": "running",
             "answer": "",
             "error": "",
@@ -115,8 +123,9 @@ def run_bg_worker(job_id: str) -> str:
         cfg = Config.load()
         cfg.model = str(job.get("model", "")) or cfg.model
         cfg.spend_cap_usd = cap
+        allow = tuple(str(e) for e in (job.get("allow", []) or []))
         save_message(session, "user", task)
-        approve = _make_approver(bool(job.get("yes", False)), cfg.approved_commands)
+        approve = _make_approver(bool(job.get("yes", False)), cfg.approved_commands, allow)
         try:
             answer = run_agent(
                 task,

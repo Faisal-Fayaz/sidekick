@@ -24,16 +24,21 @@ def run(
     bg: bool = typer.Option(
         False, "--bg", help="Run detached, return a job id, notify on completion"
     ),
+    allow: str = typer.Option(
+        "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
+    ),
 ):
     """Single-shot: sk run \"summarize disk usage in ~/\""""
     import json as _json
 
+    from sk.config import parse_allow_list
     from sk.jobs import create_job, spawn_worker
 
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model, task, quiet=as_json)
+    allowed = parse_allow_list(allow)
     if bg:
-        job_id = create_job(task, session, cfg.model, yes, cfg.spend_cap_usd)
+        job_id = create_job(task, session, cfg.model, yes, cfg.spend_cap_usd, allowed)
         if not job_id or not spawn_worker(job_id):
             msg = "Error: could not start background worker."
             if as_json:
@@ -79,7 +84,7 @@ def run(
         console.print(f"[dim]task: {task}  model: {cfg.model} ({mode})[/dim]")
     save_message(session, "user", task)
 
-    approve = _make_approver(yes, cfg.approved_commands)
+    approve = _make_approver(yes, cfg.approved_commands, allowed)
     used_tools: list[str] = []
 
     def _recorder(name: str, args: dict) -> None:
