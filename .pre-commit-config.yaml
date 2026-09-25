@@ -1,0 +1,22 @@
+# Pre-commit: fast local gates mirroring CI (see CONTRIBUTING.md).
+# Install: pipx install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [check, src, tests]
+      - id: ruff-format
+        args: [--check, src, tests]
+  - repo: local
+    hooks:
+      - id: mypy-baseline
+        name: mypy baseline (see pyproject [tool.mypy])
+        entry: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py
+        language: system
+        pass_filenames: false
+      - id: pytest-fast
+        name: pytest fast subset (full suite in CI)
+        entry: uv run --python 3.12 --with pytest --with hypothesis pytest tests/test_security.py tests/test_properties.py tests/test_daemon.py tests/test_launchd_notify.py -q
+        language: system
+        pass_filenames: false

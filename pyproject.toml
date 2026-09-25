@@ -47,7 +47,11 @@ dependencies = [
 
 [project.optional-dependencies]
 voice = ["faster-whisper"]  # local STT for `sk talk` + TUI mic; install on demand
-test = ["pytest>=8.0"]
+test = [
+    "hypothesis>=6.0",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
 dev = [
     "build>=1.2",
     "twine>=5.0",
@@ -108,7 +112,7 @@ ignore_missing_imports = true
 # CI gate: mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py
 #   src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py
 #   src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py
-#   src/sk/keyring.py src/sk/auth.py
+#   src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py
 disallow_untyped_defs = false
 warn_unused_ignores = true
 strict_equality = true
