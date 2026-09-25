@@ -20,20 +20,48 @@ def run(
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes (else prompts)"),
     model: str = typer.Option("auto", help="Model: auto (router), fast, smart, or name"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output + exit codes"),
 ):
     """Single-shot: sk run \"summarize disk usage in ~/\""""
+    import json as _json
+
     cfg = _cfg()
-    cfg.model = _resolve_model(cfg, model, task)
+    cfg.model = _resolve_model(cfg, model, task, quiet=as_json)
     history = get_history(session)
-    mode = "auto-approve writes" if yes else "confirm writes"
-    console.print(f"[dim]task: {task}  model: {cfg.model} ({mode})[/dim]")
+    if not as_json:
+        mode = "auto-approve writes" if yes else "confirm writes"
+        console.print(f"[dim]task: {task}  model: {cfg.model} ({mode})[/dim]")
     save_message(session, "user", task)
 
     approve = _make_approver(yes, cfg.approved_commands)
-    on_tool = _make_on_tool()
-    on_token = None if no_stream else _make_on_token()
+    used_tools: list[str] = []
 
-    console.print("[dim]working... (streams live)[/dim]")
+    def _recorder(name: str, args: dict) -> None:
+        if name not in used_tools:
+            used_tools.append(name)
+
+    on_tool = _recorder if as_json else _make_on_tool()
+    on_token = None if (no_stream or as_json) else _make_on_token()
+
+    def _emit(ok: bool, answer: str, error: str | None) -> None:
+        # plain print: rich would wrap long lines and parse [] as markup,
+        # either of which corrupts machine-readable output.
+        print(
+            _json.dumps(
+                {
+                    "ok": ok,
+                    "answer": answer,
+                    "model": cfg.model,
+                    "session": session,
+                    "tools": used_tools,
+                    "error": error,
+                }
+            ),
+            flush=True,
+        )
+
+    if not as_json:
+        console.print("[dim]working... (streams live)[/dim]")
     try:
         answer = run_agent(
             task,
@@ -47,9 +75,15 @@ def run(
             review_plan=_make_plan_reviewer({"yolo": yes}),
         )
     except Exception as e:
+        if as_json:
+            _emit(False, "", str(e)[:500])
+            raise typer.Exit(1)
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     save_message(session, "assistant", answer)
+    if as_json:
+        _emit(True, answer or "", None)
+        return
     console.print()
     streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
     if on_token is None or streamed < len(answer or "") * 0.5:
