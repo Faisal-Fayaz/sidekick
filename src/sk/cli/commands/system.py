@@ -594,6 +594,52 @@ def audit(
 
 
 @app.command()
+def stats(
+    session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
+    format: str = typer.Option("md", "--format", "-f", help="md or json"),
+):
+    """Usage + cost stats from audit rows. Fully offline, estimates marked."""
+    import json as _json
+
+    from sk.store import usage_stats
+
+    stats = usage_stats(session=session.strip())
+    if format.strip().lower().startswith("json"):
+        console.print(_json.dumps(stats, indent=2, default=str))
+        return
+    scope = f"session `{session}`" if session.strip() else "all sessions"
+    if not stats["turns"] and not stats["tool_runs"]:
+        console.print(f"[dim](no usage logged for {scope} yet — run something first)[/dim]")
+        return
+    console.print(
+        f"[bold]usage[/] {scope} — {stats['turns']} turns, "
+        f"{stats['tool_runs']} tool runs, ~{stats['tokens']} tokens (heuristic)"
+    )
+    console.print(
+        f"traffic: [green]{stats['local_runs']} local[/green] / "
+        f"[yellow]{stats['egress_runs']} egress[/yellow]"
+        + (f" · denied {stats['denied']}" if stats["denied"] else "")
+        + (f" · failed {stats['failed']}" if stats["failed"] else "")
+    )
+    if stats["tools"]:
+        top = ", ".join(
+            f"{k}×{v}" for k, v in sorted(stats["tools"].items(), key=lambda kv: -kv[1])[:8]
+        )
+        console.print(f"[dim]tools: {top}[/dim]")
+    for model, info in sorted(stats["per_model"].items()):
+        if model == "?":
+            continue
+        cost = f"≈${info['cost_usd']}" if info["cost_usd"] is not None else "n/a"
+        console.print(
+            f"• [cyan]{model}[/cyan]: {info['turns']} turns, ~{info['tokens']} tokens, {cost}"
+        )
+    if stats["cost_usd"] is not None:
+        console.print(f"[bold]≈${stats['cost_usd']} total (input-rate estimates)[/bold]")
+    elif stats["unpriced_tokens"]:
+        console.print("[dim]cost n/a (no priced models used)[/dim]")
+
+
+@app.command()
 def oops(
     model: str = typer.Option("", help="Model override or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable streaming"),

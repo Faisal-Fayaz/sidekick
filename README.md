@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-339%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-343%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,7 +53,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 339-test suite incl. prompt-regression evals | ✅ | rare |
+| 343-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
@@ -151,6 +151,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthro
 | `sk history` / `sk oops` | Shell log / explain last failure |
 | `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
+| `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens) |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk skills` / `sk skills-search` / `sk skills-install superpowers` / `sk daemon [--once]` / `sk daemon-install` | Skill packs (obra/superpowers) / background watcher (systemd) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
@@ -186,7 +187,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 339 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 343 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
