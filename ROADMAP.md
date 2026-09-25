@@ -24,12 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.12.0 (daemon compounds)
-
-1. **Scheduled tasks (#38)** — natural-language schedules for the daemon, persisted on systemd + launchd, deliveries respect DND.
-2. **Background runs via `sk run --bg` (#39)** — daemon + desktop notification on completion, reusing the `--json` envelope; spend-cap gated.
-3. **Session allowlist (#40)** — per-session auto-approve list (`--allow`), safety gate for unattended runs.
-4. **Daemon-as-teammate pilot (#41)** — morning digest only (brief + dirty repos + failures); full CI watch out of scope.
+## Next — v0.13.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -73,6 +68,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.12.0` — daemon compounds: scheduled tasks (#38), background runs (#39), session allowlist (#40), teammate-pilot digest (#41).
 - `v0.11.0` — daemon remainder (#34: launchd + notifier with DND) + test-infra remainder (#35: pre-commit, property tests, coverage).
 - `v0.10.0` — bundle release: `sk run --json`, `/fork`, `sk models pull/prune`, capability profiles, `sk stats`, MCP server + keyring/spend caps (#30).
 - `v0.9.0` — mac audio capture fix (contributor branch).
