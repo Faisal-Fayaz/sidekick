@@ -994,7 +994,7 @@ class SidekickTUI(App):
                     hist,
                     cfg,
                     on_tool,
-                    None,
+                    on_token,
                     self._approve,
                     on_reasoning,
                     bool(self.state.get("yolo")),

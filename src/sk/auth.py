@@ -49,6 +49,8 @@ def key_source(cfg) -> str:
     try:
         if os.getenv("SIDEKICK_API_KEY", "").strip():
             return "env"
+        if cfg.provider == "opencode" and os.getenv("OPENCODE_API_KEY", "").strip():
+            return "env"
         if (cfg.api_key or "").strip():
             return "file"
         if _kr.get_key(cfg.provider):

@@ -214,3 +214,51 @@ def test_cli_model_flag_accepts_provider_name(tmp_path, monkeypatch):
     assert _resolve_model(cfg, "groq") == PRESETS["groq"]["model"]
     assert _resolve_model(cfg, "fast") == "openai/gpt-oss-20b"
     assert _resolve_model(cfg, "") == "openai/gpt-oss-20b"
+
+
+def test_opencode_free_preset():
+    from sk.config import OPENCODE_FREE_MODELS
+
+    preset = PRESETS["opencode"]
+    assert preset["base_url"].startswith("https://opencode.ai/zen/v1")
+    assert preset["key"] == ""
+    assert preset["model"] in OPENCODE_FREE_MODELS
+    assert OPENCODE_FREE_MODELS  # curated list non-empty
+
+
+def test_opencode_tiers_use_free_models():
+    from sk.config import OPENCODE_FREE_MODELS, TIERS, provider_tier
+
+    for tier in ("fast", "smart"):
+        resolved = provider_tier("opencode", tier, "fallback")
+        assert resolved in OPENCODE_FREE_MODELS, f"{tier} -> {resolved} not in free list"
+    assert TIERS["opencode"]["fast"] != TIERS["opencode"]["smart"]
+
+
+def test_opencode_env_key(monkeypatch):
+    monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+    cfg = Config(
+        provider="opencode",
+        model="muse-spark-1.3-contributor-free",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
+    assert cfg.effective_api_key() == ""
+    monkeypatch.setenv("OPENCODE_API_KEY", "oc-test-key")
+    assert cfg.effective_api_key() == "oc-test-key"
+
+
+def test_opencode_model_alias_switches_provider():
+    cfg = Config(
+        provider="ollama",
+        model="opencode",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
+    assert cfg.normalize_model_alias() is True
+    assert cfg.provider == "opencode"
+    assert cfg.model == PRESETS["opencode"]["model"]

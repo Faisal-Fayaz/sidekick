@@ -297,6 +297,50 @@ def _run(coro):
     asyncio.run(coro)
 
 
+async def _pilot_live_hidden_after_completion(monkeypatch):
+    from textual.widgets import RichLog
+
+    import sk.agent as agent
+
+    seen_on_token = {"cb": None}
+
+    def streaming_fake(*args, **k):
+        import time
+
+        on_token = args[4] if len(args) > 4 else k.get("on_token")
+        seen_on_token["cb"] = on_token
+        if on_token:
+            on_token("the ")
+            time.sleep(0.2)
+            on_token("answer.")
+        return "the answer."
+
+    monkeypatch.setattr(agent, "run_agent", streaming_fake)
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input", ChatArea)
+        area.focus()
+        area.text = "hi"
+        await pilot.press("enter")
+        streamed_live = False
+        for _ in range(80):
+            await pilot.pause()
+            live = app.query_one("#live", RichLog)
+            if app._live_n >= 1:
+                streamed_live = True
+            if live.styles.display == "none":
+                break
+        assert seen_on_token["cb"] is not None, "on_token must be wired to run_agent"
+        assert streamed_live, "live area should stream the answer before completion"
+        live = app.query_one("#live", RichLog)
+        assert app._live_parts == [], "live parts should reset after completion"
+        assert live.styles.display == "none", "live area must be hidden after completion"
+
+
+def test_live_hidden_after_completion(monkeypatch):
+    _run(_pilot_live_hidden_after_completion(monkeypatch))
+
+
 def test_pilot_mount():
     _run(_pilot_checks())
 

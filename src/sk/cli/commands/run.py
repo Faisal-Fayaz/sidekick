@@ -91,8 +91,9 @@ def run(
         if name not in used_tools:
             used_tools.append(name)
 
-    on_tool = _recorder if as_json else _make_on_tool()
-    on_token = None if (no_stream or as_json) else _make_on_token()
+    stream = {"n": 0, "cleared": False, "clear_line": True}
+    on_tool = _recorder if as_json else _make_on_tool(stream)
+    on_token = None if (no_stream or as_json) else _make_on_token(stream)
 
     def _emit(ok: bool, answer: str, error: str | None) -> None:
         # plain print: rich would wrap long lines and parse [] as markup,
@@ -112,7 +113,7 @@ def run(
         )
 
     if not as_json:
-        console.print("[dim]working... (streams live)[/dim]")
+        console.print("[dim]working... (streams live)[/dim]", end="")
     try:
         answer = run_agent(
             task,
@@ -129,16 +130,19 @@ def run(
         if as_json:
             _emit(False, "", str(e)[:500])
             raise typer.Exit(1)
+        console.print("\r\x1b[2K", end="")
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     save_message(session, "assistant", answer)
     if as_json:
         _emit(True, answer or "", None)
         return
-    console.print()
     streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
-    if on_token is None or streamed < len(answer or "") * 0.5:
+    if on_token is None or streamed < len(answer or "") * 0.5 or not (answer or "").strip():
+        console.print("\r\x1b[2K", end="")
         console.print(Markdown(answer or "(empty)"))
+    else:
+        console.print()
     console.print("[dim]--- done ---[/dim]")
 
 
