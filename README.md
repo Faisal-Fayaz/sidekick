@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-434%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-443%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,7 +53,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 434-test suite incl. prompt-regression evals | ✅ | rare |
+| 443-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
@@ -80,14 +80,14 @@ The published name is **`sidekick-agent`** (the `sidekick` name is taken on
 PyPI); the command stays `sk`. Version is a single source of truth in
 `src/sk/__init__.py`. Publishing is automatic and credential-free: when a PR
 is merged to `main` of the canonical repo
-[`Faisal01011/sidekick`](https://github.com/Faisal01011/sidekick) with a bumped
+[`Faisal-Fayaz/sidekick`](https://github.com/Faisal-Fayaz/sidekick) with a bumped
 `__version__`, GitHub Actions trusted-publishes to PyPI and opens a GitHub
 Release (forks can never publish) — details in [`packaging/README.md`](packaging/README.md).
 
 **From source (dev):**
 
 ```bash
-git clone https://github.com/Faisal01011/sidekick && cd sidekick
+git clone https://github.com/Faisal-Fayaz/sidekick && cd sidekick
 uv tool install -e ".[voice]"   # editable dev install; STT included
 sk doctor
 ```
@@ -191,7 +191,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 434 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 443 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.

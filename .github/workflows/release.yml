@@ -1,9 +1,9 @@
 name: release
 
 # Publish to PyPI only when code is merged to main of the canonical repo
-# (Faisal01011/sidekick). Pushes to forks are skipped: GitHub mints the OIDC
+# (Faisal-Fayaz/sidekick). Pushes to forks are skipped: GitHub mints the OIDC
 # token with the repo_owner that runs the workflow, and the PyPI trusted
-# publisher is registered for Faisal01011/sidekick only — so a fork merge
+# publisher is registered for Faisal-Fayaz/sidekick only — so a fork merge
 # simply cannot authenticate to PyPI.
 #
 # Triggered on `push` to main (fires when a PR is merged), not on the
@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: github.repository == 'Faisal01011/sidekick'
+    if: github.repository == 'Faisal-Fayaz/sidekick'
     outputs:
       version: ${{ steps.ident.outputs.version }}
       target: ${{ steps.ident.outputs.target }}
@@ -113,7 +113,7 @@ jobs:
 
       # Trusted publishing — zero stored credentials. Register this repo as a
       # "publishing source" on PyPI: https://pypi.org/manage/account/publishing/
-      #   owner   : Faisal01011  repo  : sidekick  project: sidekick-agent
+      #   owner   : Faisal-Fayaz  repo  : sidekick  project: sidekick-agent
       #   workflow: release.yml  environment: pypi
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

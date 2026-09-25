@@ -5,8 +5,8 @@ How to pick up work and get it merged. The shared plan lives in
 
 ## Picking up work
 
-1. Browse [open issues](https://github.com/Faisal01011/sidekick/issues) —
-   they're grouped by [milestones](https://github.com/Faisal01011/sidekick/milestones)
+1. Browse [open issues](https://github.com/Faisal-Fayaz/sidekick/issues) —
+   they're grouped by [milestones](https://github.com/Faisal-Fayaz/sidekick/milestones)
    (`v0.3.0` = now; later work parks as bullets in `ROADMAP.md`).
 2. Comment on the issue so we don't duplicate effort, then work from a
    branch (`feature/<what>` or `fix/<what>`).
@@ -20,7 +20,7 @@ How to pick up work and get it merged. The shared plan lives in
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/Faisal01011/sidekick && cd sidekick
+git clone https://github.com/Faisal-Fayaz/sidekick && cd sidekick
 uv tool install -e ".[voice]"   # editable dev install as `sk`, STT included
 sk doctor                        # checks provider + model (needs `ollama serve`)
 ```
@@ -28,7 +28,7 @@ sk doctor                        # checks provider + model (needs `ollama serve`
 ## Before opening a PR
 
 ```bash
-uv run --with pytest --with hypothesis pytest tests -q   # full suite (434 tests, no Ollama needed)
+uv run --with pytest --with hypothesis pytest tests -q   # full suite (443 tests, no Ollama needed)
 uvx ruff check src tests               # lint baseline (E/F/I/UP, see pyproject)
 uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py
 ```
@@ -56,7 +56,7 @@ Notes:
 - One concern per PR; small diffs get reviewed fastest.
 - Link work: `closes #N` in the body so merging closes the issue and the
   milestone tracks itself.
-- Either maintainer ([Faisal01011](https://github.com/Faisal01011),
+- Either maintainer ([Faisal-Fayaz](https://github.com/Faisal-Fayaz),
   [Irfanwani](https://github.com/Irfanwani)) may approve and merge.
 
 ## Releases (read before bumping the version)

@@ -1,11 +1,11 @@
 # Sidekick Roadmap
 
-Shared plan for [`Faisal01011/sidekick`](https://github.com/Faisal01011/sidekick) —
+Shared plan for [`Faisal-Fayaz/sidekick`](https://github.com/Faisal-Fayaz/sidekick) —
 the single source of truth for what we're building and in what order.
 The short `## Roadmap` section in `README.md` is just a pointer here.
 
 > **Rule: this file changes by pull request only.** Either maintainer
-> ([Faisal01011](https://github.com/Faisal01011) or
+> ([Faisal-Fayaz](https://github.com/Faisal-Fayaz) or
 > [Irfanwani](https://github.com/Irfanwani)) may propose; either may approve.
 > Keep each versioned section to ≤4 items so it stays a real plan, not a wishlist.
 > Workflow details: [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -60,7 +60,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 ## Done
 
-Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
+Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
 - `v0.14.0` — skills compound: plugin design (#48), user-defined tools (#49), skill registry (#50).
 - `v0.13.0` — groq provider fix (contributor branch).
