@@ -28,9 +28,16 @@ sk doctor                        # checks provider + model (needs `ollama serve`
 ## Before opening a PR
 
 ```bash
-uv run --with pytest pytest tests -q   # full suite (191 tests, no Ollama needed)
+uv run --with pytest --with hypothesis pytest tests -q   # full suite (411 tests, no Ollama needed)
 uvx ruff check src tests               # lint baseline (E/F/I/UP, see pyproject)
 uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py
+```
+
+Optional local gates (mirrored in CI):
+
+```bash
+pipx install pre-commit && pre-commit install   # ruff + mypy + fast subset on commit
+uv run --with pytest pytest tests -q --cov=sk --cov-report=term-missing  # coverage report (informational)
 ```
 
 Notes:

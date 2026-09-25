@@ -448,6 +448,32 @@ def _provider_host(cfg) -> str:
         return ""
 
 
+def _spend_blocked(session: str, cfg) -> str | None:
+    """Refusal message when the session hit its spend cap, else None.
+
+    Unpriced usage (local models, unknown rates) costs 0 and never blocks.
+    Best-effort: any accounting failure means 'no data' = allow.
+    """
+    try:
+        cap = float(getattr(cfg, "spend_cap_usd", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if cap <= 0:
+        return None
+    try:
+        from .store import usage_stats
+
+        spend = float(usage_stats(session or "").get("cost_usd") or 0.0)
+    except Exception:
+        return None
+    if spend >= cap:
+        return (
+            f"Spend cap reached: session ${spend:.4f} ≥ cap ${cap:.2f}. "
+            f"Raise with `sk config --spend-cap N` (0 = unlimited)."
+        )
+    return None
+
+
 def _run_tools_batch(
     calls: list[tuple[str, dict]],
     approve,
@@ -990,6 +1016,14 @@ def run_agent(
     turns with destructive actions (skipped when None or auto_approve).
     """
     session = session or audit_session.get()
+    blocked = _spend_blocked(session, cfg)
+    if blocked is not None:
+        if on_token is not None:
+            try:
+                on_token(blocked)  # type: ignore
+            except Exception:
+                pass
+        return blocked
     quick = _quick_reply(user_msg)
     if quick is not None:
         if on_token is not None:
@@ -1057,10 +1091,22 @@ def run_agent(
     final_text = ""
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
+    from .model_profiles import max_parallel_for, native_tools_for
+
+    max_parallel = max_parallel_for(cfg.model)
     # Some providers/models reject native function calling (Groq 400 "tool
     # calling is not supported with this model"). Remember the failure so the
     # rest of this turn AND future turns skip tools and use text-JSON instead.
-    tools_enabled = cfg.model not in _tools_unsupported
+    # Profiles seed the same switch: known text-only models (llama3.2:3b)
+    # start there immediately instead of paying a probing 400 first.
+    tools_enabled = native_tools_for(cfg.model) and cfg.model not in _tools_unsupported
+    if not tools_enabled and cfg.model not in _tools_unsupported:
+        messages.append(
+            {
+                "role": "user",
+                "content": "\n[model does not support native tool calling — emit tools as ```json blocks only]\n",
+            }
+        )
     for _ in range(cfg.max_steps):
         try:
             msg = _stream_chat(
@@ -1112,7 +1158,9 @@ def run_agent(
             if not proceed:
                 return "Plan denied by user — nothing was executed."
             messages.append({"role": "assistant", "content": msg_text})
-            outs = _run_tools_batch(batch, turn_approve, on_tool, seen, session, cfg)
+            outs = _run_tools_batch(
+                batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
+            )
             combined = [
                 f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
             ]
@@ -1167,7 +1215,9 @@ def run_agent(
                 ],
             }
         )
-        outs = _run_tools_batch(batch, turn_approve, on_tool, seen, session, cfg)
+        outs = _run_tools_batch(
+            batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
+        )
         for (tid, _, _), (result, _) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
 

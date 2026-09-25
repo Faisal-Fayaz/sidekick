@@ -23,6 +23,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("clear", "start a fresh session (old one kept, see `/sessions`)"),
     ("sessions [delete <n>]", "list past sessions, or delete one"),
     ("resume <n>", "switch to a past session"),
+    ("fork [n]", "branch current session at n messages into a new one"),
     ("yolo", "auto-approve file writes"),
     ("confirm", "ask before file writes (default in TUI)"),
     ("remember <fact>", "save a memory"),
@@ -173,7 +174,7 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             handled=True,
             text="**sessions**\n"
             + "\n".join(lines)
-            + "\n`/resume <n>` to switch · `/sessions delete <n>` to remove",
+            + "\n`/resume <n>` to switch · `/fork [n]` to branch · `/sessions delete <n>` to remove",
         )
 
     if cmd == "resume":
@@ -187,6 +188,20 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(
             handled=True, text=f"_resumed `{target}`_", clear_view=True, switch_session=target
         )
+
+    if cmd == "fork":
+        from .store import fork_session, new_session_id
+
+        raw = (arg.strip().split() or [""])[0]
+        try:
+            keep_n = int(raw) if raw else None
+        except ValueError:
+            return SlashOut(handled=True, text="usage: `/fork [n]` (n = messages to keep)")
+        fresh = new_session_id(session.split("-")[0] if "-" in session else session)
+        ok, msg = fork_session(session, keep_n, fresh)
+        if not ok:
+            return SlashOut(handled=True, text=msg)
+        return SlashOut(handled=True, text=f"_{msg}_", clear_view=True, switch_session=fresh)
 
     if cmd == "yolo":
         state["yolo"] = True

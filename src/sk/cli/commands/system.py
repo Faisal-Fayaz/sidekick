@@ -97,8 +97,12 @@ def upgrade(
         raise typer.Exit(1)
 
 
-@app.command()
-def models():
+models_app = typer.Typer(help="Models: list/pull/prune (ollama)")
+
+app.add_typer(models_app, name="models")
+
+
+def _list_models() -> None:
     """List models for the current provider."""
     from sk.auth import fetch_models
 
@@ -111,13 +115,107 @@ def models():
     if not names:
         console.print("[yellow]No models listed.[/yellow]")
         if cfg.provider == "ollama":
-            console.print("[dim]Try `ollama pull qwen3:4b`[/dim]")
+            console.print("[dim]Try `sk models pull qwen3:4b`[/dim]")
         return
     for n in names[:40]:
         mark = "← current" if n == cfg.model else ""
         console.print(f"• [cyan]{n}[/cyan] {mark}")
     if len(names) > 40:
         console.print(f"[dim]...+{len(names) - 40} more[/dim]")
+
+
+@models_app.callback(invoke_without_command=True)
+def _models_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        _list_models()
+
+
+@models_app.command("list")
+def models_list():
+    """List models for the current provider."""
+    _list_models()
+
+
+def _require_ollama(cfg) -> bool:
+    if cfg.provider == "ollama":
+        return True
+    console.print(f"[red]model pull/prune needs ollama (current provider: {cfg.provider}).[/red]")
+    return False
+
+
+@models_app.command("pull")
+def models_pull(
+    name: str = typer.Argument(..., help="Model id, e.g. qwen3:4b"),
+    timeout: int = typer.Option(1200, "--timeout", help="Seconds to wait for download"),
+):
+    """Download a model: sk models pull qwen3:4b"""
+    from sk.auth import fetch_models
+    from sk.init_wizard import pull_model
+
+    cfg = _cfg()
+    if not _require_ollama(cfg):
+        raise typer.Exit(1)
+    console.print(f"[dim]pulling {name} (one-time download)...[/dim]")
+    ok, msg = pull_model(name.strip(), timeout=timeout)
+    console.print(f"[green]{msg}[/green]" if ok else f"[red]{msg}[/red]")
+    if not ok:
+        raise typer.Exit(1)
+    try:
+        names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
+    except Exception as e:
+        console.print(f"[red]pulled, but cannot verify: {e}[/red]")
+        raise typer.Exit(1)
+    if name.strip() in names:
+        console.print(f"[green]✓ {name.strip()} installed.[/green]")
+    else:
+        console.print(f"[yellow]! {name.strip()} not in model list yet — try `sk models`.[/yellow]")
+
+
+@models_app.command("prune")
+def models_prune(
+    name: str = typer.Argument(..., help="Model id to remove, e.g. qwen3:4b"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Remove a model to free disk: sk models prune qwen3:4b"""
+    import shutil
+    import subprocess
+
+    from sk.auth import fetch_models
+
+    cfg = _cfg()
+    if not _require_ollama(cfg):
+        raise typer.Exit(1)
+    target = name.strip()
+    if not yes:
+        try:
+            if not typer.confirm(f"Remove {target}?", default=False):
+                console.print("aborted.")
+                return
+        except (EOFError, KeyboardInterrupt, OSError):
+            console.print("\naborted.")
+            return
+    if shutil.which("ollama") is None:
+        console.print("[red]ollama not found.[/red]")
+        raise typer.Exit(1)
+    try:
+        r = subprocess.run(["ollama", "rm", target], capture_output=True, text=True, timeout=120)
+    except Exception as e:
+        console.print(f"[red]remove failed: {e}[/red]")
+        raise typer.Exit(1)
+    if r.returncode != 0:
+        console.print(
+            f"[red]ollama rm exited {r.returncode}: {(r.stderr or '').strip()[:200]}[/red]"
+        )
+        raise typer.Exit(1)
+    try:
+        names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
+    except Exception as e:
+        console.print(f"[red]removed, but cannot verify: {e}[/red]")
+        raise typer.Exit(1)
+    if target not in names:
+        console.print(f"[green]✓ {target} removed.[/green]")
+    else:
+        console.print(f"[yellow]! {target} still listed — try `sk models`.[/yellow]")
 
 
 @app.command()
@@ -167,6 +265,7 @@ def config(
     base_url: str = typer.Option(
         "", help="Custom base URL (sets provider=custom unless --provider given)"
     ),
+    spend_cap: str = typer.Option("", help="Per-session spend cap USD, 0 = unlimited"),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
     """View/set config. Keys are chmod-600’d; env vars always win."""
@@ -192,9 +291,22 @@ def config(
             cfg.provider = "custom"
         changed = True
     if api_key:
-        cfg.api_key = api_key.strip()
+        from sk.auth import store_api_key
+
+        where = store_api_key(cfg.provider, api_key.strip())
+        cfg.api_key = "" if where == "keyring" else api_key.strip()
         changed = True
-        console.print("[green]api key saved (file is chmod 600)[/green]")
+        console.print(
+            "[green]api key saved to keyring.[/green]"
+            if where == "keyring"
+            else "[green]api key saved (file is chmod 600).[/green]"
+        )
+    if spend_cap.strip():
+        from sk.config import _parse_spend_cap
+
+        cfg.spend_cap_usd = _parse_spend_cap(spend_cap)
+        changed = True
+        console.print(f"[green]spend cap ${cfg.spend_cap_usd:.2f}/session (0 = unlimited).[/green]")
     if model:
         m = model.strip()
         low = m.lower()
@@ -214,7 +326,7 @@ def config(
         cfg.save()
     if show or not changed:
         console.print(
-            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}"
+            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}"
         )
         if cfg.project_note():
             console.print(f"[dim]{cfg.project_note()}[/dim]")
@@ -504,6 +616,52 @@ def audit(
             f"[dim]{ts}[/dim] {mark} [cyan]{r['tool']}[/cyan] {r['target'][:100]}  {where}"
             + (f" [dim]({r['session']})[/dim]" if not session.strip() else "")
         )
+
+
+@app.command()
+def stats(
+    session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
+    format: str = typer.Option("md", "--format", "-f", help="md or json"),
+):
+    """Usage + cost stats from audit rows. Fully offline, estimates marked."""
+    import json as _json
+
+    from sk.store import usage_stats
+
+    stats = usage_stats(session=session.strip())
+    if format.strip().lower().startswith("json"):
+        console.print(_json.dumps(stats, indent=2, default=str))
+        return
+    scope = f"session `{session}`" if session.strip() else "all sessions"
+    if not stats["turns"] and not stats["tool_runs"]:
+        console.print(f"[dim](no usage logged for {scope} yet — run something first)[/dim]")
+        return
+    console.print(
+        f"[bold]usage[/] {scope} — {stats['turns']} turns, "
+        f"{stats['tool_runs']} tool runs, ~{stats['tokens']} tokens (heuristic)"
+    )
+    console.print(
+        f"traffic: [green]{stats['local_runs']} local[/green] / "
+        f"[yellow]{stats['egress_runs']} egress[/yellow]"
+        + (f" · denied {stats['denied']}" if stats["denied"] else "")
+        + (f" · failed {stats['failed']}" if stats["failed"] else "")
+    )
+    if stats["tools"]:
+        top = ", ".join(
+            f"{k}×{v}" for k, v in sorted(stats["tools"].items(), key=lambda kv: -kv[1])[:8]
+        )
+        console.print(f"[dim]tools: {top}[/dim]")
+    for model, info in sorted(stats["per_model"].items()):
+        if model == "?":
+            continue
+        cost = f"≈${info['cost_usd']}" if info["cost_usd"] is not None else "n/a"
+        console.print(
+            f"• [cyan]{model}[/cyan]: {info['turns']} turns, ~{info['tokens']} tokens, {cost}"
+        )
+    if stats["cost_usd"] is not None:
+        console.print(f"[bold]≈${stats['cost_usd']} total (input-rate estimates)[/bold]")
+    elif stats["unpriced_tokens"]:
+        console.print("[dim]cost n/a (no priced models used)[/dim]")
 
 
 @app.command()

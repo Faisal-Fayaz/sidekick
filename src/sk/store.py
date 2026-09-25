@@ -178,10 +178,19 @@ def clear_session(session: str) -> None:
         conn.close()
 
 
+_id_seq = 0
+
+
 def new_session_id(prefix: str = "tui") -> str:
+    """Fresh session id. Timestamp + per-process counter: two forks/clears
+    within the same microsecond must never share an id (that silently
+    merges histories; bit macOS CI in #42)."""
     import time as _t
 
-    return f"{prefix}-{_t.strftime('%Y%m%d-%H%M%S')}"
+    global _id_seq
+    _id_seq += 1
+    stamp = _t.strftime("%Y%m%d-%H%M%S") + f"{_t.time_ns() % 1_000_000:06d}"
+    return f"{prefix}-{stamp}-{_id_seq % 10000:04d}"
 
 
 def list_sessions(limit: int = 20) -> list[dict]:
@@ -214,6 +223,45 @@ def delete_session(session: str) -> int:
         cur = conn.execute("DELETE FROM messages WHERE session=?", (session,))
         conn.commit()
         return cur.rowcount
+    finally:
+        conn.close()
+
+
+def fork_session(session: str, keep_n: int | None, new_session: str) -> tuple[bool, str]:
+    """Copy the first keep_n messages (None = all) into new_session. Returns (ok, msg).
+
+    Roles, contents and timestamps copied verbatim (fresh ids). Audit rows
+    and compaction summaries are deliberately NOT copied: the fork earns its
+    own going forward. Never raises; errors return (False, reason).
+    """
+    if keep_n is not None:
+        try:
+            n = int(keep_n)
+        except (TypeError, ValueError):
+            return (False, "usage: `/fork [n]` (n = messages to keep)")
+        if n <= 0:
+            return (False, "usage: `/fork [n]` (n = messages to keep, starting at 1)")
+    if not (new_session or "").strip():
+        return (False, "new session id is empty.")
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT role, content, ts FROM messages WHERE session=? ORDER BY id ASC", (session,)
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return (False, f"nothing to fork in '{session}'.")
+        if keep_n is not None and n > len(rows):
+            return (False, f"only {len(rows)} messages in '{session}' (asked for {n}).")
+        subset = rows if keep_n is None else rows[:n]
+        conn.executemany(
+            "INSERT INTO messages (session, role, content, ts) VALUES (?, ?, ?, ?)",
+            [(new_session, r, c, t) for r, c, t in subset],
+        )
+        conn.commit()
+        return (True, f"forked {len(subset)} messages → `{new_session}`")
+    except Exception as e:
+        return (False, f"fork failed: {e}")
     finally:
         conn.close()
 
@@ -720,3 +768,107 @@ def render_transcript(session: str, events: list[dict]) -> str:
             lines.append(f"`{e['target'][:200]}`" if e["target"] else "(no target)")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+# Approximate input $/MTok for known models. Estimates only: real bills
+# depend on input/output mix and current pricing. Unknown models → n/a.
+COST_PER_MTOK: dict[str, float] = {
+    "claude-sonnet-5": 2.0,
+    "claude-opus-5": 5.0,
+    "claude-haiku-4-5": 1.0,
+}
+
+
+def _est_tokens(text: str) -> int:
+    """chars/4 heuristic for usage accounting (matches agent.estimate_tokens)."""
+    return max(0, len(text or "") // 4)
+
+
+def usage_stats(session: str = "", limit: int = 5000) -> dict:
+    """Aggregate usage from audit rows + message contents. No new storage.
+
+    Tokens are chars/4 estimates; costs apply known input rates only and are
+    marked approximate. Session tokens attribute to that session's most-used
+    llm_call model (exact for the normal single-model case).
+    """
+    runs = list_tool_runs(session.strip(), limit=max(1, min(limit, 10000)))
+    conn = _connect()
+    try:
+        if session.strip():
+            cur = conn.execute(
+                "SELECT session, role, content FROM messages WHERE session=? ORDER BY id ASC LIMIT ?",
+                (session.strip(), limit),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT session, role, content FROM messages ORDER BY id ASC LIMIT ?", (limit,)
+            )
+        messages = [{"session": s, "role": r, "content": c} for s, r, c in cur.fetchall()]
+    finally:
+        conn.close()
+
+    by_session: dict[str, dict] = {}
+    for m in messages:
+        by_session.setdefault(m["session"], {"tokens": 0, "model": ""})
+        by_session[m["session"]]["tokens"] += _est_tokens(m["content"])
+    model_counts: dict[str, dict[str, int]] = {}
+    for r in runs:
+        if r["tool"] == "llm_call":
+            model = (r["target"] or "").strip() or "?"
+            by_session.setdefault(r["session"], {"tokens": 0, "model": ""})
+            model_counts.setdefault(r["session"], {}).setdefault(model, 0)
+            model_counts[r["session"]][model] += 1
+    for s, counts in model_counts.items():
+        by_session.setdefault(s, {"tokens": 0, "model": ""})
+        by_session[s]["model"] = max(counts, key=lambda m: counts[m])
+    for r in runs:
+        s = r["session"]
+        by_session.setdefault(s, {"tokens": 0, "model": ""})
+        by_session[s]["tokens"] += _est_tokens(r["target"])
+
+    tool_counts: dict[str, int] = {}
+    denied = failed = local = egress = 0
+    for r in runs:
+        if r["tool"] != "llm_call":
+            tool_counts[r["tool"]] = tool_counts.get(r["tool"], 0) + 1
+        if not r["approved"]:
+            denied += 1
+        elif not r["ok"]:
+            failed += 1
+        if is_local_traffic(r["provider"], r["host"]):
+            local += 1
+        else:
+            egress += 1
+
+    per_model: dict[str, dict] = {}
+    cost_known = 0.0
+    unknown_tokens = 0
+    for s, info in by_session.items():
+        model = info["model"] or "?"
+        entry = per_model.setdefault(model, {"turns": 0, "tokens": 0, "cost_usd": None})
+        entry["tokens"] += info["tokens"]
+        rate = COST_PER_MTOK.get(model)
+        if rate is not None:
+            charged = round(info["tokens"] / 1_000_000 * rate, 4)
+            entry["cost_usd"] = round((entry["cost_usd"] or 0.0) + charged, 4)
+            cost_known = round(cost_known + charged, 4)
+        else:
+            unknown_tokens += info["tokens"]
+    for s, counts in model_counts.items():
+        per_model.setdefault("?", {"turns": 0, "tokens": 0, "cost_usd": None})
+        per_model[by_session[s]["model"] or "?"]["turns"] += sum(counts.values())
+
+    return {
+        "turns": sum(1 for r in runs if r["tool"] == "llm_call"),
+        "tool_runs": len([r for r in runs if r["tool"] != "llm_call"]),
+        "tools": tool_counts,
+        "denied": denied,
+        "failed": failed,
+        "tokens": sum(v["tokens"] for v in by_session.values()),
+        "local_runs": local,
+        "egress_runs": egress,
+        "sessions": len(by_session),
+        "per_model": per_model,
+        "cost_usd": round(cost_known, 4) if cost_known else None,
+        "unpriced_tokens": unknown_tokens,
+    }

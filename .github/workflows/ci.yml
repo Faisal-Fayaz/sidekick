@@ -26,7 +26,7 @@ jobs:
         run: uvx ruff format --check src tests
 
       - name: Mypy baseline (see pyproject [tool.mypy])
-        run: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/
+        run: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py
 
   test:
     runs-on: ${{ matrix.os }}
@@ -61,9 +61,28 @@ jobs:
 
       - name: Check test-count badge matches collected tests
         run: |
-          COUNT=$(uv run --with pytest pytest tests --collect-only -q 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)
+          COUNT=$(uv run --with pytest --with hypothesis pytest tests --collect-only -q 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)
           echo "collected=$COUNT"
           grep -q "tests-${COUNT}%20passing" README.md || (echo "README badge stale: expected tests-${COUNT} passing" && exit 1)
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package + test extras
+        run: uv pip install --system -e ".[test]"
+
+      - name: Report coverage (informational, not gated)
+        run: uv run pytest tests -q --cov=sk --cov-report=term-missing 2>&1 | tail -n 40
 
   build:
     runs-on: ubuntu-latest

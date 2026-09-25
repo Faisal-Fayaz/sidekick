@@ -295,7 +295,7 @@ def _install_spawn_guard() -> None:
         return original(path, args, _sanitize_pass_fds(passfds))
 
     try:
-        _util.spawnv_passfds = _guarded  # type: ignore[method-assign]
+        _util.spawnv_passfds = _guarded
     except Exception:
         pass
 

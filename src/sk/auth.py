@@ -1,12 +1,65 @@
 """Provider auth + model listing. Shared by CLI, slash, wizard.
 
-Rule: keys live in config file (chmod 600) or env, and are ALWAYS masked in
-output. Keys never enter prompt context.
+Rule: keys live in OS keyring, config file (chmod 600) or env, and are
+ALWAYS masked in output. Keys never enter prompt context.
 """
 
 from __future__ import annotations
 
 ANTHROPIC_VERSION = "2023-06-01"
+
+
+def store_api_key(provider: str, key: str) -> str:
+    """Persist a key, keyring-first. Returns 'keyring' | 'file'.
+
+    Callers store nothing on disk when 'keyring' wins (clear any stale file
+    key); on 'file' they save via Config as before. Never raises.
+    """
+    from . import keyring as _kr
+
+    try:
+        if _kr.set_key(provider, key):
+            return "keyring"
+    except Exception:
+        pass
+    return "file"
+
+
+def forget_api_key(provider: str) -> None:
+    """Remove a key from keyring AND file. Never raises."""
+    from . import keyring as _kr
+
+    try:
+        _kr.delete_key(provider)
+    except Exception:
+        pass
+
+
+def key_source(cfg) -> str:
+    """Where the current provider's effective key comes from.
+
+    env | file | keyring | preset (local dummy) | none. File wins over
+    keyring (explicit local config); keyring saves clear stale file keys,
+    so they only coincide after manual edits. Never raises.
+    """
+    import os
+
+    from . import keyring as _kr
+
+    try:
+        if os.getenv("SIDEKICK_API_KEY", "").strip():
+            return "env"
+        if (cfg.api_key or "").strip():
+            return "file"
+        if _kr.get_key(cfg.provider):
+            return "keyring"
+        from .config import PRESETS
+
+        if PRESETS.get(cfg.provider, {}).get("key"):
+            return "preset"
+    except Exception:
+        pass
+    return "none"
 
 
 def anthropic_headers(api_key: str) -> dict[str, str]:

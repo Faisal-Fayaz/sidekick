@@ -26,6 +26,17 @@ PROJECT_FILENAME = ".sidekick.toml"
 # Keys a project file may never set: traffic diverters. A hostile repo could
 # otherwise point your prompts (incl. memories) at its own server.
 PROJECT_BLOCKED_KEYS = ("api_key", "base_url")
+# Policy keys a project file may not set either (warned, not security-critical).
+PROJECT_POLICY_KEYS = ("spend_cap_usd",)
+
+
+def _parse_spend_cap(raw: object) -> float:
+    """Non-negative USD cap, 0 = unlimited. Unparseable → 0 (a budgeting aid,
+    not a security boundary — garbage config must not brick the tool)."""
+    try:
+        return max(0.0, float(str(raw or "").strip() or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def find_project_file(start: str | Path = "") -> Path | None:
@@ -64,6 +75,9 @@ def load_project_values(path: str | Path | None) -> tuple[dict[str, object], lis
     for key in PROJECT_BLOCKED_KEYS:
         if key in raw:
             warnings.append(f"ignoring {key} in {path} (global config or env only)")
+    for key in PROJECT_POLICY_KEYS:
+        if key in raw:
+            warnings.append(f"ignoring {key} in {path} (spend policy is global/env only)")
     proj = raw.get("project", {})
     if isinstance(proj, dict):
         docs = proj.get("docs", [])
@@ -173,6 +187,56 @@ def is_project_approved(name: str, args: dict, approved_commands: tuple[str, ...
     return False
 
 
+def parse_allow_list(raw: str | list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Normalize --allow input to entries. Accepts 'a,b c' or a list.
+
+    Entries are tool names ('write_file') or shell scopes ('shell:pytest').
+    Never raises; garbage in, empty tuple out.
+    """
+    try:
+        parts: list[str] = []
+        items = [raw] if isinstance(raw, str) else list(raw or [])
+        for item in items:
+            for chunk in str(item).replace(",", " ").split():
+                chunk = chunk.strip()
+                if chunk:
+                    parts.append(chunk)
+        return tuple(parts)
+    except Exception:
+        return ()
+
+
+def is_session_allowed(name: str, args: dict, allow: tuple[str, ...] | list[str]) -> bool:
+    """True if a session --allow entry covers this approval-gated tool call.
+
+    'write_file' allows the whole tool; 'shell:pytest' allows shell
+    commands starting at a word boundary ('pytest -q' yes, 'pytest-x' no);
+    bare 'shell' allows all shell. Non-gated tools need no entry.
+    Pure function, safe to unit test.
+    """
+    try:
+        entries = [str(e).strip() for e in (allow or []) if str(e).strip()]
+    except Exception:
+        return False
+    if not entries:
+        return False
+    for e in entries:
+        if ":" in e:
+            tool, scope = e.split(":", 1)
+            tool, scope = tool.strip(), scope.strip()
+            if tool != name or not scope:
+                continue
+            if name == "shell":
+                cmd = str((args or {}).get("cmd", "")).strip()
+                if cmd == scope or cmd.startswith(scope + " ") or cmd.startswith(scope + "\t"):
+                    return True
+            else:
+                return True  # tool:path scope reserved; tool match suffices today
+        elif e == name:
+            return True
+    return False
+
+
 DEFAULTS: dict[str, str | int | float] = {
     "provider": "ollama",
     "model": str(PRESETS["ollama"]["model"]),
@@ -182,6 +246,7 @@ DEFAULTS: dict[str, str | int | float] = {
     "temperature": 0.2,
     "theme": "dark",
     "history_budget_tokens": 3000,
+    "spend_cap_usd": 0.0,
 }
 
 
@@ -195,6 +260,7 @@ class Config:
     temperature: float = float(DEFAULTS["temperature"])
     theme: str = str(DEFAULTS["theme"])
     history_budget_tokens: int = int(DEFAULTS["history_budget_tokens"])
+    spend_cap_usd: float = float(DEFAULTS["spend_cap_usd"])  # 0 = unlimited; global/env only
     # project layer (from .sidekick.toml; empty when outside a project)
     project_root: str = ""
     project_docs: tuple[str, ...] = ()
@@ -211,6 +277,14 @@ class Config:
     def effective_api_key(self) -> str:
         if self.api_key.strip():
             return self.api_key.strip()
+        try:
+            from . import keyring as _kr
+
+            key = _kr.get_key(self.provider)
+            if key:
+                return key
+        except Exception:
+            pass
         preset = PRESETS.get(self.provider, PRESETS["custom"])
         return preset["key"]
 
@@ -219,12 +293,14 @@ class Config:
         """Precedence: env > project file (.sidekick.toml upward from cwd) > global file.
 
         Sensitive keys (api_key, base_url) never come from project files.
+        spend_cap_usd is global/env only: repos must not set their own limits.
         Also publishes the memory namespace for store scoping (see store docs).
         """
         provider = os.getenv("SIDEKICK_PROVIDER", "")
         model = os.getenv("SIDEKICK_MODEL", "")
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
         api_key = os.getenv("SIDEKICK_API_KEY", "")
+        spend_cap = os.getenv("SIDEKICK_SPEND_CAP", "")
 
         file_vals: dict[str, object] = {}
         if CONFIG_PATH.exists():
@@ -256,6 +332,9 @@ class Config:
             temperature=float(str(vals.get("temperature", DEFAULTS["temperature"]))),
             history_budget_tokens=int(
                 str(vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]))
+            ),
+            spend_cap_usd=_parse_spend_cap(
+                spend_cap or vals.get("spend_cap_usd", DEFAULTS["spend_cap_usd"])
             ),
             theme=theme,
             project_root=str(project_file.parent) if project_file else "",
@@ -316,6 +395,7 @@ class Config:
             "temperature": self.temperature,
             "theme": self.theme,
             "history_budget_tokens": self.history_budget_tokens,
+            "spend_cap_usd": self.spend_cap_usd,
         }
         if _HAS_TOMLI_W:
             with open(CONFIG_PATH, "wb") as f:

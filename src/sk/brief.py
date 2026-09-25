@@ -95,7 +95,7 @@ def format_brief_text(data: dict) -> str:
             )
     m = re.search(r"(\d+)% /", sysinfo)
     if m and int(m.group(1)) >= 90:
-        out += ["", f"⚠ disk {m.group(1)}% full"]
+        out += ["", f"⚠ disk {m.group(1)}% full — prune models with `sk models prune <id>`"]
     for s in data.get("projects", []):
         if s.get("exists") and int(s.get("changed", 0) or 0) > 0:
             out.append(f"⚠ {s['path']}: {s['changed']} uncommitted")
