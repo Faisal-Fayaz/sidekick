@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-387%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-394%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,7 +53,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 387-test suite incl. prompt-regression evals | ✅ | rare |
+| 394-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
@@ -144,7 +144,8 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthro
 | `sk` / `sk tui [--continue]` | Fullscreen chat, fresh session each launch |
 | `sk chat [--continue]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
-| `sk run "task" [--yes] [--model auto\|fast\|smart\|name] [--json]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended) |
+| `sk run "task" [--yes] [--model auto\|fast\|smart\|name] [--json] [--bg]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion) |
+| `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
 | `sk todo add/list/done/clear` | Todos |
@@ -153,7 +154,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthro
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens) |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
-| `sk skills` / `sk skills-search` / `sk skills-install superpowers` / `sk daemon [--once]` / `sk daemon-install` | Skill packs (obra/superpowers) / background watcher (systemd) |
+| `sk skills` / `sk skills-search` / `sk skills-install superpowers` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (obra/superpowers) / background watcher (systemd/launchd, calendar schedules) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
 | `sk doctor` / `sk models [pull <id> | prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health / models (list, download, remove) / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
@@ -187,7 +188,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 387 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 394 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
