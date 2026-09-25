@@ -24,12 +24,10 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.10.0 (bundle release, balanced)
+## Next — v0.11.0 (platform parity + health)
 
-1. **Bundle unreleased main** — `sk run --json`, `/fork`, `sk models pull/prune`, capability profiles, `sk stats`, MCP server + docs.
-2. **Close #30 keyring + spend caps** — OS keyring first, file fallback, per-session cap enforced in both agent paths.
-3. **Start #34 daemon remainder** — launchd unit (macOS) + notifier abstraction with logged fallback.
-4. **Start #35 test-infra remainder** — pre-commit, 1+ property test (allowlist/SSRF), coverage reported.
+1. **Close #34 daemon remainder** — launchd unit (macOS) + notifier abstraction with DND window and logged fallback.
+2. **Close #35 test-infra remainder** — pre-commit, property tests (allowlist/SSRF), coverage reported.
 
 ## Later
 
@@ -48,10 +46,10 @@ Thesis: own the users cloud agents structurally can't serve
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
-- **Keyring + spend caps** — OS keyring backend with file fallback; per-session cost display for BYO-key users.
+- **Keyring + spend caps** — OS keyring backend with file fallback; per-session cost display for BYO-key users. (Shipped `v0.10.0`, closes #30.)
 - **Opt-in crash telemetry** — no data by default, explicit flag only.
-- **Test-infra remainder** — pre-commit config, property-based allowlist/SSRF tests, coverage gates.
-- **Daemon remainder** — launchd unit (macOS) + desktop notifications with do-not-disturb.
+- **Test-infra remainder** — pre-commit config, property-based allowlist/SSRF tests, coverage gates. (Rides `v0.11.0`, closes #35.)
+- **Daemon remainder** — launchd unit (macOS) + desktop notifications with do-not-disturb. (Rides `v0.11.0`, closes #34.)
 - **TUI overhaul, tranche B2** — approval cards + streaming Markdown (A1/A2/B1 shipped in v0.6.0).
 - **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
 - **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
@@ -73,11 +71,10 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
-- Unreleased on `main` after `v0.9.0` (rides `v0.10.0`) — `sk run --json` envelope + exit codes, `/fork` session branch, `sk models pull/prune`, per-model capability profiles, `sk stats` usage + cost, MCP server over stdio.
+- `v0.10.0` — bundle release: `sk run --json`, `/fork`, `sk models pull/prune`, capability profiles, `sk stats`, MCP server + keyring/spend caps (#30).
 - `v0.9.0` — mac audio capture fix (contributor branch).
 - `v0.8.0` — copy text styles fix (contributor branch).
 - `v0.7.0` — text-JSON tool fallback for models without native tool calling, MCP server milestone docs.
-- MCP server over stdio (17 tools, safe defaults) — merged to main after v0.9.0, rides the next release.
 - `v0.6.0` — TUI reskin: dual dark/light themes, role rework, keymap rationalization, generated F1 help, status bar, sessions drawer.
 - `v0.5.0` — parallel tool dispatch, Anthropic prompt caching, plan-review gate, rolling session compaction (schema v4).
 - `v0.4.0` — per-project `.sidekick.toml` + memory namespaces (schema v3), `sk export` transcripts, `sk upgrade` self-update, `sk init` wizard, macOS cwd-discovery test fix.

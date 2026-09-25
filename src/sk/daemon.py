@@ -13,10 +13,21 @@ NUDGES_LOG = Path.home() / ".sidekick" / "nudges.log"
 
 UNIT_NAME = "sidekick-daemon.service"
 
+LAUNCHD_LABEL = "com.sidekick.daemon"
+
+# Do-not-disturb window (22:00–07:00 local): daemon nudges log only, no popup.
+DND_START = 22
+DND_END = 7
+
 
 def unit_path() -> Path:
     """Destination of the user-level systemd unit."""
     return Path.home() / ".config" / "systemd" / "user" / UNIT_NAME
+
+
+def launchd_path() -> Path:
+    """Destination of the user-level launchd plist (macOS)."""
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
 
 
 def sk_bin() -> str:
@@ -55,6 +66,177 @@ def has_systemd() -> bool:
     if shutil.which("systemctl") is None:
         return False
     return Path("/run/systemd/system").exists()
+
+
+def launchd_text(interval: int = 300, disk_warn: int = 90) -> str:
+    """Render com.sidekick.daemon.plist. Pure function, safe to unit test."""
+    import xml.sax.saxutils as _sax
+
+    cmd = _sax.escape(sk_bin())
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{LAUNCHD_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{cmd}</string>
+        <string>daemon</string>
+        <string>--interval</string>
+        <string>{int(interval)}</string>
+        <string>--disk-warn</string>
+        <string>{int(disk_warn)}</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>{int(interval)}</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{_sax.escape(str(Path.home() / ".sidekick" / "daemon.out.log"))}</string>
+    <key>StandardErrorPath</key>
+    <string>{_sax.escape(str(Path.home() / ".sidekick" / "daemon.err.log"))}</string>
+</dict>
+</plist>
+"""
+
+
+def has_launchd() -> bool:
+    """True when launchd user agents are available (macOS with launchctl)."""
+    import platform
+    import shutil
+
+    if platform.system() != "Darwin":
+        return False
+    return shutil.which("launchctl") is not None
+
+
+def _launchctl(*args: str) -> tuple[bool, str]:
+    try:
+        r = subprocess.run(["launchctl", *args], capture_output=True, text=True, timeout=30)
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        return (r.returncode == 0, out or "ok")
+    except Exception as e:
+        return (False, str(e))
+
+
+def install_launchd(interval: int = 300, disk_warn: int = 90, path: Path | None = None) -> str:
+    """Write plist + bootstrap the agent. Returns human message."""
+    if not has_launchd():
+        return (
+            "No launchd found (need macOS + launchctl). Run `sk daemon --once` from cron instead."
+        )
+    dest = path or launchd_path()
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(launchd_text(interval, disk_warn))
+    except Exception as e:
+        return f"Error writing {dest}: {e}"
+    _launchctl("bootout", f"gui/{_gui_uid()}", str(dest))
+    ok, msg = _launchctl("bootstrap", f"gui/{_gui_uid()}", str(dest))
+    if not ok:
+        return f"Installed {dest} but bootstrap failed: {msg} — load it with `launchctl bootstrap gui/$(id -u) {dest}`"
+    return f"Installed + started {dest} (checks every {interval}s). Status: `launchctl print gui/$(id -u)/{LAUNCHD_LABEL}`"
+
+
+def _gui_uid() -> str:
+    """Current console uid for launchctl gui/ domain. Falls back to `id -u`."""
+    try:
+        r = subprocess.run(["id", "-u"], capture_output=True, text=True, timeout=5)
+        return (r.stdout or "").strip() or "501"
+    except Exception:
+        return "501"
+
+
+def remove_launchd(path: Path | None = None) -> str:
+    """Bootout + delete the plist. Returns human message."""
+    if not has_launchd():
+        return "No launchd found — nothing to remove."
+    dest = path or launchd_path()
+    _launchctl("bootout", f"gui/{_gui_uid()}", str(dest))
+    try:
+        if dest.exists():
+            dest.unlink()
+    except Exception as e:
+        return f"Error removing {dest}: {e}"
+    return f"Removed {dest}."
+
+
+def in_dnd(hour: int, start: int = DND_START, end: int = DND_END) -> bool:
+    """True when hour (0-23 local) falls in the do-not-disturb window.
+
+    Handles overnight wrap (start > end) and degenerate start == end (never DND).
+    Pure function, safe to unit test.
+    """
+    try:
+        h, s, e = int(hour) % 24, int(start) % 24, int(end) % 24
+    except (TypeError, ValueError):
+        return False
+    if s == e:
+        return False
+    if s < e:
+        return s <= h < e
+    return h >= s or h < e
+
+
+def notify_backend() -> str:
+    """'notify-send' | 'osascript' | 'terminal-notifier' | '' (log fallback)."""
+    import shutil
+
+    for tool in ("notify-send", "osascript", "terminal-notifier"):
+        if shutil.which(tool):
+            return tool
+    return ""
+
+
+def notify(title: str, body: str, force: bool = False) -> str:
+    """Desktop nudge, DND-aware. Returns 'sent:<backend>' | 'dnd' | 'logged'.
+
+    Never raises: any failure falls back to appending nudges.log.
+    Pass force=True for explicit user-invoked checks (`sk daemon --once`).
+    """
+    import datetime
+
+    if not force and in_dnd(datetime.datetime.now().hour):
+        append_log([f"{title}: {body}"])
+        return "dnd"
+    backend = notify_backend()
+    try:
+        if backend == "notify-send":
+            r = subprocess.run(
+                ["notify-send", title[:100], body[:500]],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if r.returncode == 0:
+                return "sent:notify-send"
+        elif backend == "osascript":
+            r = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display notification "{body[:500]}" with title "{title[:100]}"',
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if r.returncode == 0:
+                return "sent:osascript"
+        elif backend == "terminal-notifier":
+            r = subprocess.run(
+                ["terminal-notifier", "-title", title[:100], "-message", body[:500]],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if r.returncode == 0:
+                return "sent:terminal-notifier"
+    except Exception:
+        pass
+    append_log([f"{title}: {body}"])
+    return "logged"
 
 
 def _systemctl(*args: str) -> tuple[bool, str]:

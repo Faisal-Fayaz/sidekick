@@ -17,7 +17,7 @@ def daemon(
 ):
     """Watcher: disk + shell failures + dirty repos. Loop foreground; use --once for cron."""
 
-    from sk.daemon import append_log, check_once, load_state, save_state
+    from sk.daemon import append_log, check_once, load_state, notify, save_state
 
     def run_one() -> int:
         nudges, state = check_once(load_state(), disk_warn=disk_warn)
@@ -26,6 +26,8 @@ def daemon(
             for n in nudges:
                 console.print(f"[yellow]! {n}[/yellow]")
             append_log(nudges)
+            for n in nudges[:3]:
+                notify("sidekick", n, force=once)
         else:
             console.print("[green]clean — no nudges.[/green]")
         return len(nudges)
@@ -60,3 +62,21 @@ def daemon_install(
     else:
         console.print(f"[red]{out}[/red]")
     console.print(f"[dim]Logs: ~/.sidekick/nudges.log · unit: {UNIT_NAME}[/dim]")
+
+
+@app.command(name="daemon-install-macos")
+def daemon_install_macos(
+    interval: int = typer.Option(300, "--interval", help="Seconds between checks"),
+    disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
+):
+    """Install the watcher as a launchd agent (macOS)."""
+    from sk.daemon import LAUNCHD_LABEL, install_launchd
+
+    out = install_launchd(interval=interval, disk_warn=disk_warn)
+    if out.startswith("Installed + started"):
+        console.print(f"[green]{out}[/green]")
+    elif out.startswith("Installed"):
+        console.print(f"[yellow]{out}[/yellow]")
+    else:
+        console.print(f"[red]{out}[/red]")
+    console.print(f"[dim]Logs: ~/.sidekick/nudges.log · label: {LAUNCHD_LABEL}[/dim]")
