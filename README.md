@@ -135,7 +135,9 @@ sk connect     # pick provider → paste key (hidden) → pick model → ping. D
 
 One guided flow: numbered provider list (local ones skip keys), live validation *before* anything saves, curated model list (TTS/image junk filtered, recommended pre-highlighted, Enter accepts), and a 5-token ping instead of a full agent turn. Advanced paths still work: `sk auth add/list/status/remove`, `sk model`, `sk setup` (connect + hook), `sk config --provider openai --api-key sk-...`, `/provider groq` inside chat.
 
-Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|custom` (`anthropic` speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. The Anthropic backend marks the static system prompt + tool definitions cacheable (repeat turns up to 10x cheaper); OpenAI-compatible providers cache matching prefixes automatically server-side.
+Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|opencode|custom` (`anthropic` speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. The Anthropic backend marks the static system prompt + tool definitions cacheable (repeat turns up to 10x cheaper); OpenAI-compatible providers cache matching prefixes automatically server-side.
+
+The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of free, tools-capable models (`config.OPENCODE_FREE_MODELS`) plus paid tiers. The anonymous free tier is restricted by opencode to its own app, so add a free OpenCode account key first — `OPENCODE_API_KEY` env or `sk auth add opencode` (get it at opencode.ai/auth). Fast/smart resolve to `nemotron-3.5-lightning-free` / `muse-spark-1.3-contributor-free`; run `sk models opencode` for the live list.
 
 ## Command reference
 

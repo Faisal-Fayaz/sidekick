@@ -142,6 +142,25 @@ PRESETS: dict[str, dict[str, str]] = {
     "custom": {"base_url": "", "key": "", "model": ""},
 }
 
+# OpenCode Zen free models (cost 0, tools-capable, not deprecated today).
+# Shipped so users can point time-demanding agent tasks at opencode's free
+# tier; requires OPENCODE_API_KEY (free account) — the anonymous tier is
+# guarded by opencode itself. Refresh from https://models.dev when in doubt.
+OPENCODE_FREE_MODELS: tuple[str, ...] = (
+    "ling-3.0-flash-fin-free",
+    "mimo-v2.6-flash-free",
+    "muse-spark-1.3-contributor-free",
+    "nemotron-3-ultra-free",
+    "nemotron-3.5-lightning-free",
+    "space-bunny-free",
+    "big-pickle",
+)
+PRESETS["opencode"] = {
+    "base_url": "https://opencode.ai/zen/v1",
+    "key": "",
+    "model": OPENCODE_FREE_MODELS[2],
+}
+
 # fast/smart tiers per provider. Only verified IDs here; unknown tiers fall
 # back to the provider default so aliases never 404.
 TIERS: dict[str, dict[str, str]] = {
@@ -152,6 +171,7 @@ TIERS: dict[str, dict[str, str]] = {
     "google": {"fast": "models/gemini-3.6-flash", "smart": "models/gemini-3.8-flash"},
     "gemini": {"fast": "models/gemini-3.6-flash", "smart": "models/gemini-3.8-flash"},
     "anthropic": {"fast": "claude-haiku-4-5", "smart": "claude-sonnet-5"},
+    "opencode": {"fast": "nemotron-3.5-lightning-free", "smart": "muse-spark-1.3-contributor-free"},
 }
 
 
@@ -277,6 +297,10 @@ class Config:
     def effective_api_key(self) -> str:
         if self.api_key.strip():
             return self.api_key.strip()
+        if self.provider == "opencode":
+            env_key = os.getenv("OPENCODE_API_KEY", "").strip()
+            if env_key:
+                return env_key
         try:
             from . import keyring as _kr
 
