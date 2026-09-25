@@ -24,7 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.13.0 (skills compound)
+## Next — v0.14.0 (skills compound)
 
 1. **Plugin ecosystem design (#48)** — manifest format, entrypoints, sandboxing; constrains #49.
 2. **User-defined tools (#49)** — custom local tools in config/skill files, safety gates inherited.
@@ -42,7 +42,7 @@ Thesis: own the users cloud agents structurally can't serve
 - **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
 - **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
 - **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
-- **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story. (Rides `v0.13.0`, #49.)
+- **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story. (Rides `v0.14.0`, #49.)
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
@@ -51,12 +51,12 @@ Thesis: own the users cloud agents structurally can't serve
 - **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
 - **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
 - **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked.
-- **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe. (Rides `v0.13.0`, #50.)
+- **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe. (Rides `v0.14.0`, #50.)
 - **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc.
 - **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 300+-test suite into a system.
 - **Security threat model** — documented adversary model (shell gating, SSRF, prompt injection) + what a future audit should probe.
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
-- **Plugin ecosystem design** — manifest format, entrypoints, sandboxing for user-defined tools. The detailed design behind the bullet. (Rides `v0.13.0`, #48.)
+- **Plugin ecosystem design (#48)** — manifest format, entrypoints, sandboxing; constrains #49. (Rides `v0.14.0`.)
 - **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+.
 - **Sustainability options** — licensing, seats vs support, what stays open-core if enterprise flavor ever happens. Early thinking, no commitments.
 
@@ -66,6 +66,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal01011/sidekick/releases).
 
+- `v0.13.0` — groq provider fix (contributor branch).
 - `v0.12.0` — daemon compounds: scheduled tasks (#38), background runs (#39), session allowlist (#40), teammate-pilot digest (#41).
 - `v0.11.0` — daemon remainder (#34: launchd + notifier with DND) + test-infra remainder (#35: pre-commit, property tests, coverage).
 - `v0.10.0` — bundle release: `sk run --json`, `/fork`, `sk models pull/prune`, capability profiles, `sk stats`, MCP server + keyring/spend caps (#30).
