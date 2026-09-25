@@ -264,6 +264,7 @@ class Config:
             approved_commands=tuple(vals.get("approved_commands", [])),  # type: ignore[arg-type]
             project_warnings=tuple(project_warnings),
         )
+        cfg.normalize_model_alias()
         try:
             from .store import set_default_namespace
 
@@ -284,7 +285,25 @@ class Config:
             self.save()
         return CONFIG_PATH
 
+    def normalize_model_alias(self) -> bool:
+        """A model that names a provider preset was meant as that provider.
+
+        `--model groq`/`/model groq` sets model="groq", which 404s on every API.
+        Self-heal: switch provider to it and adopt its default model
+        (model=groq -> provider=groq, model=openai/gpt-oss-20b). Returns True
+        if a change was applied.
+        """
+        name = self.model.strip().lower()
+        if name in PRESETS and name != "custom":
+            default = (PRESETS[name]["model"] or "").strip()
+            if default:
+                self.provider = name
+                self.model = default
+                return True
+        return False
+
     def save(self) -> None:
+        self.normalize_model_alias()
         import os as _os
 
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)

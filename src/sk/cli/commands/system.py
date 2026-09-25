@@ -196,9 +196,20 @@ def config(
         changed = True
         console.print("[green]api key saved (file is chmod 600)[/green]")
     if model:
-        cfg.model = model
+        m = model.strip()
+        low = m.lower()
+        preset_default = PRESETS[low]["model"] if low in PRESETS and low != "custom" else ""
+        if preset_default:
+            if not provider:
+                cfg.provider = low
+            cfg.model = preset_default
+            console.print(
+                f"[green]model → {cfg.model}{f' (provider → {low})' if not provider else ''}[/green]"
+            )
+        else:
+            cfg.model = m
+            console.print(f"[green]model set to {m}[/green]")
         changed = True
-        console.print(f"[green]model set to {model}[/green]")
     if changed:
         cfg.save()
     if show or not changed:

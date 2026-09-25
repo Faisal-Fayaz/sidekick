@@ -56,6 +56,18 @@ def _resolve_model_name(cfg, raw: str) -> str:
     return resolve_alias(cfg.provider, raw, cfg.model)
 
 
+def _apply_provider(cfg, p: str) -> None:
+    from .config import PRESETS
+
+    cfg.provider = p
+    cfg.model = PRESETS[p]["model"] or cfg.model
+    cfg.base_url = ""
+    try:
+        cfg.save()
+    except Exception:
+        pass
+
+
 def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     """Dispatch a /command. state['yolo'] is mutable approve mode."""
     if not text.startswith("/"):
@@ -68,10 +80,16 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(handled=True, text=HELP_TEXT)
 
     if cmd == "model":
+        from .config import PRESETS as _PRESETS
+
+        p = arg.strip().lower()
         if not arg:
             return SlashOut(
                 handled=True, text=f"model: `{cfg.model}` — switch with `/model fast|smart|<name>`"
             )
+        if p in _PRESETS and p != "custom" and (_PRESETS[p]["model"] or "").strip():
+            _apply_provider(cfg, p)
+            return SlashOut(handled=True, text=f"provider → `{cfg.provider}` model → `{cfg.model}`")
         cfg.model = _resolve_model_name(cfg, arg)
         try:
             cfg.save()
@@ -100,16 +118,10 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         p = arg.strip().lower()
         if p not in PRESETS:
             return SlashOut(handled=True, text=f"unknown provider. Pick: {', '.join(PRESETS)}")
-        cfg.provider = p
-        cfg.model = PRESETS[p]["model"] or cfg.model
-        cfg.base_url = ""
-        try:
-            cfg.save()
-        except Exception:
-            pass
+        _apply_provider(cfg, p)
         return SlashOut(
             handled=True,
-            text=f"provider → `{p}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)",
+            text=f"provider → `{cfg.provider}` model → `{cfg.model}` (key via SIDEKICK_API_KEY or `sk config --api-key …`)",
         )
 
     if cmd == "clear":

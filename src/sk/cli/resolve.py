@@ -12,9 +12,13 @@ def _resolve_model(cfg, model_opt: str, task: str = "") -> str:
     auto = router picks a tier from task text (sk run default).
     """
     if model_opt:
-        from sk.config import provider_tier, resolve_alias
+        from sk.config import PRESETS, provider_tier, resolve_alias
 
         m = model_opt.strip()
+        low = m.lower()
+        if low in PRESETS and low != "custom" and (PRESETS[low]["model"] or "").strip():
+            console.print(f"[dim]{low} → {PRESETS[low]['model']}[/dim]")
+            return PRESETS[low]["model"]
         if m in ("fast", "smart"):
             return resolve_alias(cfg.provider, m, cfg.model)
         if m == "auto":

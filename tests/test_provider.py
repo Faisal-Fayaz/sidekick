@@ -162,3 +162,55 @@ def test_google_preset():
         assert "gemini" in PRESETS[name]["model"]
     assert provider_tier("google", "fast", "d") == "models/gemini-3.6-flash"
     assert provider_tier("gemini", "smart", "d") == "models/gemini-3.8-flash"
+
+
+def test_normalize_model_alias_switches_provider():
+    cfg = Config(
+        provider="groq",
+        model="groq",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
+    assert cfg.normalize_model_alias() is True
+    assert cfg.provider == "groq"
+    assert cfg.model == PRESETS["groq"]["model"]
+
+
+def test_saved_model_named_provider_self_heals(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "config.toml")
+    cfg = Config(
+        provider="groq",
+        model="groq",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
+    cfg.save()
+    body = (tmp_path / "config.toml").read_text()
+    assert 'model = "openai/gpt-oss-20b"' in body
+    loaded = config_mod.Config.load(cwd=str(tmp_path))
+    assert loaded.provider == "groq"
+    assert loaded.model == PRESETS["groq"]["model"]
+
+
+def test_cli_model_flag_accepts_provider_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "config.toml")
+    from sk.cli.resolve import _resolve_model
+
+    cfg = Config(
+        provider="groq",
+        model="openai/gpt-oss-20b",
+        base_url="",
+        api_key="",
+        max_steps=5,
+        temperature=0.2,
+    )
+    cfg.save()
+    assert _resolve_model(cfg, "groq") == PRESETS["groq"]["model"]
+    assert _resolve_model(cfg, "fast") == "openai/gpt-oss-20b"
+    assert _resolve_model(cfg, "") == "openai/gpt-oss-20b"

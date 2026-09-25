@@ -55,6 +55,18 @@ def test_model_switch(tmp_path, monkeypatch):
     assert "qwen2.5-coder" in c["cfg"].model
 
 
+def test_model_accepts_provider_name(tmp_path, monkeypatch):
+    from sk.config import PRESETS
+
+    c = _ctx(tmp_path, monkeypatch)
+    out = slash.handle("/model groq", session=c["session"], cfg=c["cfg"], state=c["state"])
+    assert c["cfg"].provider == "groq"
+    assert c["cfg"].model == PRESETS["groq"]["model"]
+    assert "provider → `groq`" in out.text
+    out = slash.handle("/model GROQ", session=c["session"], cfg=c["cfg"], state=c["state"])
+    assert "provider → `groq`" in out.text
+
+
 def test_yolo_toggle(tmp_path, monkeypatch):
     c = _ctx(tmp_path, monkeypatch)
     slash.handle("/yolo", session=c["session"], cfg=c["cfg"], state=c["state"])
