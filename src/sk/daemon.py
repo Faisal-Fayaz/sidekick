@@ -583,3 +583,54 @@ def append_log(nudges: list[str]) -> None:
     with open(NUDGES_LOG, "a") as f:
         for n in nudges:
             f.write(f"[{ts}] {n}\n")
+
+
+def digest_text(
+    state: dict | None = None, projects: list[str] | None = None, disk_warn: int = 90
+) -> tuple[str, dict]:
+    """Morning digest: brief + overnight failures. Deterministic, no LLM.
+
+    Composes format_brief_text(gather_brief()) with shell failures since
+    the last check. Returns (text, state) with last_shell_id advanced so
+    repeat digests don't re-report. Never raises (degrades to partial text).
+    """
+    from .brief import format_brief_text, gather_brief
+
+    state = dict(state if state is not None else load_state())
+    try:
+        text = format_brief_text(gather_brief(projects))
+    except Exception as e:
+        text = f"**brief** (unavailable: {e})"
+    try:
+        fails, max_id = new_failures(int(state.get("last_shell_id", 0) or 0))
+    except Exception:
+        fails, max_id = [], int(state.get("last_shell_id", 0) or 0)
+    if fails:
+        lines = ["", "**overnight failures**"]
+        for fid, cmd, cwd, rc in fails[:10]:
+            lines.append(f"- #{fid} (exit {rc}): {str(cmd)[:100]} @ {cwd} — try `sk oops`")
+        text += "\n" + "\n".join(lines)
+    state["last_shell_id"] = max_id
+    state["last_run"] = time.time()
+    return (text, state)
+
+
+def deliver_digest(projects: list[str] | None = None, force: bool = False) -> tuple[str, str]:
+    """Build the digest once, persist state, and notify (DND-aware).
+
+    Returns (outcome, text). notify() handles DND + logged fallback, so
+    delivery never loses the digest and never raises. force=True bypasses
+    DND for explicit `sk digest`.
+    """
+    try:
+        text, state = digest_text(load_state(), projects)
+        save_state(state)
+    except Exception as e:
+        return (f"Error building digest: {e}", "")
+    head = " ".join(text.split())[:200]
+    outcome = notify("sidekick morning digest", head or "(empty digest)", force=force)
+    if outcome == "dnd":
+        return ("Digest ready (quiet hours — logged, popup suppressed).", text)
+    if outcome.startswith("sent:"):
+        return (f"Digest delivered via {outcome[5:]}.", text)
+    return ("Digest ready (no notifier — logged to nudges.log).", text)

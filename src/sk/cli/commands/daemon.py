@@ -109,3 +109,17 @@ def daemon_schedule(
             )
         return
     console.print(f"schedule: {describe_schedule(get_schedule())}")
+
+
+@app.command()
+def digest(
+    force: bool = typer.Option(False, "--force", help="Notify even in quiet hours"),
+):
+    """Morning digest: brief + overnight failures, via desktop nudge or log."""
+    from rich.markdown import Markdown
+
+    from sk.daemon import deliver_digest
+
+    outcome, text = deliver_digest(force=force)
+    console.print(Markdown(text or "(empty)"))
+    console.print(f"[dim]{outcome}[/dim]")
