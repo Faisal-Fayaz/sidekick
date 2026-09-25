@@ -14,10 +14,10 @@ def _make_approver(
     allow: tuple[str, ...] = (),
 ):
     from sk.config import is_project_approved, is_session_allowed
-    from sk.tools import APPROVAL_TOOLS
+    from sk.tools import approval_tools
 
     def approve(name: str, args: dict) -> bool:
-        if name not in APPROVAL_TOOLS:
+        if name not in approval_tools():
             return True
         if is_project_approved(name, args, preapproved):
             console.print(f"[dim]project-approved {name} -> {args.get('cmd', '?')}[/dim]")
@@ -67,9 +67,9 @@ def _make_approver_state(
 
     def approve(name: str, args: dict) -> bool:
         from sk.config import is_project_approved, is_session_allowed
-        from sk.tools import APPROVAL_TOOLS
+        from sk.tools import approval_tools
 
-        if name not in APPROVAL_TOOLS:
+        if name not in approval_tools():
             return True
         if state.get("yolo"):
             console.print(f"[dim]yolo: auto-approved {name} -> {args.get('path', '?')}[/dim]")

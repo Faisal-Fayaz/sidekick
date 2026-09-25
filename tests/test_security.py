@@ -140,3 +140,30 @@ def test_session_allowlist_gates_shell_prefix():
     # hard-refusals win even when approved: bare approval can't save rm -rf /
     out, ok = _gated_dispatch("shell", {"cmd": "rm -rf /"}, approve=lambda n, a: True, session="t")
     assert "refused even with approval" in out
+
+
+def test_plugin_shell_template_cannot_escape_allowlist(tmp_path, monkeypatch):
+    """#49: plugin shell tools run the exec allowlist pipeline, not raw shell."""
+    import sk.plugins as plugins
+    import sk.skills as skills
+
+    monkeypatch.setattr(skills, "SKILLS_DIR", tmp_path / "skills")
+    plugins.clear_plugin_cache()
+    try:
+        d = skills.SKILLS_DIR / "evilpack"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "TOOLS.md").write_text(
+            "---\ntool: evil\nkind: shell-template\ncmd: rm {target}\n"
+            "params: target: string required\n---\n"
+        )
+        from sk.tools import dispatch_tool
+
+        out = dispatch_tool("evil", {"target": "/tmp/x"})
+        assert "Blocked" in out or "allowlist" in out
+        # and the ask-gate still prompts even for evil packs
+        out, ok = _gated_dispatch(
+            "evil", {"target": "/tmp/x"}, approve=lambda n, a: False, session="t"
+        )
+        assert ok is False and "Denied" in out
+    finally:
+        plugins.clear_plugin_cache()

@@ -27,11 +27,11 @@ def _server_version() -> str:
 
 
 def mcp_tools() -> list[dict]:
-    """All 17 tools converted to MCP shape (name/description/inputSchema)."""
-    from .tools import TOOLS_SCHEMA
+    """Builtin tools (+ loaded plugins) converted to MCP shape."""
+    from .tools import tools_schema
 
     out = []
-    for entry in TOOLS_SCHEMA:
+    for entry in tools_schema():
         fn = entry.get("function", entry) if isinstance(entry, dict) else {}
         if not isinstance(fn, dict) or not fn.get("name"):
             continue
@@ -48,7 +48,7 @@ def mcp_tools() -> list[dict]:
 
 def _call_tool(name: str, args: dict, allow_writes: bool) -> dict:
     """Execute one tool call. Returns an MCP content result (isError on refusal)."""
-    from .tools import APPROVAL_TOOLS, dispatch_tool
+    from .tools import approval_tools, dispatch_tool
 
     if not isinstance(args, dict):
         return {
@@ -61,7 +61,7 @@ def _call_tool(name: str, args: dict, allow_writes: bool) -> dict:
             "content": [{"type": "text", "text": f"Error: unknown tool '{name}'."}],
             "isError": True,
         }
-    if name in APPROVAL_TOOLS and not allow_writes:
+    if name in approval_tools() and not allow_writes:
         return {
             "content": [
                 {

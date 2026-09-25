@@ -35,6 +35,24 @@ def skills_install(
         console.print(f"[yellow]{out}[/yellow]")
 
 
+@app.command()
+def plugins():
+    """List user-defined tools from ~/.sidekick/skills/*/TOOLS.md (+ warnings)."""
+    from sk.plugins import TOOLS_FILENAME, _skills_dir, load_specs
+
+    specs, warnings = load_specs()
+    console.print(f"[dim]{_skills_dir()}/{TOOLS_FILENAME} — {len(specs)} tools[/dim]")
+    for spec in specs:
+        gate = "ask" if spec.get("approval") == "ask" else "auto"
+        console.print(
+            f"• [cyan]{spec['name']}[/cyan] [{spec.get('kind')}/{gate}] — {spec.get('description', '')[:100]}"
+        )
+    for w in warnings:
+        console.print(f"[yellow]! {w[:160]}[/yellow]")
+    if not specs:
+        console.print("[dim]Add one: see docs/plugins.md[/dim]")
+
+
 @app.command(name="skills-search")
 def skills_search(
     query: str = typer.Argument("", help="Keywords (empty = list all packs)"),

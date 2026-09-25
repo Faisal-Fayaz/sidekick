@@ -112,7 +112,7 @@ ignore_missing_imports = true
 # CI gate: mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py
 #   src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py
 #   src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py
-#   src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py
+#   src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py src/sk/plugins.py
 disallow_untyped_defs = false
 warn_unused_ignores = true
 strict_equality = true

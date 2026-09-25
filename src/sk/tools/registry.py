@@ -304,4 +304,37 @@ def dispatch_tool(name: str, args: dict) -> str:
         from sk.skills import show_skill
 
         return show_skill(str(args.get("name", "")))
+    plugin = _dispatch_plugin(name, args)
+    if plugin is not None:
+        return plugin
     return f"Error: unknown tool '{name}'"
+
+
+def _dispatch_plugin(name: str, args: dict) -> str | None:
+    """Plugin fallback for dispatch_tool. None when not a plugin. Never raises."""
+    try:
+        from sk.plugins import dispatch_plugin
+
+        return dispatch_plugin(name, args)
+    except Exception:
+        return None
+
+
+def tools_schema() -> list[dict]:
+    """Builtin schema + loaded plugin tools. Never raises."""
+    try:
+        from sk.plugins import schema_extra
+
+        return list(TOOLS_SCHEMA) + schema_extra()
+    except Exception:
+        return list(TOOLS_SCHEMA)
+
+
+def approval_tools() -> set[str]:
+    """Approval set incl. ask-plugins. Never raises."""
+    try:
+        from sk.plugins import approval_names
+
+        return set(APPROVAL_TOOLS) | approval_names()
+    except Exception:
+        return set(APPROVAL_TOOLS)
