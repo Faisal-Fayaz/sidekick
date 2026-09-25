@@ -20,6 +20,58 @@ PRESET_REPOS: dict[str, str] = {
     "superpowers": "https://github.com/obra/superpowers",
 }
 
+# Vendored registry for `sk skills-registry`: curated, SKILL.md-compatible
+# packs installable offline-first (clone once, then everything is local).
+# Every URL below was verified live; keep this list small and real (#50).
+REGISTRY: list[dict[str, str]] = [
+    {
+        "name": "superpowers",
+        "description": "Seasoned-engineer workflow skills (brainstorming, systematic-debugging, testing).",
+        "url": "https://github.com/obra/superpowers",
+    },
+    {
+        "name": "anthropic-skills",
+        "description": "Anthropic's official Agent Skills examples (documents, creative, enterprise).",
+        "url": "https://github.com/anthropics/skills",
+    },
+    {
+        "name": "wshobson-agents",
+        "description": "Multi-harness marketplace: 183 skills across 94 plugins (languages, infra, security).",
+        "url": "https://github.com/wshobson/agents",
+    },
+]
+
+
+def search_registry(query: str = "") -> list[dict[str, str]]:
+    """Keyword search over the vendored registry. Empty query returns all.
+
+    Pure listing, no I/O, no network — safe offline and in CI.
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return list(REGISTRY)
+    keys = [w for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2]
+    if not keys:
+        return list(REGISTRY)
+    scored: list[tuple[int, dict[str, str]]] = []
+    for entry in REGISTRY:
+        hay = f"{entry['name']} {entry['description']}".lower()
+        s = sum(1 for k in keys if k in hay)
+        if s > 0:
+            scored.append((s, entry))
+    scored.sort(key=lambda r: (-r[0], r[1]["name"]))
+    return [entry for _, entry in scored]
+
+
+def registry_entry(name: str) -> dict[str, str] | None:
+    """One registry entry by name (case-insensitive). None when unknown."""
+    want = (name or "").strip().lower()
+    for entry in REGISTRY:
+        if entry["name"].lower() == want:
+            return entry
+    return None
+
+
 BUILTIN_GIT = """# git skill
 - Prefer `git status`, `git diff --stat`, `git log --oneline -5` for inspection.
 - Never run `git push --force`, `git reset --hard`, `git clean -fd` without explicit user approval words.
@@ -187,10 +239,31 @@ def search_skills(query: str = "") -> list[tuple[str, str]]:
     return [(name, desc) for _, name, desc in scored]
 
 
+def _clone(url: str, dest: Path) -> str | None:
+    """Shallow-clone url to dest. None on success, else an error string."""
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:
+        return "Error: git not found."
+    try:
+        subprocess.run(
+            ["git", "clone", "--depth", "1", url, str(dest)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        return f"Clone failed: {(e.stderr or '')[:300]}"
+    except Exception as e:
+        return f"Clone failed: {e}"
+    return None
+
+
 def install_preset(name: str, force: bool = False) -> str:
     """Shallow-clone a preset repo (e.g. superpowers) into SKILLS_DIR."""
     import shutil
-    import subprocess
 
     key = (name or "").strip().lower()
     url = PRESET_REPOS.get(key, "")
@@ -206,17 +279,36 @@ def install_preset(name: str, force: bool = False) -> str:
             return f"{key} already at {dest} — pass --force to re-clone."
         shutil.rmtree(dest, ignore_errors=True)
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.run(
-            ["git", "clone", "--depth", "1", url, str(dest)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        return f"Clone failed: {(e.stderr or '')[:300]}"
-    except Exception as e:
-        return f"Clone failed: {e}"
+    err = _clone(url, dest)
+    if err:
+        return err
     n = len([p for p in dest.glob("**/SKILL.md") if p.is_file()])
     return f"Installed {key} ({n} skills) to {dest}."
+
+
+def install_pack(name: str, force: bool = False) -> str:
+    """Install by preset name, registry name, or git URL into SKILLS_DIR.
+
+    Registry entries clone under their registry name; raw URLs under
+    'custom' (preset behavior preserved).
+    """
+    import shutil
+
+    key = (name or "").strip().lower()
+    if key in PRESET_REPOS or "://" in (name or ""):
+        return install_preset(name, force=force)
+    entry = registry_entry(name)
+    if entry is None:
+        known = sorted(set(PRESET_REPOS) | {e["name"] for e in REGISTRY})
+        return f"Unknown pack '{name}'. Known: {', '.join(known)} — or pass a git URL."
+    dest = SKILLS_DIR / entry["name"]
+    if dest.exists():
+        if not force:
+            return f"{entry['name']} already at {dest} — pass --force to re-clone."
+        shutil.rmtree(dest, ignore_errors=True)
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    err = _clone(entry["url"], dest)
+    if err:
+        return err
+    n = len([p for p in dest.glob("**/SKILL.md") if p.is_file()])
+    return f"Installed {entry['name']} ({n} skills) to {dest}."
