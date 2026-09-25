@@ -145,5 +145,5 @@ def _make_on_token(state: dict | None = None):
         sys.stdout.write(tok)
         sys.stdout.flush()
 
-    on_token.state = state
+    on_token.state = state  # type: ignore[attr-defined]
     return on_token
