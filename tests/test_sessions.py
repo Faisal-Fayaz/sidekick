@@ -90,3 +90,72 @@ def _run(coro):
     import asyncio
 
     asyncio.run(coro)
+
+
+def test_fork_exact_prefix_and_original_untouched(monkeypatch, tmp_path):
+    _iso(tmp_path, monkeypatch)
+    for role, text in [
+        ("user", "one"),
+        ("assistant", "two"),
+        ("user", "three"),
+        ("assistant", "four"),
+    ]:
+        store.save_message("s", role, text)
+    before = store.get_history("s", limit=1000)
+    ok, msg = store.fork_session("s", 3, "s-fork")
+    assert ok is True and "3 messages" in msg
+    forked = store.get_history("s-fork", limit=1000)
+    assert [(m["role"], m["content"]) for m in forked] == [
+        (m["role"], m["content"]) for m in before[:3]
+    ]
+    # original byte-identical afterwards
+    assert [(m["role"], m["content"]) for m in store.get_history("s", limit=1000)] == [
+        (m["role"], m["content"]) for m in before
+    ]
+
+
+def test_fork_divergence_independent(monkeypatch, tmp_path):
+    _iso(tmp_path, monkeypatch)
+    store.save_message("s", "user", "shared")
+    store.fork_session("s", 1, "f1")
+    store.save_message("f1", "assistant", "fork-only reply")
+    store.save_message("s", "assistant", "original reply")
+    assert [m["content"] for m in store.get_history("f1", limit=100)] == [
+        "shared",
+        "fork-only reply",
+    ]
+    assert [m["content"] for m in store.get_history("s", limit=100)] == ["shared", "original reply"]
+
+
+def test_fork_errors_write_nothing(monkeypatch, tmp_path):
+    _iso(tmp_path, monkeypatch)
+    assert store.fork_session("nosuch", 2, "f")[0] is False
+    store.save_message("s", "user", "hi")
+    for bad in (0, -1, 99, "xyz"):
+        ok, msg = store.fork_session("s", bad, "f")
+        assert ok is False
+    assert all(r["session"] != "f" for r in store.list_sessions())
+
+
+def test_fork_skips_audit_and_summaries(monkeypatch, tmp_path):
+    _iso(tmp_path, monkeypatch)
+    store.save_message("s", "user", "hi")
+    store.log_tool_run("s", "exec", "exec|cmd=ls", True, "ollama", "localhost", True)
+    store.save_summary("s", "old summary", 1)
+    ok, _ = store.fork_session("s", 1, "f")
+    assert ok is True
+    assert store.list_tool_runs("f") == []
+    assert store.get_summary("f") == ("", 0)
+    assert store.get_summary("s") == ("old summary", 1)
+
+
+def test_rapid_forks_never_collide(monkeypatch, tmp_path):
+    _iso(tmp_path, monkeypatch)
+    store.save_message("s", "user", "hi")
+    ids = set()
+    for _ in range(5):
+        ok, msg = store.fork_session("s", 1, store.new_session_id("chat"))
+        assert ok is True
+        ids.add(msg.split("`")[1])
+    assert len(ids) == 5  # same-second forks must not merge histories
+    assert store.get_history("s", limit=100) == [{"role": "user", "content": "hi"}]

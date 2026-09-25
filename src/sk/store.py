@@ -179,9 +179,12 @@ def clear_session(session: str) -> None:
 
 
 def new_session_id(prefix: str = "tui") -> str:
+    """Fresh session id. Microsecond resolution: two forks/clears within the
+    same second must never share an id (that silently merges histories)."""
     import time as _t
 
-    return f"{prefix}-{_t.strftime('%Y%m%d-%H%M%S')}"
+    stamp = _t.strftime("%Y%m%d-%H%M%S") + f"{_t.time_ns() % 1_000_000:06d}"
+    return f"{prefix}-{stamp}"
 
 
 def list_sessions(limit: int = 20) -> list[dict]:
@@ -214,6 +217,45 @@ def delete_session(session: str) -> int:
         cur = conn.execute("DELETE FROM messages WHERE session=?", (session,))
         conn.commit()
         return cur.rowcount
+    finally:
+        conn.close()
+
+
+def fork_session(session: str, keep_n: int | None, new_session: str) -> tuple[bool, str]:
+    """Copy the first keep_n messages (None = all) into new_session. Returns (ok, msg).
+
+    Roles, contents and timestamps copied verbatim (fresh ids). Audit rows
+    and compaction summaries are deliberately NOT copied: the fork earns its
+    own going forward. Never raises; errors return (False, reason).
+    """
+    if keep_n is not None:
+        try:
+            n = int(keep_n)
+        except (TypeError, ValueError):
+            return (False, "usage: `/fork [n]` (n = messages to keep)")
+        if n <= 0:
+            return (False, "usage: `/fork [n]` (n = messages to keep, starting at 1)")
+    if not (new_session or "").strip():
+        return (False, "new session id is empty.")
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "SELECT role, content, ts FROM messages WHERE session=? ORDER BY id ASC", (session,)
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return (False, f"nothing to fork in '{session}'.")
+        if keep_n is not None and n > len(rows):
+            return (False, f"only {len(rows)} messages in '{session}' (asked for {n}).")
+        subset = rows if keep_n is None else rows[:n]
+        conn.executemany(
+            "INSERT INTO messages (session, role, content, ts) VALUES (?, ?, ?, ?)",
+            [(new_session, r, c, t) for r, c, t in subset],
+        )
+        conn.commit()
+        return (True, f"forked {len(subset)} messages → `{new_session}`")
+    except Exception as e:
+        return (False, f"fork failed: {e}")
     finally:
         conn.close()
 

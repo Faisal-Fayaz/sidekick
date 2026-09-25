@@ -115,3 +115,31 @@ def test_oops_empty_and_quit(tmp_path, monkeypatch):
         in slash.handle("/oops", session=c["session"], cfg=c["cfg"], state=c["state"]).text
     )
     assert slash.handle("/quit", session=c["session"], cfg=c["cfg"], state=c["state"]).quit is True
+
+
+def test_fork_flow(tmp_path, monkeypatch):
+    c = _ctx(tmp_path, monkeypatch)
+    store.save_message("chat-1", "user", "first")
+    store.save_message("chat-1", "assistant", "second")
+    store.save_message("chat-1", "user", "third")
+    out = slash.handle("/fork 2", session="chat-1", cfg=c["cfg"], state=c["state"])
+    assert out.switch_session and out.switch_session != "chat-1"
+    assert "2 messages" in out.text
+    assert [m["content"] for m in store.get_history(out.switch_session, limit=100)] == [
+        "first",
+        "second",
+    ]
+    out = slash.handle("/fork", session="chat-1", cfg=c["cfg"], state=c["state"])
+    assert out.switch_session
+    assert len(store.get_history(out.switch_session, limit=100)) == 3
+
+
+def test_fork_errors(tmp_path, monkeypatch):
+    c = _ctx(tmp_path, monkeypatch)
+    out = slash.handle("/fork", session="empty", cfg=c["cfg"], state=c["state"])
+    assert out.switch_session == "" and "nothing to fork" in out.text
+    store.save_message("chat-1", "user", "only")
+    out = slash.handle("/fork xyz", session="chat-1", cfg=c["cfg"], state=c["state"])
+    assert out.switch_session == "" and "usage" in out.text.lower()
+    out = slash.handle("/fork 9", session="chat-1", cfg=c["cfg"], state=c["state"])
+    assert out.switch_session == "" and "only 1 messages" in out.text

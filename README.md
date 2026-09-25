@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-319%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-326%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,7 +53,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 319-test suite incl. prompt-regression evals | ✅ | rare |
+| 326-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
@@ -143,7 +143,7 @@ Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthro
 |---|---|
 | `sk` / `sk tui [--continue]` | Fullscreen chat, fresh session each launch |
 | `sk chat [--continue]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
-| `/sessions`, `/resume <n>`, `/sessions delete <n>` | List, switch, delete past sessions |
+| `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name] [--json]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended) |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
@@ -186,7 +186,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 319 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 326 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
