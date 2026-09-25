@@ -11,7 +11,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
-from .tools import APPROVAL_TOOLS, TOOLS_SCHEMA, dispatch_tool, tool_sysinfo
+from .tools import approval_tools, dispatch_tool, tool_sysinfo, tools_schema
 
 # Audit session tag. Direct callers pass session= to run_agent; the TUI
 # dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
@@ -408,7 +408,7 @@ def _maybe_review_plan(
     targets = {_tool_target(name, args) for name, args in calls}
     needs_review = (
         len(calls) >= 2
-        and any(name in APPROVAL_TOOLS for name, _ in calls)
+        and any(name in approval_tools() for name, _ in calls)
         and review_plan is not None
         and not auto_approve
     )
@@ -510,7 +510,7 @@ def _run_tools_batch(
 
     def needs_gate(i: int) -> bool:
         name = calls[i][0]
-        return name in APPROVAL_TOOLS and approve is not None
+        return name in approval_tools() and approve is not None
 
     def run_one(i: int) -> str:
         name, args = calls[i]
@@ -574,7 +574,7 @@ def _gated_dispatch(
     from .store import log_tool_run
 
     target = _tool_target(name, args)
-    if name in APPROVAL_TOOLS and approve is not None:
+    if name in approval_tools() and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
         except Exception:
@@ -1113,7 +1113,7 @@ def run_agent(
                 client,
                 cfg.model,
                 messages,
-                TOOLS_SCHEMA if tools_enabled else None,
+                tools_schema() if tools_enabled else None,
                 cfg.temperature,
                 max_tokens,
                 extra,

@@ -202,7 +202,7 @@ def run_anthropic_agent(
         prepare_history,
     )
     from .store import log_tool_run
-    from .tools import TOOLS_SCHEMA
+    from .tools import tools_schema
 
     _ = on_reasoning  # thinking blocks not requested in v1; sink kept for signature parity
     session = session or ""
@@ -249,7 +249,7 @@ def run_anthropic_agent(
     system, messages = openai_messages_to_anthropic(
         build_messages(user_msg, history, cfg, auto_approve)
     )
-    tools = openai_tools_to_anthropic(TOOLS_SCHEMA)
+    tools = openai_tools_to_anthropic(tools_schema())
     system_payload, tools = _cache_breakpoints(system, tools)
     max_tokens = 800
     seen: dict[str, str] = {}

@@ -569,9 +569,9 @@ class SidekickTUI(App):
         """Approval gate for worker threads. Reads auto-pass; writes either
         auto-pass (/yolo) or block on an inline [y/N] question answered by
         the user's next input line (timeout denies, and says so)."""
-        from sk.tools import APPROVAL_TOOLS
+        from sk.tools import approval_tools
 
-        if name not in APPROVAL_TOOLS:
+        if name not in approval_tools():
             return True
         if bool(self.state.get("yolo")):
             return True
