@@ -24,7 +24,11 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.13.0 (unplanned — propose by PR)
+## Next — v0.13.0 (skills compound)
+
+1. **Plugin ecosystem design (#48)** — manifest format, entrypoints, sandboxing; constrains #49.
+2. **User-defined tools (#49)** — custom local tools in config/skill files, safety gates inherited.
+3. **Skill registry (#50)** — discover installable packs beyond superpowers, offline-first.
 
 ## Later
 
@@ -38,27 +42,21 @@ Thesis: own the users cloud agents structurally can't serve
 - **Daemon as a teammate** — scheduled briefs, dirty-repo/CI watch, morning digests. The junior dev who never sleeps and never leaks code.
 - **Distilled sidekick-optimized small model** — on-device trajectories as training signal nobody else can see; greatness on 4GB VRAM as a compounding edge.
 - **Managed enterprise flavor** — SSO, per-team tool policies, audit dashboards on top of the same binary. Open core stays free.
-- **Background runs** — `sk run --bg` with daemon + desktop notification on completion. Stepping stone to daemon-as-teammate.
-- **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story.
+- **User-defined tools** — custom local tools declared in config/skill files without touching code. Compounds the skills story. (Rides `v0.13.0`, #49.)
 - **Pluggable search** — Serper/Brave BYO-key + local searxng + real page extraction; keyless DDG stays the default.
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
-- **Keyring + spend caps** — OS keyring backend with file fallback; per-session cost display for BYO-key users. (Shipped `v0.10.0`, closes #30.)
 - **Opt-in crash telemetry** — no data by default, explicit flag only.
-- **Test-infra remainder** — pre-commit config, property-based allowlist/SSRF tests, coverage gates. (Rides `v0.11.0`, closes #35.)
-- **Daemon remainder** — launchd unit (macOS) + desktop notifications with do-not-disturb. (Rides `v0.11.0`, closes #34.)
 - **TUI overhaul, tranche B2** — approval cards + streaming Markdown (A1/A2/B1 shipped in v0.6.0).
 - **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path.
 - **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of.
 - **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked.
-- **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe.
-- **Scheduled tasks** — natural-language schedules for the daemon ("brief me every morning"). Stepping stone to daemon-as-teammate.
-- **Session allowlist** — per-session auto-approve list (`--allow`). Safety customization between yolo and per-prompt confirms.
+- **Skill registry** — discover installable packs beyond superpowers. `skills-search` covers installed; this covers the universe. (Rides `v0.13.0`, #50.)
 - **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc.
 - **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 300+-test suite into a system.
 - **Security threat model** — documented adversary model (shell gating, SSRF, prompt injection) + what a future audit should probe.
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
-- **Plugin ecosystem design** — manifest format, entrypoints, sandboxing for user-defined tools. The detailed design behind the bullet.
+- **Plugin ecosystem design** — manifest format, entrypoints, sandboxing for user-defined tools. The detailed design behind the bullet. (Rides `v0.13.0`, #48.)
 - **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+.
 - **Sustainability options** — licensing, seats vs support, what stays open-core if enterprise flavor ever happens. Early thinking, no commitments.
 
