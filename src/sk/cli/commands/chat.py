@@ -21,8 +21,12 @@ def chat(
     model: str = typer.Option("", help="Model override: name or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
     cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
+    allow: str = typer.Option(
+        "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
+    ),
 ):
     """Interactive REPL: sk chat — try /help"""
+    from sk.config import parse_allow_list
     from sk.store import latest_session, new_session_id
 
     cfg = _cfg()
@@ -38,7 +42,7 @@ def chat(
             expand=False,
         )
     )
-    approve = _make_approver_state(state, cfg.approved_commands)
+    approve = _make_approver_state(state, cfg.approved_commands, parse_allow_list(allow))
     on_tool = _make_on_tool()
     on_token = None if no_stream else _make_on_token()
     while True:
@@ -257,9 +261,13 @@ def mic_test(
 def tui(
     model: str = typer.Option("", help="Model override or fast/smart"),
     cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
+    allow: str = typer.Option(
+        "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
+    ),
 ):
     """Fullscreen chat (fresh session each launch unless --continue)."""
+    from sk.config import parse_allow_list
     from sk.tui import launch
 
     cfg = _cfg()
-    launch(_resolve_model(cfg, model), cont=cont)
+    launch(_resolve_model(cfg, model), cont=cont, allow=parse_allow_list(allow))

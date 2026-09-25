@@ -125,3 +125,18 @@ def test_approval_gate_denies_writes_and_shell():
     ]:
         out, ok = _gated_dispatch(name, args, approve=lambda n, a: False)
         assert ok is False and "Denied" in out, name
+
+
+def test_session_allowlist_gates_shell_prefix():
+    """#40: allowlisted shell prefix executes, sibling prompts (denied here)."""
+    from sk.config import is_session_allowed
+
+    allow = ("shell:pytest",)
+    approve = lambda n, a: is_session_allowed(n, a, allow)  # noqa: E731
+    out, ok = _gated_dispatch("shell", {"cmd": "pytest -q"}, approve=approve, session="t")
+    assert ok is True and "Denied" not in out
+    out, ok = _gated_dispatch("shell", {"cmd": "pytest-x"}, approve=approve, session="t")
+    assert ok is False and "Denied" in out
+    # hard-refusals win even when approved: bare approval can't save rm -rf /
+    out, ok = _gated_dispatch("shell", {"cmd": "rm -rf /"}, approve=lambda n, a: True, session="t")
+    assert "refused even with approval" in out

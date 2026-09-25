@@ -45,14 +45,14 @@ class SidekickTUI(App):
     #sessions-drawer { dock: left; width: 44; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     """
 
-    def __init__(self, model: str = "", session: str = ""):
+    def __init__(self, model: str = "", session: str = "", allow: tuple[str, ...] = ()):
         super().__init__()
         self.model_override = model
         from sk.store import new_session_id
 
         self.session = session or new_session_id("tui")
         self._continued = bool(session)
-        self.state: dict = {"yolo": False}
+        self.state: dict = {"yolo": False, "allow": tuple(allow)}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
         self._live_n: int = 0
@@ -577,9 +577,11 @@ class SidekickTUI(App):
             return True
         cfg = getattr(self, "_cfg", None)
         if cfg is not None:
-            from sk.config import is_project_approved
+            from sk.config import is_project_approved, is_session_allowed
 
             if is_project_approved(name, args, cfg.approved_commands):
+                return True
+            if is_session_allowed(name, args, tuple(self.state.get("allow", ()) or ())):
                 return True
         plan = getattr(self, "_plan_approved", None)
         if plan:

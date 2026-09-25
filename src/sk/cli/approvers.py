@@ -8,8 +8,12 @@ from rich.panel import Panel
 from .base import console
 
 
-def _make_approver(auto_yes: bool, preapproved: tuple[str, ...] = ()):
-    from sk.config import is_project_approved
+def _make_approver(
+    auto_yes: bool,
+    preapproved: tuple[str, ...] = (),
+    allow: tuple[str, ...] = (),
+):
+    from sk.config import is_project_approved, is_session_allowed
     from sk.tools import APPROVAL_TOOLS
 
     def approve(name: str, args: dict) -> bool:
@@ -17,6 +21,11 @@ def _make_approver(auto_yes: bool, preapproved: tuple[str, ...] = ()):
             return True
         if is_project_approved(name, args, preapproved):
             console.print(f"[dim]project-approved {name} -> {args.get('cmd', '?')}[/dim]")
+            return True
+        if is_session_allowed(name, args, allow):
+            console.print(
+                f"[dim]allow-approved {name} -> {args.get('cmd', args.get('path', '?'))}[/dim]"
+            )
             return True
         target = args.get("path", args.get("cmd", "?"))
         preview = ""
@@ -49,11 +58,15 @@ def _make_approver(auto_yes: bool, preapproved: tuple[str, ...] = ()):
     return approve
 
 
-def _make_approver_state(state: dict, preapproved: tuple[str, ...] = ()):
+def _make_approver_state(
+    state: dict,
+    preapproved: tuple[str, ...] = (),
+    allow: tuple[str, ...] = (),
+):
     """Like _make_approver but reads live state['yolo'] (for /yolo toggling)."""
 
     def approve(name: str, args: dict) -> bool:
-        from sk.config import is_project_approved
+        from sk.config import is_project_approved, is_session_allowed
         from sk.tools import APPROVAL_TOOLS
 
         if name not in APPROVAL_TOOLS:
@@ -63,6 +76,11 @@ def _make_approver_state(state: dict, preapproved: tuple[str, ...] = ()):
             return True
         if is_project_approved(name, args, preapproved):
             console.print(f"[dim]project-approved {name} -> {args.get('cmd', '?')}[/dim]")
+            return True
+        if is_session_allowed(name, args, allow):
+            console.print(
+                f"[dim]allow-approved {name} -> {args.get('cmd', args.get('path', '?'))}[/dim]"
+            )
             return True
         return _make_approver(False)(name, args)
 
