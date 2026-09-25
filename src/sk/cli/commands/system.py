@@ -97,8 +97,12 @@ def upgrade(
         raise typer.Exit(1)
 
 
-@app.command()
-def models():
+models_app = typer.Typer(help="Models: list/pull/prune (ollama)")
+
+app.add_typer(models_app, name="models")
+
+
+def _list_models() -> None:
     """List models for the current provider."""
     from sk.auth import fetch_models
 
@@ -111,13 +115,107 @@ def models():
     if not names:
         console.print("[yellow]No models listed.[/yellow]")
         if cfg.provider == "ollama":
-            console.print("[dim]Try `ollama pull qwen3:4b`[/dim]")
+            console.print("[dim]Try `sk models pull qwen3:4b`[/dim]")
         return
     for n in names[:40]:
         mark = "← current" if n == cfg.model else ""
         console.print(f"• [cyan]{n}[/cyan] {mark}")
     if len(names) > 40:
         console.print(f"[dim]...+{len(names) - 40} more[/dim]")
+
+
+@models_app.callback(invoke_without_command=True)
+def _models_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        _list_models()
+
+
+@models_app.command("list")
+def models_list():
+    """List models for the current provider."""
+    _list_models()
+
+
+def _require_ollama(cfg) -> bool:
+    if cfg.provider == "ollama":
+        return True
+    console.print(f"[red]model pull/prune needs ollama (current provider: {cfg.provider}).[/red]")
+    return False
+
+
+@models_app.command("pull")
+def models_pull(
+    name: str = typer.Argument(..., help="Model id, e.g. qwen3:4b"),
+    timeout: int = typer.Option(1200, "--timeout", help="Seconds to wait for download"),
+):
+    """Download a model: sk models pull qwen3:4b"""
+    from sk.auth import fetch_models
+    from sk.init_wizard import pull_model
+
+    cfg = _cfg()
+    if not _require_ollama(cfg):
+        raise typer.Exit(1)
+    console.print(f"[dim]pulling {name} (one-time download)...[/dim]")
+    ok, msg = pull_model(name.strip(), timeout=timeout)
+    console.print(f"[green]{msg}[/green]" if ok else f"[red]{msg}[/red]")
+    if not ok:
+        raise typer.Exit(1)
+    try:
+        names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
+    except Exception as e:
+        console.print(f"[red]pulled, but cannot verify: {e}[/red]")
+        raise typer.Exit(1)
+    if name.strip() in names:
+        console.print(f"[green]✓ {name.strip()} installed.[/green]")
+    else:
+        console.print(f"[yellow]! {name.strip()} not in model list yet — try `sk models`.[/yellow]")
+
+
+@models_app.command("prune")
+def models_prune(
+    name: str = typer.Argument(..., help="Model id to remove, e.g. qwen3:4b"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Remove a model to free disk: sk models prune qwen3:4b"""
+    import shutil
+    import subprocess
+
+    from sk.auth import fetch_models
+
+    cfg = _cfg()
+    if not _require_ollama(cfg):
+        raise typer.Exit(1)
+    target = name.strip()
+    if not yes:
+        try:
+            if not typer.confirm(f"Remove {target}?", default=False):
+                console.print("aborted.")
+                return
+        except (EOFError, KeyboardInterrupt, OSError):
+            console.print("\naborted.")
+            return
+    if shutil.which("ollama") is None:
+        console.print("[red]ollama not found.[/red]")
+        raise typer.Exit(1)
+    try:
+        r = subprocess.run(["ollama", "rm", target], capture_output=True, text=True, timeout=120)
+    except Exception as e:
+        console.print(f"[red]remove failed: {e}[/red]")
+        raise typer.Exit(1)
+    if r.returncode != 0:
+        console.print(
+            f"[red]ollama rm exited {r.returncode}: {(r.stderr or '').strip()[:200]}[/red]"
+        )
+        raise typer.Exit(1)
+    try:
+        names = fetch_models(cfg.provider, cfg.effective_base_url(), cfg.effective_api_key())
+    except Exception as e:
+        console.print(f"[red]removed, but cannot verify: {e}[/red]")
+        raise typer.Exit(1)
+    if target not in names:
+        console.print(f"[green]✓ {target} removed.[/green]")
+    else:
+        console.print(f"[yellow]! {target} still listed — try `sk models`.[/yellow]")
 
 
 @app.command()
