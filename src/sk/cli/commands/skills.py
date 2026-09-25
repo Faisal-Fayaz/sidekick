@@ -21,14 +21,14 @@ def skills():
 
 @app.command(name="skills-install")
 def skills_install(
-    name: str = typer.Argument("superpowers", help="Preset (superpowers) or git URL"),
+    name: str = typer.Argument("superpowers", help="Preset, registry name, or git URL"),
     force: bool = typer.Option(False, "--force", help="Re-clone if present"),
 ):
     """Install skill packs: sk skills-install superpowers"""
-    from sk.skills import install_preset
+    from sk.skills import install_pack
 
     console.print(f"[dim]installing {name}...[/dim]")
-    out = install_preset(name, force=force)
+    out = install_pack(name, force=force)
     if out.startswith("Installed"):
         console.print(f"[green]{out}[/green]")
     else:
@@ -72,3 +72,23 @@ def skills_search(
         return
     for name, desc in rows:
         console.print(f"• [cyan]{name}[/cyan]" + (f" — {desc[:120]}" if desc else ""))
+
+
+@app.command(name="skills-registry")
+def skills_registry(
+    query: str = typer.Argument("", help="Keywords (empty = list the whole registry)"),
+):
+    """Browse installable packs beyond superpowers: sk skills-registry agents"""
+    from sk.skills import REGISTRY, search_registry
+
+    rows = search_registry(query)
+    label = f" for '{query}'" if query.strip() else ""
+    console.print(
+        f"[dim]registry — {len(rows)} pack{'' if len(rows) == 1 else 's'}{label} (vendored, offline)[/dim]"
+    )
+    if not rows:
+        console.print("[yellow]no matches — try different words[/yellow]")
+        return
+    for entry in rows:
+        console.print(f"• [cyan]{entry['name']}[/cyan] — {entry['description'][:120]}")
+    console.print(f"[dim]install: sk skills-install <name> ({len(REGISTRY)} in registry)[/dim]")
