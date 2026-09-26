@@ -58,7 +58,7 @@ Between maintainers ([Faisal-Fayaz](https://github.com/Faisal-Fayaz),
 ## Before opening a PR
 
 ```bash
-uv run --with pytest --with hypothesis pytest tests -q   # full suite (466 tests, no Ollama needed)
+uv run --with pytest --with hypothesis pytest tests -q   # full suite (467 tests, no Ollama needed)
 uvx ruff check src tests               # lint baseline (E/F/I/UP, see pyproject)
 uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py
 ```
