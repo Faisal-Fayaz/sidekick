@@ -176,16 +176,25 @@ def _resp(content, stop="end_turn"):
     return {"content": content, "stop_reason": stop}
 
 
+def _stream_resp(content, stop="end_turn"):
+    return ([dict(b) for b in content], stop)
+
+
 def test_text_turn_and_audit(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        ab, "_post", lambda *a, **k: _resp([{"type": "text", "text": "hello there"}])
-    )
+
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        for chunk in ("hello ", "there"):  # streaming: per-delta callbacks
+            if on_token is not None:
+                on_token(chunk)
+        return _stream_resp([{"type": "text", "text": "hello there"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
     seen_tokens = []
     out = ab.run_anthropic_agent(
         "say hi", [], _cfg(), on_token=seen_tokens.append, approve=lambda n, a: True, session="s"
     )
-    assert out == "hello there" and seen_tokens == ["hello there"]
+    assert out == "hello there" and seen_tokens == ["hello ", "there"]
     rows = store.list_tool_runs("s")
     assert any(r["tool"] == "llm_call" and r["provider"] == "anthropic" for r in rows)
     assert all(r["host"] == "api.anthropic.com" for r in rows)
@@ -196,16 +205,16 @@ def test_tool_use_turn_dispatches(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     calls = {"n": 0}
 
-    def fake_post(*a, **k):
+    def fake_stream(*a, **k):
         calls["n"] += 1
         if calls["n"] == 1:
-            return _resp(
+            return _stream_resp(
                 [{"type": "tool_use", "id": "tu1", "name": "list_dir", "input": {"path": "/tmp"}}],
                 stop="tool_use",
             )
-        return _resp([{"type": "text", "text": "tmp has files"}])
+        return _stream_resp([{"type": "text", "text": "tmp has files"}])
 
-    monkeypatch.setattr(ab, "_post", fake_post)
+    monkeypatch.setattr(ab, "_stream", fake_stream)
     out = ab.run_anthropic_agent("list tmp", [], _cfg(), approve=lambda n, a: True, session="s")
     assert out == "tmp has files"
     tools = [r["tool"] for r in store.list_tool_runs("s")]
@@ -215,13 +224,13 @@ def test_tool_use_turn_dispatches(tmp_path, monkeypatch):
 def test_denied_tool_logged(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
 
-    def fake_post(*a, **k):
-        return _resp(
+    def fake_stream(*a, **k):
+        return _stream_resp(
             [{"type": "tool_use", "id": "tu9", "name": "shell", "input": {"cmd": "echo hi"}}],
             stop="tool_use",
         )
 
-    monkeypatch.setattr(ab, "_post", fake_post)
+    monkeypatch.setattr(ab, "_stream", fake_stream)
     out = ab.run_anthropic_agent(
         "run it", [], _cfg(max_steps=1), approve=lambda n, a: False, session="s"
     )
@@ -236,12 +245,12 @@ def test_run_agent_branches_to_native(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     hit = {}
     monkeypatch.setattr(
-        ab, "_post", lambda *a, **k: _resp([{"type": "text", "text": "via-native"}])
+        ab, "_stream", lambda *a, **k: _stream_resp([{"type": "text", "text": "via-native"}])
     )
     out = agent.run_agent("hello there friend", [], _cfg(), session="s")
     assert out == "via-native"
     assert any(r["tool"] == "llm_call" and r["session"] == "s" for r in store.list_tool_runs("s"))
-    assert hit == {}  # _post patched at backend; OpenAI client never constructed
+    assert hit == {}  # _stream patched at backend; OpenAI client never constructed
 
 
 # --- config surface ---
@@ -279,11 +288,11 @@ def test_loop_sends_cache_markers(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     payloads = []
 
-    def fake_post(base, key, payload, **k):
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
         payloads.append(payload)
-        return {"content": [{"type": "text", "text": "cached hi"}], "stop_reason": "end_turn"}
+        return ([{"type": "text", "text": "cached hi"}], "end_turn")
 
-    monkeypatch.setattr(ab, "_post", fake_post)
+    monkeypatch.setattr(ab, "_stream", fake_stream)
     out = ab.run_anthropic_agent("say hi", [], _cfg(), session="s")
     assert out == "cached hi"
     sent = payloads[0]
@@ -294,12 +303,213 @@ def test_loop_sends_cache_markers(tmp_path, monkeypatch):
 def test_cache_usage_block_ignored_gracefully(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
 
-    def fake_post(base, key, payload, **k):
-        return {
-            "content": [{"type": "text", "text": "hi"}],
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 10, "cache_read_input_tokens": 900},
-        }
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        return ([{"type": "text", "text": "hi"}], "end_turn")
 
-    monkeypatch.setattr(ab, "_post", fake_post)
+    monkeypatch.setattr(ab, "_stream", fake_stream)
     assert ab.run_anthropic_agent("say hi", [], _cfg(), session="s") == "hi"
+
+
+# --- SSE streaming (#62) ---
+
+
+def _sse_stream(lines, status=200):
+    """Fake httpx.stream context manager yielding canned SSE lines."""
+    import json as _json
+
+    class FakeResp:
+        status_code = status
+
+        def read(self):
+            return _json.dumps({"error": {"message": "bad key"}}).encode()
+
+        def iter_lines(self):
+            return iter(lines)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_stream(method, url, **k):
+        assert method == "POST" and url.endswith("/v1/messages")
+        return FakeResp()
+
+    return fake_stream
+
+
+def _ev(event, obj):
+    import json as _json
+
+    return [f"event: {event}", f"data: {_json.dumps(obj)}", ""]
+
+
+def test_stream_text_and_thinking_deltas(monkeypatch):
+    import httpx
+
+    lines = [
+        *_ev("message_start", {"type": "message_start", "message": {"id": "m1"}}),
+        *_ev(
+            "content_block_start",
+            {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}},
+        ),
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "hmm "},
+            },
+        ),
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "ok"},
+            },
+        ),
+        *_ev("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        *_ev(
+            "content_block_start",
+            {"type": "content_block_start", "index": 1, "content_block": {"type": "text"}},
+        ),
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "hi "},
+            },
+        ),
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "there"},
+            },
+        ),
+        *_ev("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}),
+        *_ev("message_stop", {"type": "message_stop"}),
+    ]
+    monkeypatch.setattr(httpx, "stream", _sse_stream(lines))
+    tokens, thoughts = [], []
+    blocks, stop = ab._stream(
+        "https://api.anthropic.com",
+        "k",
+        {"model": "m", "messages": []},
+        tokens.append,
+        thoughts.append,
+    )
+    assert stop == "end_turn"
+    assert tokens == ["hi ", "there"] and thoughts == ["hmm ", "ok"]
+    assert {"type": "thinking", "thinking": "hmm ok"} in blocks
+    assert {"type": "text", "text": "hi there"} in blocks
+
+
+def test_stream_thinking_falls_back_to_on_token(monkeypatch):
+    import httpx
+
+    lines = [
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "t"},
+            },
+        ),
+    ]
+    monkeypatch.setattr(httpx, "stream", _sse_stream(lines))
+    tokens = []
+    ab._stream("https://x", "k", {}, tokens.append, None)
+    assert tokens == ["t"]
+
+
+def test_stream_tool_use_input_json_accumulates(monkeypatch):
+    import httpx
+
+    lines = [
+        *_ev(
+            "content_block_start",
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "tool_use", "id": "tu1", "name": "list_dir"},
+            },
+        ),
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "input_json_delta", "partial_json": '{"path": "/t'},
+            },
+        ),
+        *_ev(
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "input_json_delta", "partial_json": 'mp"}'},
+            },
+        ),
+    ]
+    monkeypatch.setattr(httpx, "stream", _sse_stream(lines))
+    blocks, _ = ab._stream("https://x", "k", {}, None, None)
+    assert blocks == [
+        {"type": "tool_use", "id": "tu1", "name": "list_dir", "input": {"path": "/tmp"}}
+    ]
+
+
+def test_stream_http_error_raises(monkeypatch):
+    import httpx
+
+    import pytest
+
+    monkeypatch.setattr(httpx, "stream", _sse_stream([], status=401))
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        ab._stream("https://x", "bad", {}, None, None)
+
+
+def test_stream_error_event_raises(monkeypatch):
+    import httpx
+
+    import pytest
+
+    lines = _ev("error", {"type": "error", "error": {"message": "overloaded"}})
+    monkeypatch.setattr(httpx, "stream", _sse_stream(lines))
+    with pytest.raises(RuntimeError, match="overloaded"):
+        ab._stream("https://x", "k", {}, None, None)
+
+
+def test_agent_falls_back_to_post_when_stream_fails(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+
+    def _boom(*a, **k):
+        raise RuntimeError("sse down")
+
+    monkeypatch.setattr(ab, "_stream", _boom)
+    monkeypatch.setattr(
+        ab, "_post", lambda *a, **k: {"content": [{"type": "text", "text": "fallback hi"}]}
+    )
+    seen = []
+    out = ab.run_anthropic_agent("hi", [], _cfg(), on_token=seen.append, session="s")
+    assert out == "fallback hi" and seen == ["fallback hi"]
+
+
+def test_agent_stream_error_surfaces_when_post_fails(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+
+    def _boom(*a, **k):
+        raise RuntimeError("sse down")
+
+    def _post_boom(*a, **k):
+        raise RuntimeError("nope")
+
+    monkeypatch.setattr(ab, "_stream", _boom)
+    monkeypatch.setattr(ab, "_post", _post_boom)
+    out = ab.run_anthropic_agent("hi", [], _cfg(), session="s")
+    assert out.startswith("Error talking to anthropic")
