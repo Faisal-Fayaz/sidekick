@@ -24,7 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.15.0 (unplanned — propose by PR)
+## Next — v0.17.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -62,6 +62,8 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.16.0` — version-bump release (publishes the v0.14.0 skills set to PyPI after the publisher fix).
+- `v0.15.0` — version-bump release carrying the skills compound (#48–50); first PyPI publish of that code (`v0.14.0` was tagged in code but never published — PyPI went 0.13.0 → 0.15.0).
 - `v0.14.0` — skills compound: plugin design (#48), user-defined tools (#49), skill registry (#50).
 - `v0.13.0` — groq provider fix (contributor branch).
 - `v0.12.0` — daemon compounds: scheduled tasks (#38), background runs (#39), session allowlist (#40), teammate-pilot digest (#41).
