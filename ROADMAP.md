@@ -24,7 +24,11 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.18.0 (unplanned — propose by PR)
+## Next — v0.18.0 (support + adoption)
+
+1. **`doctor --fix` + `sk report` (#70)** — auto-remediation plus redacted diagnostics bundle.
+2. **Release policy (#71)** — minor/patch rules, changelog, pre-release checklist.
+3. **Contributor growth (#72)** — good-first-issues, onboarding, review SLAs.
 
 ## Later
 
@@ -42,15 +46,12 @@ Thesis: own the users cloud agents structurally can't serve
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
 - **Opt-in crash telemetry** — no data by default, explicit flag only.
-- **TUI overhaul, tranche B2** — approval cards + streaming Markdown (A1/A2/B1 shipped in v0.6.0). (Rides `v0.17.0`, #64; may slip.)
-- **Anthropic streaming** — SSE token streaming in `anthropic_backend`; closes the documented non-streaming v1 gap with the OpenAI path. (Rides `v0.17.0`, #62.)
-- **Thinking display** — surface Claude thinking blocks and qwen3 reasoning uniformly in the TUI. Transparency users already get half of. (Rides `v0.17.0`, #63.)
-- **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked.
-- **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc.
+- **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked. (Rides `v0.18.0`, #70.)
+- **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc. (Rides `v0.18.0`, #71.)
 - **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 300+-test suite into a system.
 - **Security threat model** — documented adversary model (shell gating, SSRF, prompt injection) + what a future audit should probe.
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
-- **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+.
+- **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+. (Rides `v0.18.0`, #72.)
 - **Sustainability options** — licensing, seats vs support, what stays open-core if enterprise flavor ever happens. Early thinking, no commitments.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
