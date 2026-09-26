@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-458%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-466%20passing-brightgreen.svg)](tests/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -53,7 +53,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 458-test suite incl. prompt-regression evals | ✅ | rare |
+| 466-test suite incl. prompt-regression evals | ✅ | rare |
 
 ## Quickstart
 
@@ -159,7 +159,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
-| `sk doctor` / `sk models [pull <id> | prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health / models (list, download, remove) / settings / build / self-update |
+| `sk doctor [--fix]` / `sk report` / `sk models [pull <id> | prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
 
 Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked index; the agent loads full instructions on demand via the `skill` tool. `fast`/`smart` resolve per provider (Ollama: llama3.2:3b/qwen2.5-coder:7b, Groq: gpt-oss-20b/120b).
@@ -191,7 +191,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 458 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 466 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.

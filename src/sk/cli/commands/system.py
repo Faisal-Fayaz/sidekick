@@ -218,11 +218,46 @@ def models_prune(
         console.print(f"[yellow]! {target} still listed — try `sk models`.[/yellow]")
 
 
+def repair_config() -> str | None:
+    """Create a missing config or reset an unreadable one (backup kept).
+
+    Returns a human message when it acted, None when the config was healthy.
+    Never raises (returns the error as a message instead).
+    """
+    from sk.config import CONFIG_PATH, Config
+
+    try:
+        if not CONFIG_PATH.exists():
+            Config().ensure_created()
+            return "[green]fixed: created default config.[/green]"
+        try:
+            Config.load()
+            return None
+        except Exception:
+            bak = CONFIG_PATH.with_suffix(".bak")
+            try:
+                CONFIG_PATH.rename(bak)
+            except Exception as e:
+                return f"[red]config unreadable and backup failed: {e}[/red]"
+            Config().ensure_created()
+            return f"[green]fixed: unreadable config backed up to {bak}, fresh defaults written.[/green]"
+    except Exception as e:
+        return f"[red]config repair failed: {e}[/red]"
+
+
 @app.command()
-def doctor():
+def doctor(
+    fix: bool = typer.Option(
+        False, "--fix", help="Auto-repair: pull missing model, (re)create config"
+    ),
+):
     """Check provider + model + config health."""
     from sk.auth import provider_status
 
+    if fix:
+        msg = repair_config()
+        if msg is not None:
+            console.print(msg)
     cfg = _cfg()
     console.print(
         f"provider=[cyan]{cfg.provider}[/cyan] model=[cyan]{cfg.model}[/cyan] base=[cyan]{cfg.effective_base_url()}[/cyan] key=[cyan]{Config.mask(cfg.effective_api_key())}[/cyan] code=[cyan]{_code_version()}[/cyan]"
@@ -236,6 +271,25 @@ def doctor():
             console.print(f"[green]✓ {cfg.provider} reachable[/green] ({len(names)} models)")
             if cfg.model in names:
                 console.print(f"[green]✓ model '{cfg.model}' installed[/green]")
+            elif fix and cfg.provider == "ollama":
+                from sk.init_wizard import pull_model
+
+                console.print(f"[dim]--fix: pulling {cfg.model}...[/dim]")
+                ok2, msg2 = pull_model(cfg.model)
+                console.print(f"[green]{msg2}[/green]" if ok2 else f"[red]{msg2}[/red]")
+                if ok2:
+                    try:
+                        names = fetch_models(
+                            cfg.provider, cfg.effective_base_url(), cfg.effective_api_key()
+                        )
+                        if cfg.model in names:
+                            console.print(f"[green]✓ model '{cfg.model}' installed.[/green]")
+                        else:
+                            console.print(
+                                f"[yellow]! pulled but '{cfg.model}' not listed yet — try `sk models`.[/yellow]"
+                            )
+                    except Exception as e:
+                        console.print(f"[red]pulled, but cannot verify: {e}[/red]")
             else:
                 console.print(
                     f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]"
@@ -252,6 +306,78 @@ def doctor():
     from sk.tools import tool_exec
 
     console.print(f"[dim]tools sanity: {tool_exec('pwd')[:80]}[/dim]")
+
+
+def build_report(cfg, status: tuple[bool, str] | None = None) -> str:
+    """Diagnostics bundle for pasting into issues. Keys always masked.
+
+    Pure gathering (no network beyond the passed-in status); never raises.
+    """
+    import datetime
+    import platform
+    import sys
+
+    from sk.config import CONFIG_DIR, CONFIG_PATH
+
+    lines = [
+        "# sidekick report",
+        "",
+        f"- when: {datetime.datetime.now():%Y-%m-%d %H:%M}",
+        f"- code: {_code_version()}",
+        f"- python: {platform.python_version()} ({sys.platform})",
+        f"- provider: {cfg.provider}",
+        f"- model: {cfg.model}",
+        f"- base_url: {cfg.effective_base_url()}",
+        f"- api_key: {Config.mask(cfg.effective_api_key())}",
+        f"- max_steps: {cfg.max_steps} temp: {cfg.temperature}",
+        f"- spend_cap_usd: {cfg.spend_cap_usd:.2f} history_budget: {cfg.history_budget_tokens}",
+        f"- config_file: {'present' if CONFIG_PATH.exists() else 'missing'}",
+    ]
+    if cfg.project_note():
+        lines.append(f"- {cfg.project_note()}")
+    if status is not None:
+        mark = "ok" if status[0] else "FAIL"
+        lines.append(f"- provider_status: [{mark}] {status[1][:200]}")
+    try:
+        from sk.skills import list_skills
+
+        lines.append(f"- skills: {len(list_skills())} packs in ~/.sidekick/skills/")
+    except Exception:
+        pass
+    try:
+        from sk.jobs import load_jobs
+
+        counts: dict[str, int] = {}
+        for job in load_jobs().values():
+            s = str(job.get("status", "?")) if isinstance(job, dict) else "?"
+            counts[s] = counts.get(s, 0) + 1
+        lines.append(f"- bg_jobs: {counts or 'none'}")
+    except Exception:
+        pass
+    try:
+        err_log = CONFIG_DIR / "tui-errors.log"
+        if err_log.exists():
+            tail = err_log.read_text(errors="replace").splitlines()[-10:]
+            lines.append("- recent_errors:")
+            lines += [f"  - {ln[:200]}" for ln in tail] or ["  - (empty)"]
+        else:
+            lines.append("- recent_errors: none logged")
+    except Exception:
+        lines.append("- recent_errors: (unreadable)")
+    return "\n".join(lines)
+
+
+@app.command()
+def report():
+    """Diagnostics bundle for issues (keys masked) — paste into bug reports."""
+    from sk.auth import provider_status
+
+    cfg = _cfg()
+    try:
+        status = provider_status(cfg)
+    except Exception as e:
+        status = (False, f"status check failed: {e}")
+    print(build_report(cfg, status))
 
 
 @app.command()
