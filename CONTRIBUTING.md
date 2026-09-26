@@ -66,3 +66,30 @@ merging to `main` of the canonical repo with a bumped `__version__` in
 `src/sk/__init__.py` trusted-publishes `sidekick-agent` to PyPI and cuts a
 GitHub Release. So **don't bump the version in a regular feature PR** — bump
 it only in the PR that is meant to become a release.
+
+### Version policy
+
+- **patch** (`0.17.0` → `0.17.1`): fixes, docs, tests, packaging, CI — no new
+  user-facing behavior.
+- **minor** (`0.17.0` → `0.18.0`): new features, new commands/flags, behavior
+  changes. The normal release train.
+- **major** (`1.0`): reserved for breaking changes (config format, CLI
+  removals, protocol breaks). Requires an explicit maintainer decision.
+- Never skip or reuse a number: every bump publishes (or fails loudly).
+  `v0.14.0` was tagged in code but never reached PyPI — that gap is now a
+  documented anti-pattern, not a procedure.
+
+### Merge subjects feed the changelog
+
+GitHub auto-generates release notes from merge subjects, so write them as
+`area: what changed`: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
+`test:`. One concern per PR keeps each line readable.
+
+### Pre-release checklist
+
+- [ ] Version bumped on a `release/*` branch only (CI enforces this).
+- [ ] `ROADMAP.md` `Done` records the release, `Next` points past it.
+- [ ] Test-count badge in `README.md` matches `pytest --collect-only`.
+- [ ] Full CI green on the release PR (lint, mypy, tests × 6, badge, build).
+- [ ] After merge: release workflow success, PyPI shows the version,
+      GitHub Release exists with artifacts.
