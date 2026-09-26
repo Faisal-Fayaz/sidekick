@@ -616,6 +616,7 @@ class SidekickTUI(App):
             "event": event,
             "answer": False,
             "asked_at": asked_at,
+            "timeout": timeout,
             "reply": "",
             "token": token,
             "owner": owner,
@@ -802,6 +803,62 @@ class SidekickTUI(App):
             return
         self._copy_out(answers[-1], "last answer")
 
+    def _answer_pending(self, text: str) -> str | None:
+        """Consume a pending approval answer. Returns 'accepted' | 'too-late' | None.
+
+        Answers arriving after the card's timeout are rejected without waking
+        the worker (it already denied): accepting them would print a lie.
+        Slash commands never answer cards. Pure logic over _live_pending;
+        safe to unit test with stubs.
+        """
+        import time as _t
+
+        if text.startswith("/"):
+            return None
+        pending = self._live_pending()
+        if pending is None:
+            return None
+        try:
+            log = self.query_one("#chat-log", RichLog)
+        except Exception:
+            log = None
+        try:
+            if "asked_at" not in pending or "timeout" not in pending:
+                expired = False  # pre-timeout slots: deadline sweep still applies
+            else:
+                expired = _t.monotonic() > float(pending.get("asked_at", 0)) + float(
+                    pending.get("timeout", 0)
+                )
+        except Exception:
+            expired = False
+        if expired:
+            self._pending_approval = None
+            if log is not None:
+                try:
+                    _role(log, "you", text)
+                    _role(log, "sys", "too late — already denied (timeout)")
+                except Exception:
+                    pass
+            return "too-late"
+        verdict = is_affirmative(text)
+        if log is not None:
+            try:
+                _role(log, "you", text)
+                _role(
+                    log,
+                    "sys",
+                    f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}",
+                )
+            except Exception:
+                pass
+        pending["answer"] = verdict
+        pending["reply"] = text[:20]
+        try:
+            pending["event"].set()
+        except Exception:
+            pass
+        return "accepted"
+
     @on(ChatArea.Send)
     def _send(self, ev: ChatArea.Send) -> None:
         from sk import slash
@@ -825,19 +882,7 @@ class SidekickTUI(App):
             self.exit()
             return
         # pending write approval eats the next NON-SLASH line: y/yes approves
-        pending = self._live_pending()
-        if pending is not None and not text.startswith("/"):
-            verdict = is_affirmative(text)
-            _role(log, "you", text)
-            pending["answer"] = verdict
-            pending["reply"] = text[:20]
-            _role(
-                log, "sys", f"{'approved' if verdict else 'denied'}: {pending.get('question', '')}"
-            )
-            try:
-                pending["event"].set()
-            except Exception:
-                pass
+        if self._answer_pending(text) is not None:
             return
         _role(log, "you", text)
         _rule(log)
