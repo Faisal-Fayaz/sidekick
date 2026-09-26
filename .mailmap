@@ -1,0 +1,13 @@
+# .mailmap — consolidate contributor identities for `git shortlog` and the
+# GitHub contributors graph. See: https://git-scm.com/docs/gitmailmap
+#
+# The account rename (Faisal01011 -> Faisal-Fayaz) split one human across
+# three identities; Irfanwani committed under two display names. The first
+# two stanzas map them all to one canonical identity each.
+Faisal-Fayaz <fai504438@gmail.com> Faisal01011 <fai504438@gmail.com>
+Faisal-Fayaz <fai504438@gmail.com> Faisal Fayaz <119831413+Faisal-Fayaz@users.noreply.github.com>
+Faisal-Fayaz <fai504438@gmail.com> Faisal Fayaz <119831413+Faisal01011@users.noreply.github.com>
+Irfanwani <irfanwani347@gmail.com> Irfan Wani <irfanwani347@gmail.com>
+# Pre-register external contributors so their first authored commit links
+# immediately (bare-username Co-authored-by trailers without email do not).
+Abdelhamed Ahmed <abdelhamedahmed45e@gmail.com>
