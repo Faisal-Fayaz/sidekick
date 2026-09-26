@@ -1156,7 +1156,7 @@ def run_agent(
                 _provider_host(cfg),
             )
             if not proceed:
-                return "Plan denied by user — nothing was executed."
+                return "Denied: plan denied by user — nothing was executed."
             messages.append({"role": "assistant", "content": msg_text})
             outs = _run_tools_batch(
                 batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
@@ -1200,7 +1200,7 @@ def run_agent(
             batch, approve, review_plan, auto_approve, session, cfg.provider, _provider_host(cfg)
         )
         if not proceed:
-            return "Plan denied by user — nothing was executed."
+            return "Denied: plan denied by user — nothing was executed."
         messages.append(
             {
                 "role": "assistant",
