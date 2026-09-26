@@ -906,7 +906,7 @@ class SidekickTUI(App):
             self._think_timer = None
 
     def _think_tick(self) -> None:
-        if self._live_n > 0:
+        if self._live_n > 0 or self._live_reason:
             self._stop_think_timer()
             return
         try:

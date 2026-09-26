@@ -9,7 +9,13 @@ from rich.panel import Panel
 from sk.agent import run_agent
 from sk.store import get_history, save_message
 
-from ..approvers import _make_approver_state, _make_on_token, _make_on_tool, _make_plan_reviewer
+from ..approvers import (
+    _make_approver_state,
+    _make_on_reasoning,
+    _make_on_token,
+    _make_on_tool,
+    _make_plan_reviewer,
+)
 from ..base import _cfg, app, console
 from ..resolve import _resolve_model
 
@@ -46,6 +52,7 @@ def chat(
     approve = _make_approver_state(state, cfg.approved_commands, parse_allow_list(allow))
     on_tool = _make_on_tool(stream)
     on_token = None if no_stream else _make_on_token(stream)
+    on_reasoning = None if no_stream else _make_on_reasoning()
     while True:
         try:
             user = console.input("[bold green]you> [/]").strip()
@@ -93,6 +100,7 @@ def chat(
                 on_tool=on_tool,
                 on_token=on_token,
                 approve=approve,
+                on_reasoning=on_reasoning,
                 auto_approve=bool(state.get("yolo")),
                 session=session,
                 review_plan=_make_plan_reviewer(state),

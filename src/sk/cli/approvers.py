@@ -147,3 +147,20 @@ def _make_on_token(state: dict | None = None):
 
     on_token.state = state  # type: ignore[attr-defined]
     return on_token
+
+
+def _make_on_reasoning():
+    """Dim-italic live reasoning writer (qwen3/Claude thinking deltas).
+
+    Display-only: never counted in streamed-fraction checks, never saved.
+    Callers must pass None instead for --json output purity.
+    """
+    from rich.text import Text
+
+    def on_reasoning(chunk: str):
+        try:
+            console.print(Text(str(chunk or ""), style="dim italic"), end="")
+        except Exception:
+            pass
+
+    return on_reasoning

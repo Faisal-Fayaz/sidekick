@@ -76,3 +76,33 @@ def test_resolve_quiet_suppresses_router_print(capsys):
         "qwen2.5-coder:7b",
     )
     assert capsys.readouterr().out == ""
+
+
+def test_json_never_carries_reasoning_callback(monkeypatch):
+    """--json purity: on_reasoning must be None so thinking never corrupts output."""
+    seen = {}
+
+    def fake_run_agent(task, history, cfg, **k):
+        seen.update(k)
+        return "done"
+
+    monkeypatch.setattr(run_mod, "run_agent", fake_run_agent)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "hi", "--json", "--yes"])
+    assert res.exit_code == 0, res.output
+    assert seen.get("on_reasoning") is None
+    json.loads(res.output)
+
+
+def test_plain_run_wires_reasoning_callback(monkeypatch):
+    seen = {}
+
+    def fake_run_agent(task, history, cfg, **k):
+        seen.update(k)
+        return "done"
+
+    monkeypatch.setattr(run_mod, "run_agent", fake_run_agent)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "hi", "--yes", "--model", "fast"])
+    assert res.exit_code == 0, res.output
+    assert callable(seen.get("on_reasoning"))

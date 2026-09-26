@@ -1320,3 +1320,76 @@ def test_live_throttle():
 
 def test_live_fence_and_reason():
     _run(_pilot_live_fence_and_reason())
+
+
+async def _pilot_reasoning_beats_dots():
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        live = app.query_one("#live", RichLog)
+        app._prime_live()  # dots ticking, no tokens yet
+        await pilot.pause()
+        assert app._think_timer is not None
+        app._live_reason.append("weighing two plans")
+        app._push_live()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in live.lines)
+        assert "weighing two plans" in blob  # uniform reasoning block renders
+        app._think_tick()  # reasoning present: dots must stop, not clobber
+        await pilot.pause()
+        assert app._think_timer is None
+        blob = "\n".join(str(ln) for ln in live.lines)
+        assert "weighing two plans" in blob
+
+
+async def _pilot_reasoning_stays_display_only(monkeypatch):
+    import sk.agent as agent
+
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+        review_plan=None,
+    ):
+        if on_reasoning:
+            on_reasoning("secret deliberation")
+        if on_token:
+            on_token("Final")
+        return "Final"
+
+    monkeypatch.setattr(agent, "run_agent", fake)
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input", ChatArea)
+        area.focus()
+        area.text = "decide something"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            try:
+                if "Final" in _blob(app):
+                    break
+            except Exception:
+                pass
+        blob = _blob(app)
+        assert "Final" in blob
+        assert "secret deliberation" not in blob  # reasoning never saved
+        assert app._think_timer is None
+
+
+def test_reasoning_beats_dots():
+    _run(_pilot_reasoning_beats_dots())
+
+
+def test_reasoning_stays_display_only(monkeypatch):
+    _run(_pilot_reasoning_stays_display_only(monkeypatch))

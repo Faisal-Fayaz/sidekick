@@ -8,7 +8,13 @@ from rich.markdown import Markdown
 from sk.agent import run_agent
 from sk.store import get_history, save_message
 
-from ..approvers import _make_approver, _make_on_token, _make_on_tool, _make_plan_reviewer
+from ..approvers import (
+    _make_approver,
+    _make_on_reasoning,
+    _make_on_token,
+    _make_on_tool,
+    _make_plan_reviewer,
+)
 from ..base import _cfg, app, console
 from ..resolve import _resolve_model
 
@@ -94,6 +100,7 @@ def run(
     stream = {"n": 0, "cleared": False, "clear_line": True}
     on_tool = _recorder if as_json else _make_on_tool(stream)
     on_token = None if (no_stream or as_json) else _make_on_token(stream)
+    on_reasoning = None if (no_stream or as_json) else _make_on_reasoning()
 
     def _emit(ok: bool, answer: str, error: str | None) -> None:
         # plain print: rich would wrap long lines and parse [] as markup,
@@ -122,6 +129,7 @@ def run(
             on_tool=on_tool,
             on_token=on_token,
             approve=approve,
+            on_reasoning=on_reasoning,
             auto_approve=yes,
             session=session,
             review_plan=_make_plan_reviewer({"yolo": yes}),
