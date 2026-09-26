@@ -42,9 +42,9 @@ def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
     try:
         argv = shlex.split(cmd)
     except ValueError as e:
-        return f"Parse error: {e}"
+        return f"Error: parse error: {e}"
     if not argv:
-        return "Empty command."
+        return "Error: empty command."
     binary = argv[0]
     # allow full paths like /bin/ls
     binary_name = Path(binary).name
@@ -125,7 +125,7 @@ def tool_sysinfo() -> str:
         except subprocess.TimeoutExpired:
             return "(timed out)"
         except Exception as e:
-            return f"(error: {e})"
+            return f"Error: {e}"
 
     if platform.system() == "Darwin":
         cpu_line = run(["sysctl", "-n", "machdep.cpu.brand_string"]) or "(unknown cpu)"
