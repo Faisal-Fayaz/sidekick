@@ -477,7 +477,7 @@ def run_anthropic_agent(
             batch, approve, review_plan, auto_approve, session, cfg.provider, _provider_host(cfg)
         )
         if not proceed:
-            return "Plan denied by user — nothing was executed."
+            return "Denied: plan denied by user — nothing was executed."
         # tool turn: append assistant tool_use + dispatch batch, then continue
         messages.append({"role": "assistant", "content": blocks})
         max_parallel = max_parallel_for(getattr(cfg, "model", ""))
