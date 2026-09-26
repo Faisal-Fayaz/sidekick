@@ -1,21 +1,24 @@
-"""Native Anthropic Messages API backend (non-streaming).
+"""Native Anthropic Messages API backend (token-streaming).
 
 Used when cfg.provider == "anthropic". The rest of the agent speaks OpenAI
 chat-completions, so this module translates at the boundary:
 
-- TOOLS_SCHEMA (OpenAI functions) -> Anthropic tools [{name, description, input_schema}]
+- tools_schema() (OpenAI functions) -> Anthropic tools [{name, description, input_schema}]
 - OpenAI messages (system/user/assistant/tool roles) -> (system, messages)
   with strict role alternation (consecutive same-role merged)
 - tool_use blocks -> existing _run_tools_batch (approval + audit preserved)
 
-Freshness: answers stream per-turn, not per-token (one on_token call with the
-full text). Same visible behavior otherwise: max_steps loop, approval gates,
-audit rows, session tagging.
+Freshness: token streaming like the OpenAI path — content deltas go to
+on_token as they arrive, thinking deltas to on_reasoning (falling back to
+on_token, same contract as agent._stream_chat). Non-streaming _post remains
+for summaries and as a fallback when streaming fails.
 
 No new deps (httpx already required). Fully offline except the API calls.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 from .auth import anthropic_headers
 
@@ -180,6 +183,173 @@ def _post(base_url: str, api_key: str, payload: dict, timeout: float = 300.0) ->
     raise RuntimeError(last_err)
 
 
+def _iter_sse_lines(response) -> Iterator[tuple[str, str]]:
+    """Yield (event, data) pairs from an SSE byte stream. Tolerates [DONE]."""
+    event: str = "message"
+    data_lines: list[str] = []
+    for line in response.iter_lines():
+        if isinstance(line, bytes):
+            try:
+                line = line.decode("utf-8", "replace")
+            except Exception:
+                line = ""
+        line = (line or "").strip()
+        if not line:
+            if data_lines:
+                yield (event, "\n".join(data_lines))
+            event, data_lines = "message", []
+            continue
+        if line.startswith(":"):
+            continue  # heartbeat comment
+        if line.startswith("event:"):
+            event = line[6:].strip() or event
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].strip())
+    if data_lines:
+        yield (event, "\n".join(data_lines))
+
+
+def _stream(
+    base_url: str,
+    api_key: str,
+    payload: dict,
+    on_token=None,
+    on_reasoning=None,
+    timeout: float = 300.0,
+) -> tuple[list[dict], str]:
+    """POST /v1/messages with stream:true. Returns (content blocks, stop_reason).
+
+    Content deltas stream to on_token as they arrive; thinking deltas to
+    on_reasoning (falling back to on_token, same as agent._stream_chat).
+    Tool input_json deltas accumulate silently. Raises RuntimeError on
+    transport/API errors — callers fall back to _post.
+    """
+    import json
+
+    import httpx
+
+    def _emit(fn, chunk: str) -> None:
+        if fn is None or not chunk:
+            return
+        try:
+            fn(chunk)
+        except Exception:
+            pass
+
+    url = f"{(base_url or '').rstrip('/')}/v1/messages"
+    body = dict(payload or {})
+    body["stream"] = True
+    on_r = on_reasoning if on_reasoning is not None else on_token
+    acc: dict[int, dict] = {}
+    order: list[int] = []
+    stop_reason = ""
+    try:
+        with httpx.stream(
+            "POST", url, headers=anthropic_headers(api_key), json=body, timeout=timeout
+        ) as r:
+            if r.status_code >= 400:
+                try:
+                    raw = r.read()
+                    err = json.loads(raw.decode("utf-8", "replace")).get("error", {})
+                    msg = f"HTTP {r.status_code}: {err.get('message', str(err)[:200])}"
+                except Exception:
+                    msg = f"HTTP {r.status_code}"
+                raise RuntimeError(msg)
+            for event, data in _iter_sse_lines(r):
+                if data == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(data)
+                except Exception:
+                    continue
+                if event == "error" or obj.get("type") == "error":
+                    err = obj.get("error", obj)
+                    raise RuntimeError(
+                        f"stream error: {err.get('message', str(err)[:200]) if isinstance(err, dict) else str(err)[:200]}"
+                    )
+                kind = obj.get("type", "")
+                if kind == "content_block_start":
+                    idx = int(obj.get("index", 0))
+                    block = obj.get("content_block", {}) or {}
+                    acc[idx] = {
+                        "type": block.get("type", "text"),
+                        "id": block.get("id", ""),
+                        "name": block.get("name", ""),
+                        "text": block.get("text", ""),
+                        "thinking": "",
+                        "input_json": "",
+                    }
+                    if idx not in order:
+                        order.append(idx)
+                elif kind == "content_block_delta":
+                    idx = int(obj.get("index", 0))
+                    blk = acc.setdefault(
+                        idx,
+                        {
+                            "type": "text",
+                            "id": "",
+                            "name": "",
+                            "text": "",
+                            "thinking": "",
+                            "input_json": "",
+                        },
+                    )
+                    if idx not in order:
+                        order.append(idx)
+                    delta = obj.get("delta", {}) or {}
+                    dtype = delta.get("type", "")
+                    if dtype == "text_delta":
+                        chunk = delta.get("text", "")
+                        blk["text"] += chunk
+                        _emit(on_token, chunk)
+                    elif dtype == "thinking_delta":
+                        chunk = delta.get("thinking", "")
+                        blk["thinking"] += chunk
+                        blk["type"] = "thinking"
+                        _emit(on_r, chunk)
+                    elif dtype == "input_json_delta":
+                        blk["input_json"] += delta.get("partial_json", "")
+                    # signature_delta and friends: carried opaquely, never displayed
+                elif kind == "message_delta":
+                    stop_reason = (
+                        (obj.get("delta", {}) or {}).get("stop_reason", "")
+                        or obj.get("stop_reason", "")
+                        or stop_reason
+                    )
+                elif kind == "message_stop":
+                    break
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(str(e)[:300]) from e
+    blocks: list[dict] = []
+    for idx in order:
+        blk = acc[idx]
+        btype = blk.get("type", "text")
+        if btype == "thinking":
+            if blk.get("thinking"):
+                blocks.append({"type": "thinking", "thinking": blk["thinking"]})
+        elif btype == "tool_use":
+            try:
+                parsed = json.loads(blk.get("input_json", "") or "{}")
+                if not isinstance(parsed, dict):
+                    parsed = {}
+            except Exception:
+                parsed = {}
+            blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": blk.get("id", ""),
+                    "name": blk.get("name", ""),
+                    "input": parsed,
+                }
+            )
+        else:
+            if blk.get("text"):
+                blocks.append({"type": "text", "text": blk["text"]})
+    return (blocks, stop_reason)
+
+
 def run_anthropic_agent(
     user_msg: str,
     history: list[dict],
@@ -204,7 +374,6 @@ def run_anthropic_agent(
     from .store import log_tool_run
     from .tools import tools_schema
 
-    _ = on_reasoning  # thinking blocks not requested in v1; sink kept for signature parity
     session = session or ""
     blocked = _spend_blocked(session, cfg)
     if blocked is not None:
@@ -267,18 +436,29 @@ def run_anthropic_agent(
         if tools:
             payload["tools"] = tools
         try:
-            resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), payload)
-        except Exception as e:
-            return f"Error talking to anthropic ({cfg.effective_base_url()} model={cfg.model}): {e}"
-        blocks = resp.get("content", []) if isinstance(resp, dict) else []
+            blocks, _stop = _stream(
+                cfg.effective_base_url(),
+                cfg.effective_api_key(),
+                payload,
+                on_token,
+                on_reasoning,
+            )
+            streamed = True
+        except Exception:
+            streamed = False
+            try:
+                resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), payload)
+            except Exception as e:
+                return f"Error talking to anthropic ({cfg.effective_base_url()} model={cfg.model}): {e}"
+            blocks = resp.get("content", []) if isinstance(resp, dict) else []
         texts = [
             b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
         ]
         uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
         text = "".join(texts).strip()
-        if text and on_token is not None:
+        if not streamed and text and on_token is not None:
             try:
-                on_token(text)
+                on_token(text)  # fallback path: deltas never flowed, emit whole text
             except Exception:
                 pass
         if not uses:
