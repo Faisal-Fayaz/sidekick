@@ -1393,3 +1393,85 @@ def test_reasoning_beats_dots():
 
 def test_reasoning_stays_display_only(monkeypatch):
     _run(_pilot_reasoning_stays_display_only(monkeypatch))
+
+
+def _stub_app(monkeypatch, **slot):
+    """SidekickTUI with stubbed widgets for _answer_pending unit tests."""
+    import threading as _th
+
+    import sk.tui as _tmod
+    from sk.tui import SidekickTUI
+
+    posted: list[str] = []
+    monkeypatch.setattr(_tmod, "_role", lambda log, role, body: posted.append(f"{role}:{body}"))
+
+    class _Stub:
+        def write(self, item):
+            posted.append(f"write:{item}")
+
+    app = SidekickTUI()
+    monkeypatch.setattr(app, "query_one", lambda *a, **k: _Stub())
+    if slot:
+        slot.setdefault("event", _th.Event())
+        slot.setdefault("answer", False)
+        slot.setdefault("reply", "")
+        app._pending_approval = slot
+    return app, posted
+
+
+def test_answer_pending_accepts_fresh(monkeypatch):
+    import threading as _th
+    import time as _t
+
+    app, posted = _stub_app(
+        monkeypatch,
+        question="shell -> pytest",
+        asked_at=_t.monotonic(),
+        timeout=300,
+        owner=_th.get_ident(),
+        deadline=_t.monotonic() + 330,
+        token=object(),
+    )
+    assert app._answer_pending("y") == "accepted"
+    assert any("approved: shell -> pytest" in p for p in posted)
+
+
+def test_answer_pending_rejects_stale(monkeypatch):
+    """Late 'y' to an expired card: rejected, worker NOT woken, denial stands."""
+    import threading as _th
+    import time as _t
+
+    event = _th.Event()
+    app, posted = _stub_app(
+        monkeypatch,
+        question="shell -> rm",
+        asked_at=_t.monotonic() - 400,
+        timeout=300,
+        owner=_th.get_ident(),
+        deadline=_t.monotonic() + 9999,  # sweep grace still open: expiry is the trigger
+        token=object(),
+        event=event,
+    )
+    assert app._answer_pending("y") == "too-late"
+    assert not event.is_set()
+    assert app._pending_approval is None
+    assert any("too late" in p for p in posted)
+
+
+def test_answer_pending_ignores_slash_and_none(monkeypatch):
+    import threading as _th
+    import time as _t
+
+    app, _ = _stub_app(
+        monkeypatch,
+        question="shell -> x",
+        asked_at=_t.monotonic(),
+        timeout=300,
+        owner=_th.get_ident(),
+        deadline=_t.monotonic() + 330,
+        token=object(),
+    )
+    assert app._answer_pending("/model fast") is None
+    assert app._pending_approval is not None  # slash doesn't consume the card
+    app2, _ = _stub_app(monkeypatch)
+    assert app2._answer_pending("y") is None
