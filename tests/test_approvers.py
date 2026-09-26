@@ -86,3 +86,23 @@ def test_chat_flow_no_thinking_after_completion():
     assert text.startswith(CLEAR)
     assert "thinking" not in text
     assert "the answer." in text
+
+
+def test_on_reasoning_prints_plain_dim_text():
+    """Reasoning chunks render literally (markup chars safe), display-only."""
+    import sk.cli.approvers as ap
+    from sk.cli.approvers import _make_on_reasoning
+
+    lines: list[str] = []
+
+    class _FakeConsole:
+        def print(self, *a, **k):
+            lines.extend(str(a) for a in a)
+
+    real = ap.console
+    ap.console = _FakeConsole()
+    try:
+        _make_on_reasoning()("consider [evil] markup")
+    finally:
+        ap.console = real
+    assert any("consider [evil] markup" in ln for ln in lines)
