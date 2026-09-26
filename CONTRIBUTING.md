@@ -25,6 +25,36 @@ uv tool install -e ".[voice]"   # editable dev install as `sk`, STT included
 sk doctor                        # checks provider + model (needs `ollama serve`)
 ```
 
+## First contribution (onboarding path)
+
+New here? Do this in order — each step proves the next one works:
+
+1. **Setup** (10 min): clone, install, `sk doctor`. If doctor is red,
+   `sk doctor --fix` repairs the common cases; otherwise paste
+   `sk report` into a new issue.
+2. **First test run** (5 min): `uv run --with pytest --with hypothesis pytest
+   tests/test_entry.py -q` — pick any single test file; the suite never needs
+   Ollama or network (suite-wide fixture isolates `~/.sidekick/`).
+3. **First PR**: pick an issue labeled [`good first issue`][gfi] (e.g. the
+   README command-table audit — mechanical, fully specified). Keep it to one
+   concern, run the gates in "Before opening a PR", open the PR with
+   `closes #N`.
+
+[gfi]: https://github.com/Faisal-Fayaz/sidekick/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
+
+## Review SLAs
+
+Between maintainers ([Faisal-Fayaz](https://github.com/Faisal-Fayaz),
+[Irfanwani](https://github.com/Irfanwani)):
+
+- **First response** (acknowledge / assign / close): within 48h.
+- **Review verdict** (approve or request changes): within 5 days.
+- **Docs/test-only PRs**: either maintainer may merge once CI is green and
+  the PR is 24h old with no objection.
+- Stale reviews get a nudge comment; still stale after 7 days, the other
+  maintainer may merge green PRs unilaterally. Either maintainer may propose
+  tightening or loosening these numbers by PR.
+
 ## Before opening a PR
 
 ```bash
