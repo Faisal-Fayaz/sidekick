@@ -171,3 +171,18 @@ def test_plugins_cli(tmp_path):
     assert "weather" in res.output
     res = CliRunner().invoke(app, ["plugins"])
     assert "TOOLS.md" in res.output
+
+
+def test_example_word_definition_manifest_parses_successfully():
+    """Verify that the word_definition example TOOLS.md parses correctly."""
+    from pathlib import Path
+
+    manifest_path = (
+        Path(__file__).parent.parent / "docs" / "examples" / "word_definition" / "TOOLS.md"
+    )
+    content = manifest_path.read_text(encoding="utf-8-sig")
+
+    spec, warning = plugins.parse_manifest(content, "word_definition")
+    assert warning is None, f"Expected zero warnings, got: {warning}"
+    assert spec is not None
+    assert spec.get("name") == "word_definition"
