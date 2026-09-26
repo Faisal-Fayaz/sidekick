@@ -65,6 +65,22 @@ jobs:
           echo "collected=$COUNT"
           grep -q "tests-${COUNT}%20passing" README.md || (echo "README badge stale: expected tests-${COUNT} passing" && exit 1)
 
+  release-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version bumps only on release/* branches (see CONTRIBUTING)
+        run: |
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qx "src/sk/__init__.py" || exit 0
+          case "${{ github.head_ref }}" in
+            release/*) echo "version bump on a release branch: ok" ;;
+            *) echo "::error::src/sk/__init__.py changed outside a release/* branch — move the bump (CONTRIBUTING: Releases)" && exit 1 ;;
+          esac
+
   coverage:
     runs-on: ubuntu-latest
     steps:
