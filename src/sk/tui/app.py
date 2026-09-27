@@ -9,8 +9,8 @@ from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.widgets import Header, Label, ListItem, ListView, RichLog, Static, TextArea
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Header, Input, Label, ListItem, ListView, RichLog, Static, TextArea
 
 from .helpers import _load_history, _now, _role, _rule, _w, is_affirmative, log_error
 from .theme import install_sidekick_theme
@@ -30,6 +30,7 @@ class SidekickTUI(App):
         ("f2", "toggle_theme", "theme"),
         ("f3", "toggle_sessions", "sessions"),
         ("f4", "toggle_plan", "plan mode"),
+        ("f5", "toggle_models", "models"),
         ("escape", "close_help", "close"),
     ]
     CSS = """
@@ -44,6 +45,9 @@ class SidekickTUI(App):
     #mic-status.recording { border: solid $error; color: $error; }
     #status-bar { height: 1; color: $text-muted; background: $surface; }
     #sessions-drawer { dock: left; width: 44; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
+    #model-picker { dock: right; width: 46; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
+    #model-filter { height: 3; }
+    #model-list { height: 1fr; }
     """
 
     def __init__(self, model: str = "", session: str = "", allow: tuple[str, ...] = ()):
@@ -62,6 +66,7 @@ class SidekickTUI(App):
         self._pending_approval: dict[str, object] | None = None
         self._plan_approved: frozenset[str] | None = None
         self._drawer_sessions: list[str] = []
+        self._drawer_models: list[str] = []
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -79,6 +84,9 @@ class SidekickTUI(App):
         yield RichLog(id="live", wrap=True, highlight=False)
         yield ListView(id="slash-list")
         yield RichLog(id="help-panel", wrap=True, highlight=False)
+        with Vertical(id="model-picker"):
+            yield Input(placeholder="filter models…", id="model-filter")
+            yield ListView(id="model-list")
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
             yield Static("ctrl+g\nto talk", id="mic-status")
@@ -164,6 +172,7 @@ class SidekickTUI(App):
         if self.close_help_if_open():
             return
         self._hide_sessions_drawer()
+        self._hide_model_picker()
 
     def _sessions_visible(self) -> bool:
         try:
@@ -212,6 +221,149 @@ class SidekickTUI(App):
             self.query_one("#chat-input", ChatArea).focus()
         except Exception:
             pass
+
+    def _model_choices(self) -> list[tuple[str, str]]:
+        """(id, label) rows: current ●, fast/smart aliases, live provider
+        models. Fetch failures fall back to aliases-only. Never raises."""
+        from sk.auth import fetch_models
+        from sk.config import Config
+
+        try:
+            cfg = Config.load()
+        except Exception:
+            return []
+        current = (self.model_override or cfg.model or "").strip()
+        rows: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        if current:
+            rows.append((current, f"● {current} (current)"))
+            seen.add(current)
+        for alias in ("fast", "smart"):
+            if alias not in seen:
+                seen.add(alias)
+                rows.append((alias, f"○ {alias}"))
+        try:
+            live = fetch_models(
+                cfg.provider, cfg.effective_base_url(), cfg.effective_api_key(), timeout=8
+            )
+        except Exception:
+            live = []
+        for m in (live or [])[:40]:
+            m = str(m or "").strip()
+            if m and m not in seen:
+                seen.add(m)
+                rows.append((m, f"○ {m}"))
+        return rows
+
+    def _render_model_picker(self, needle: str = "") -> None:
+        """Fill the picker list, filtered case-insensitively. Never raises."""
+        try:
+            lst = self.query_one("#model-list", ListView)
+        except Exception:
+            return
+        try:
+            needle = (needle or "").strip().lower()
+            self._drawer_models = []
+            lst.clear()
+            for mid, label in self._model_choices():
+                if needle and needle not in mid.lower():
+                    continue
+                self._drawer_models.append(mid)
+                lst.append(ListItem(Label(label)))
+            if not self._drawer_models:
+                lst.append(ListItem(Label("(no matches)")))
+        except Exception:
+            pass
+
+    def _model_picker_visible(self) -> bool:
+        try:
+            from textual.containers import Vertical
+
+            return bool(self.query_one("#model-picker", Vertical).display)
+        except Exception:
+            return False
+
+    def _hide_model_picker(self) -> None:
+        try:
+            from textual.containers import Vertical
+
+            self.query_one("#model-picker", Vertical).styles.display = "none"
+        except Exception:
+            pass
+        try:
+            self.query_one("#chat-input", ChatArea).focus()
+        except Exception:
+            pass
+
+    def action_toggle_models(self) -> None:
+        """F5: model picker popup (opencode-style). Esc dismisses."""
+        from textual.containers import Vertical
+
+        try:
+            box = self.query_one("#model-picker", Vertical)
+        except Exception:
+            return
+        if box.display:
+            self._hide_model_picker()
+            return
+        try:
+            filt = self.query_one("#model-filter", Input)
+            filt.value = ""
+        except Exception:
+            pass
+        self._render_model_picker()
+        box.styles.display = "block"
+        try:
+            self.query_one("#model-filter", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#model-filter")
+    def _model_filter_changed(self, ev: Input.Changed) -> None:
+        if self._model_picker_visible():
+            self._render_model_picker(ev.value)
+
+    @on(Input.Submitted, "#model-filter")
+    def _model_filter_submitted(self, ev: Input.Submitted) -> None:
+        try:
+            lst = self.query_one("#model-list", ListView)
+            idx = lst.index if lst.index is not None else 0
+        except Exception:
+            return
+        self._choose_model(idx)
+
+    @on(ListView.Selected, "#model-list")
+    def _model_chosen(self, ev: ListView.Selected) -> None:
+        try:
+            idx = ev.list_view.index if ev.list_view.index is not None else 0
+        except Exception:
+            return
+        self._choose_model(idx)
+
+    def _choose_model(self, idx: int) -> None:
+        """Adopt the highlighted model: override + persist + notice. Never raises."""
+        try:
+            mid = self._drawer_models[idx]
+        except Exception:
+            return
+        try:
+            from sk.config import Config
+            from sk.slash import _resolve_model_name
+
+            name = _resolve_model_name(Config.load(), mid)
+            self.model_override = name
+            cfg = Config.load()
+            cfg.model = name
+            try:
+                cfg.save()
+            except Exception:
+                pass
+            log = self.query_one("#chat-log", RichLog)
+            _role(log, "sys", f"model → `{name}`")
+            self._sub()
+        except Exception:
+            pass
+        self._hide_model_picker()
 
     @on(ListView.Selected, "#sessions-drawer")
     def _sessions_chosen(self, ev: ListView.Selected) -> None:
