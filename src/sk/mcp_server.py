@@ -27,13 +27,18 @@ def _server_version() -> str:
 
 
 def mcp_tools() -> list[dict]:
-    """Builtin tools (+ loaded plugins) converted to MCP shape."""
+    """Builtin tools (+ loaded plugins) converted to MCP shape.
+
+    Proxied mcp__* tools are never re-served (no recursive serving).
+    """
     from .tools import tools_schema
 
     out = []
     for entry in tools_schema():
         fn = entry.get("function", entry) if isinstance(entry, dict) else {}
         if not isinstance(fn, dict) or not fn.get("name"):
+            continue
+        if str(fn["name"]).startswith("mcp__"):
             continue
         params = fn.get("parameters") or {"type": "object", "properties": {}}
         out.append(

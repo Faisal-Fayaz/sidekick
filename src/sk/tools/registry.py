@@ -304,6 +304,10 @@ def dispatch_tool(name: str, args: dict) -> str:
         from sk.skills import show_skill
 
         return show_skill(str(args.get("name", "")))
+    if name.startswith("mcp__"):
+        from sk.mcp_client import dispatch_mcp_tool
+
+        return dispatch_mcp_tool(name, args)
     plugin = _dispatch_plugin(name, args)
     if plugin is not None:
         return plugin
@@ -321,20 +325,34 @@ def _dispatch_plugin(name: str, args: dict) -> str | None:
 
 
 def tools_schema() -> list[dict]:
-    """Builtin schema + loaded plugin tools. Never raises."""
+    """Builtin schema + loaded plugin tools + live MCP server tools. Never raises."""
     try:
         from sk.plugins import schema_extra
 
-        return list(TOOLS_SCHEMA) + schema_extra()
+        out = list(TOOLS_SCHEMA) + schema_extra()
     except Exception:
-        return list(TOOLS_SCHEMA)
+        out = list(TOOLS_SCHEMA)
+    try:
+        from sk.mcp_client import mcp_schema_extra
+
+        out = out + mcp_schema_extra()
+    except Exception:
+        pass
+    return out
 
 
 def approval_tools() -> set[str]:
-    """Approval set incl. ask-plugins. Never raises."""
+    """Approval set incl. ask-plugins and live MCP server tools. Never raises."""
     try:
         from sk.plugins import approval_names
 
-        return set(APPROVAL_TOOLS) | approval_names()
+        out = set(APPROVAL_TOOLS) | approval_names()
     except Exception:
-        return set(APPROVAL_TOOLS)
+        out = set(APPROVAL_TOOLS)
+    try:
+        from sk.mcp_client import mcp_tool_names
+
+        out = out | mcp_tool_names()
+    except Exception:
+        pass
+    return out
