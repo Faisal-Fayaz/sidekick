@@ -1058,6 +1058,7 @@ def run_agent(
             auto_approve=auto_approve,
             session=session,
             review_plan=review_plan,
+            read_only=read_only,
         )
     client = get_client(cfg)
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
