@@ -52,7 +52,7 @@ class SidekickTUI(App):
 
         self.session = session or new_session_id("tui")
         self._continued = bool(session)
-        self.state: dict = {"yolo": False, "allow": tuple(allow)}
+        self.state: dict = {"yolo": False, "readonly": False, "allow": tuple(allow)}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
         self._live_n: int = 0
@@ -551,7 +551,10 @@ class SidekickTUI(App):
         self._cfg = cfg
         set_theme(self, name_for_mode(cfg.theme))
         model = self.model_override or cfg.model
-        mode = "yolo" if self.state.get("yolo") else "confirm"
+        if self.state.get("readonly"):
+            mode = "readonly"
+        else:
+            mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""
         prov = f"{cfg.provider} · " if cfg.provider not in ("ollama", "") else ""
         short = self.session[-13:] if len(self.session) > 16 else self.session
@@ -573,6 +576,17 @@ class SidekickTUI(App):
 
         if name not in approval_tools():
             return True
+        if bool(self.state.get("readonly")):
+            try:
+                self.call_from_thread(
+                    _role,
+                    self.query_one("#chat-log", RichLog),
+                    "sys",
+                    f"read-only mode: denied {name} (`/confirm` to revert)",
+                )
+            except Exception:
+                pass
+            return False
         if bool(self.state.get("yolo")):
             return True
         cfg = getattr(self, "_cfg", None)
@@ -688,6 +702,19 @@ class SidekickTUI(App):
         if bool(self.state.get("yolo")):
             return True
         from sk.agent import _tool_target
+        from sk.tools import approval_tools
+
+        if bool(self.state.get("readonly")) and any(n in approval_tools() for n, _ in calls):
+            try:
+                self.call_from_thread(
+                    _role,
+                    self.query_one("#chat-log", RichLog),
+                    "sys",
+                    "read-only mode: denied plan with file writes (`/confirm` to revert)",
+                )
+            except Exception:
+                pass
+            return False
 
         approved = frozenset({_tool_target(n, a) for n, a in calls})
         ok = self._wait_slot("plan", f"{len(calls)} tools", plan_text)
@@ -1044,6 +1071,7 @@ class SidekickTUI(App):
                     on_reasoning,
                     bool(self.state.get("yolo")),
                     review_plan=self._review_plan,
+                    read_only=bool(self.state.get("readonly")),
                 )
             finally:
                 audit_session.reset(token)

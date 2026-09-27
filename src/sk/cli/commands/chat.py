@@ -43,7 +43,7 @@ def chat(
         session = latest_session() or new_session_id("chat")
     elif not session:
         session = new_session_id("chat")
-    state = {"yolo": yes}
+    state = {"yolo": yes, "readonly": False}
     console.print(
         Panel(
             f"[bold]sidekick[/]  model=[cyan]{cfg.model}[/]  session=[cyan]{session}[/]\nType [bold]/help[/] for commands, [bold]@path[/] to attach a file.",
@@ -106,6 +106,7 @@ def chat(
                 auto_approve=bool(state.get("yolo")),
                 session=session,
                 review_plan=_make_plan_reviewer(state),
+                read_only=bool(state.get("readonly")),
             )
         except Exception as e:
             console.print("\r\x1b[2K", end="")
@@ -162,7 +163,7 @@ def talk(
             console.print(f"[red]{install_msg}[/red]")
             raise typer.Exit(1)
         console.print("[dim]installed.[/dim]")
-    state = {"yolo": yes}
+    state = {"yolo": yes, "readonly": False}
     console.print(
         Panel(
             f"[bold]sidekick talk[/]  model=[cyan]{cfg.model}[/]  stt=[cyan]{stt_model}[/] (local int8)\n[bold green]Enter[/] to record, [bold green]Enter[/] to stop. [bold]/quit[/] exits, [bold]/help[/] commands.",
@@ -239,6 +240,7 @@ def talk(
                 auto_approve=bool(state.get("yolo")),
                 session=session,
                 review_plan=_make_plan_reviewer(state),
+                read_only=bool(state.get("readonly")),
             )
             secs = _t.monotonic() - t0
         except Exception as e:

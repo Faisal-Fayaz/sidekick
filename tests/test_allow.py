@@ -67,7 +67,7 @@ def test_bg_job_carries_allow(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     seen: dict = {}
 
-    def fake_approver(auto_yes, preapproved=(), allow=()):
+    def fake_approver(auto_yes, preapproved=(), allow=(), readonly=False):
         seen["allow"] = tuple(allow)
         return lambda *a, **k: True
 

@@ -904,7 +904,11 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
 
 
 def build_messages(
-    user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False
+    user_msg: str,
+    history: list[dict],
+    cfg: Config,
+    auto_approve: bool = False,
+    read_only: bool = False,
 ) -> list[dict]:
     """Assemble system + history + user messages with all grounding. Pure I/O, no LLM.
 
@@ -957,9 +961,14 @@ def build_messages(
 
     today = _dt.now().strftime("%A, %Y-%m-%d")
     approval_mode = (
-        "Approval mode: AUTOMATIC — call write tools directly, do not ask."
-        if auto_approve
-        else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
+        "Approval mode: READ-ONLY — research and explain only. Every write tool "
+        "is disabled, so never call one; read tools need no approval."
+        if read_only
+        else (
+            "Approval mode: AUTOMATIC — call write tools directly, do not ask."
+            if auto_approve
+            else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
+        )
     )
     try:
         from .config import TIERS as _TIERS
@@ -1002,6 +1011,7 @@ def run_agent(
     auto_approve: bool = False,
     session: str = "",
     review_plan=None,
+    read_only: bool = False,
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
@@ -1010,6 +1020,8 @@ def run_agent(
     on_reasoning(chunk) receives thinking deltas separately when given.
     auto_approve only changes the prompt line (tool gating is the caller's
     approve callback); pass True when --yes/yolo so the model calls directly.
+    read_only switches the prompt line to research-only; the caller's approve
+    callback must still deny writes (see sk.cli.approvers).
     session tags audit rows (tool_runs) for `sk audit`. Empty session falls
     back to the audit_session context var (used by the TUI worker path).
     review_plan(plan_text, calls) -> bool: one confirmation for multi-tool
@@ -1073,7 +1085,9 @@ def run_agent(
         return out
 
     history = prepare_history(session, history, cfg, _summarize)
-    messages = build_messages(user_msg, history, cfg, auto_approve=auto_approve)
+    messages = build_messages(
+        user_msg, history, cfg, auto_approve=auto_approve, read_only=read_only
+    )
     try:
         from .store import log_tool_run
 
