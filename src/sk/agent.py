@@ -903,6 +903,103 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
         return history
 
 
+def make_summarizer(cfg):
+    """Single-model-call summarizer closure for compact_history. Raises on failure.
+
+    Shared by the auto-compaction path (run_agent) and manual /compact so both
+    squeeze history identically. The Anthropic provider uses the native API.
+    """
+    if getattr(cfg, "provider", "") == "anthropic":
+        from .anthropic_backend import _post
+
+        def _summarize_native(text: str) -> str:
+            resp = _post(
+                cfg.effective_base_url(),
+                cfg.effective_api_key(),
+                {
+                    "model": cfg.model,
+                    "max_tokens": 400,
+                    "messages": [
+                        {"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}
+                    ],
+                },
+            )
+            out = "".join(
+                b.get("text", "")
+                for b in (resp.get("content", []) if isinstance(resp, dict) else [])
+                if isinstance(b, dict) and b.get("type") == "text"
+            ).strip()
+            if not out:
+                raise RuntimeError("empty summary")
+            return out
+
+        return _summarize_native
+
+    client = get_client(cfg)
+    extra = _extra_body(cfg)
+
+    def _summarize(text: str) -> str:
+        m = _stream_chat(
+            client,
+            cfg.model,
+            [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
+            None,
+            cfg.temperature,
+            400,
+            extra,
+            None,
+            None,
+        )
+        out = ((m.content or "") + "\n" + (m.reasoning or "")).strip()
+        if not out:
+            raise RuntimeError("empty summary")
+        return out
+
+    return _summarize
+
+
+def compact_session_now(session: str, cfg, hint: str = "") -> str:
+    """Force compaction of a session's history now. Returns a human report.
+
+    Same squeeze as the auto path (make_summarizer + compact_history over the
+    uncovered tail) plus token accounting. Never raises — failures report.
+    """
+    try:
+        from .store import get_history_full, get_summary, save_summary
+
+        full = get_history_full(session)
+        if not full:
+            return "_nothing to compact — session is empty_"
+        budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        prior, up_to = get_summary(session)
+        uncovered = [m for m in full if m.get("id", 0) > up_to]
+        if not uncovered:
+            return f"_already compacted — {len(full)} messages covered by the saved summary_"
+        if (hint or "").strip():
+            prior = ((prior or "") + f"\n[Compaction focus]: {hint.strip()}").strip()
+        base = (
+            [{"role": "user", "content": f"[Session summary so far]:\n{prior}"}]
+            if (prior or "").strip()
+            else []
+        )
+        as_role = _as_role_content(uncovered)
+        if estimate_tokens(_render_turns(base + as_role)) <= budget:
+            return "_under budget — history kept verbatim_"
+        before = estimate_tokens(_render_turns(uncovered))
+        prompt, new_summary = compact_history(prior, uncovered, budget, make_summarizer(cfg))
+        if new_summary is None:
+            return "_compaction failed (summarizer unreachable?) — history untouched_"
+        top = max([m.get("id", 0) for m in full] + [up_to])
+        save_summary(session, new_summary, top)
+        after = estimate_tokens(_render_turns(prompt))
+        return (
+            f"_compacted {len(uncovered)} messages (~{before} tokens) into the "
+            f"session summary; prompt view now ~{after} tokens_"
+        )
+    except Exception as e:
+        return f"_compaction failed ({e}) — history untouched_"
+
+
 def build_messages(
     user_msg: str,
     history: list[dict],
@@ -1068,24 +1165,9 @@ def run_agent(
     extra = _extra_body(cfg)
     max_tokens = 350 if cfg.provider in ("ollama", "lmstudio") else 800
 
-    def _summarize(text: str) -> str:
-        m = _stream_chat(
-            client,
-            cfg.model,
-            [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
-            None,
-            cfg.temperature,
-            400,
-            extra,
-            None,
-            None,
-        )
-        out = ((m.content or "") + "\n" + (m.reasoning or "")).strip()
-        if not out:
-            raise RuntimeError("empty summary")
-        return out
+    summarize_fn = make_summarizer(cfg)
 
-    history = prepare_history(session, history, cfg, _summarize)
+    history = prepare_history(session, history, cfg, summarize_fn)
     messages = build_messages(
         user_msg, history, cfg, auto_approve=auto_approve, read_only=read_only
     )
