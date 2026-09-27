@@ -1475,3 +1475,12 @@ def test_answer_pending_ignores_slash_and_none(monkeypatch):
     assert app._pending_approval is not None  # slash doesn't consume the card
     app2, _ = _stub_app(monkeypatch)
     assert app2._answer_pending("y") is None
+
+
+def test_help_text_covers_all_slash_commands():
+    """F1 help stays in sync with the slash dispatcher command table."""
+    from sk.slash import COMMANDS
+
+    text = SidekickTUI()._help_text()
+    for command, _description in COMMANDS:
+        assert f"/{command}" in text, f"slash command {command!r} missing from help"
