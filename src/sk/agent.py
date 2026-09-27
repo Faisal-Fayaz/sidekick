@@ -903,6 +903,61 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
         return history
 
 
+def make_summarizer(cfg):
+    """Single-model-call summarizer closure for compact_history. Raises on failure.
+
+    Shared by the auto-compaction path (run_agent) and manual /compact so both
+    squeeze history identically. The Anthropic provider uses the native API.
+    """
+    if getattr(cfg, "provider", "") == "anthropic":
+        from .anthropic_backend import _post
+
+        def _summarize_native(text: str) -> str:
+            resp = _post(
+                cfg.effective_base_url(),
+                cfg.effective_api_key(),
+                {
+                    "model": cfg.model,
+                    "max_tokens": 400,
+                    "messages": [
+                        {"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}
+                    ],
+                },
+            )
+            out = "".join(
+                b.get("text", "")
+                for b in (resp.get("content", []) if isinstance(resp, dict) else [])
+                if isinstance(b, dict) and b.get("type") == "text"
+            ).strip()
+            if not out:
+                raise RuntimeError("empty summary")
+            return out
+
+        return _summarize_native
+
+    client = get_client(cfg)
+    extra = _extra_body(cfg)
+
+    def _summarize(text: str) -> str:
+        m = _stream_chat(
+            client,
+            cfg.model,
+            [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
+            None,
+            cfg.temperature,
+            400,
+            extra,
+            None,
+            None,
+        )
+        out = ((m.content or "") + "\n" + (m.reasoning or "")).strip()
+        if not out:
+            raise RuntimeError("empty summary")
+        return out
+
+    return _summarize
+
+
 def build_messages(
     user_msg: str,
     history: list[dict],
@@ -1068,24 +1123,9 @@ def run_agent(
     extra = _extra_body(cfg)
     max_tokens = 350 if cfg.provider in ("ollama", "lmstudio") else 800
 
-    def _summarize(text: str) -> str:
-        m = _stream_chat(
-            client,
-            cfg.model,
-            [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
-            None,
-            cfg.temperature,
-            400,
-            extra,
-            None,
-            None,
-        )
-        out = ((m.content or "") + "\n" + (m.reasoning or "")).strip()
-        if not out:
-            raise RuntimeError("empty summary")
-        return out
+    summarize_fn = make_summarizer(cfg)
 
-    history = prepare_history(session, history, cfg, _summarize)
+    history = prepare_history(session, history, cfg, summarize_fn)
     messages = build_messages(
         user_msg, history, cfg, auto_approve=auto_approve, read_only=read_only
     )
