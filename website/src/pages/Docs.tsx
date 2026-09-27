@@ -227,7 +227,7 @@ export default function Docs() {
 
           <h2 id="tests">Tests & contributing</h2>
           <CodeBlock
-            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 543 passed, no Ollama needed`}
+            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 561 passed, no Ollama needed`}
           />
           <p>
             The eval harness ({inline('tests/test_eval.py')}) locks in every past quality bug as an offline

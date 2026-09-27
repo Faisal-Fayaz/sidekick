@@ -1,4 +1,4 @@
-export const VERSION = '0.19.1';
+export const VERSION = '0.20.0';
 export const PACKAGE_NAME = 'sidekick-agent';
 export const REPO_URL = 'https://github.com/Faisal-Fayaz/sidekick';
 export const PYPI_URL = 'https://pypi.org/project/sidekick-agent/';
@@ -201,7 +201,7 @@ export const COMPARISON: { label: string; sidekick: string; typical: string }[] 
   { label: 'Copy/paste that works in-terminal', sidekick: 'drag-select, ctrl+y, /copy', typical: 'varies' },
   { label: 'Answers grounded in your system', sidekick: 'deterministic grounding', typical: 'prompt-only' },
   { label: 'Readable skill packs (SKILL.md)', sidekick: 'yes', typical: 'varies' },
-  { label: '543-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
+  { label: '561-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
 ];
 
 export const TUI_KEYS = [
@@ -255,6 +255,7 @@ export const ROADMAP_NEXT = [
 ];
 
 export const ROADMAP_DONE = [
+  'v0.20.0 — build/plan modes (#131), TUI model picker (#130)',
   'v0.19.0 — agent-capability batch: read-only mode (#98), session slash parity (#100), checkpoints + /rewind (#103), project memory (#105), MCP client (#107)',
   'v0.18.0 — support + adoption: doctor --fix/report (#70), release policy + guard (#71), contributor growth + good-first pipeline (#72)',
   'v0.17.0 — transparency gaps: anthropic streaming, thinking display, stale-card rejection',

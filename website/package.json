@@ -1,7 +1,7 @@
 {
   "name": "sidekick-website",
   "private": true,
-  "version": "0.19.1",
+  "version": "0.20.0",
   "type": "module",
   "description": "Sidekick marketing + docs site — CLI-themed, Vite + React + TypeScript",
   "scripts": {
