@@ -101,10 +101,11 @@ def rewind(session: str, n: int | None = None) -> str:
     if n is None:
         rec = recs[-1]
     else:
-        rec = next((r for r in recs if r.get("n") == n), None)
-        if rec is None:
+        hits = [r for r in recs if r.get("n") == n]
+        if not hits:
             lo, hi = recs[0]["n"], recs[-1]["n"]
             return f"_no checkpoint #{n} (have #{lo}..#{hi})_"
+        rec = hits[0]
     try:
         target = Path(str(rec["target"]))
         if rec.get("original_b64") is None:

@@ -344,10 +344,10 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
         raw = (arg.strip().split() or [""])[0]
         try:
-            n = int(raw) if raw else None
+            num = int(raw) if raw else None
         except ValueError:
             return SlashOut(handled=True, text="usage: `/rewind [n]`")
-        return SlashOut(handled=True, text=_rewind(session, n))
+        return SlashOut(handled=True, text=_rewind(session, num))
 
     if cmd == "skills":
         from .skills import SKILLS_DIR, list_skills
