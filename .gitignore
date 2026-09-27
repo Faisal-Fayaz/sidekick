@@ -10,6 +10,9 @@ coverage.xml
 htmlcov/
 dist/
 build/
+website/dist/
+website/node_modules/
+website/*.tsbuildinfo
 *.egg-info/
 
 # AUR builds (packaging/aur)
