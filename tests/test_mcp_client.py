@@ -8,7 +8,7 @@ import pytest
 
 import sk.mcp_client as mc
 
-FAKE_SERVER_SRC = '''
+FAKE_SERVER_SRC = """
 import json, sys, time
 
 def reply(rid, result=None, error=None):
@@ -66,7 +66,7 @@ def main():
                 reply(rid, error="unknown method " + method)
 
 main()
-'''
+"""
 
 
 @pytest.fixture()
@@ -195,9 +195,7 @@ def test_dead_server_degrades(tmp_path, monkeypatch):
 
     d = tmp_path / "cfg"
     d.mkdir(exist_ok=True)
-    (d / "config.toml").write_text(
-        "[mcp_servers.dead]\ncommand = '/nonexistent/mcp-binary-xyz'\n"
-    )
+    (d / "config.toml").write_text("[mcp_servers.dead]\ncommand = '/nonexistent/mcp-binary-xyz'\n")
     monkeypatch.setattr(config_mod, "CONFIG_DIR", d)
     monkeypatch.setattr(config_mod, "CONFIG_PATH", d / "config.toml")
     monkeypatch.chdir(tmp_path)
@@ -208,3 +206,43 @@ def test_dead_server_degrades(tmp_path, monkeypatch):
     # second pass exercises the failure cooldown branch
     assert not any("mcp__" in e["function"]["name"] for e in tools_schema())
     assert dispatch_tool("mcp__dead__echo", {}).startswith("Error:")
+
+
+def test_cli_mcp_servers(tmp_path, monkeypatch, fake_server):
+    _write_config(tmp_path, monkeypatch, fake_server)
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    res = CliRunner().invoke(app, ["mcp-servers"])
+    assert res.exit_code == 0, res.output
+    assert "demo" in res.output and "3 tools" in res.output and "echo" in res.output
+
+
+def test_cli_mcp_servers_empty(tmp_path, monkeypatch):
+    _write_config(tmp_path, monkeypatch)
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    res = CliRunner().invoke(app, ["mcp-servers"])
+    assert res.exit_code == 0, res.output
+    assert "no MCP servers" in res.output
+
+
+def test_cli_mcp_servers_dead(tmp_path, monkeypatch):
+    import sk.config as config_mod
+
+    d = tmp_path / "cfg"
+    d.mkdir(exist_ok=True)
+    (d / "config.toml").write_text("[mcp_servers.dead]\ncommand = '/nonexistent/x'\n")
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", d)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", d / "config.toml")
+    monkeypatch.chdir(tmp_path)
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    res = CliRunner().invoke(app, ["mcp-servers"])
+    assert res.exit_code == 0, res.output
+    assert "dead" in res.output and "unreachable" in res.output
