@@ -361,6 +361,7 @@ def run_anthropic_agent(
     auto_approve: bool = False,
     session: str = "",
     review_plan=None,
+    read_only: bool = False,
 ) -> str:
     """One agent turn over the native Messages API. Same contract as run_agent."""
     from .agent import (
@@ -416,7 +417,7 @@ def run_anthropic_agent(
 
     history = prepare_history(session, history, cfg, _summarize)
     system, messages = openai_messages_to_anthropic(
-        build_messages(user_msg, history, cfg, auto_approve)
+        build_messages(user_msg, history, cfg, auto_approve, read_only)
     )
     tools = openai_tools_to_anthropic(tools_schema())
     system_payload, tools = _cache_breakpoints(system, tools)
