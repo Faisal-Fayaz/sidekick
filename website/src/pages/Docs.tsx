@@ -6,7 +6,7 @@ const SECTIONS = [
   { id: 'chat', label: 'Chat (TUI + REPL)' },
   { id: 'voice', label: 'Voice' },
   { id: 'providers', label: 'Providers (BYO key)' },
-  { id: 'mcp', label: 'MCP server' },
+  { id: 'mcp', label: 'MCP server + client' },
   { id: 'memory', label: 'Memory · todos · sessions' },
   { id: 'skills', label: 'Skills & plugins' },
   { id: 'daemon', label: 'Daemon & jobs' },
@@ -98,7 +98,7 @@ export default function Docs() {
           <p>One input, two surfaces — fullscreen TUI and plain-text REPL share every command:</p>
           <CodeBlock code={`sk                   # fullscreen chat with streaming + themes — start here\nsk tui --model fast  # same, explicit form\nsk chat              # fallback REPL: dumb terminals, screen readers, broken TUIs`} />
           <p>
-            Type {inline('/')} and an autocomplete popup filters all 20+ commands — Enter completes, Tab too,
+            Type {inline('/')} and an autocomplete popup filters all 30+ commands — Enter completes, Tab too,
             Esc dismisses, ↑/↓ navigates. {inline('F1')} opens a generated cheatsheet (keys + commands, built
             from the same tables as the dispatcher, so it can’t rot).
           </p>
@@ -142,7 +142,7 @@ export default function Docs() {
             {inline('sk models opencode')} for the live list.
           </p>
 
-          <h2 id="mcp">MCP server</h2>
+          <h2 id="mcp">MCP server + client</h2>
           <CodeBlock code={`sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps`} />
           <p>
             All 17 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run;
@@ -150,10 +150,16 @@ export default function Docs() {
             protocol only. Claude Desktop snippet:
           </p>
           <CodeBlock code={`{ "mcpServers": { "sidekick": { "command": "sk", "args": ["mcp"] } } }`} />
+          <p>
+            The reverse direction works too: {inline('sk mcp-servers')} consumes external stdio MCP servers
+            (configured under {inline('[mcp_servers.*]')} in the global config file) as approval-gated{' '}
+            {inline('mcp__*')} agent tools — asked by default, denied in read-only mode, audit-logged like
+            builtins. See {inline('docs/mcp-client.md')}.
+          </p>
 
           <h2 id="memory">Memory · todos · sessions</h2>
           <CodeBlock
-            code={`sk remember "deploy runs on Fridays"   # long-term memory (FTS5, auto-injected)\nsk recall "deploy"  /  sk memories  /  sk forget <id>\nsk todo add "fix flaky eval"  /  sk todo list  /  sk todo done 1\n/sessions  ·  /resume <n>  ·  /fork [n]   # list, switch, branch past sessions\nsk export --out session.md     # transcript as Markdown\nsk audit --format md           # compliance log   ·   sk stats  # usage + cost`}
+            code={`sk remember "deploy runs on Fridays"   # long-term memory (FTS5, auto-injected)\nsk recall "deploy"  /  sk memories  /  sk forget <id>\nsk todo add "fix flaky eval"  /  sk todo list  /  sk todo done 1\n/init                                    # scaffold SIDEKICK.md repo conventions here\nSIDEKICK.md · AGENTS.md · CLAUDE.md      # auto-loaded root-down, merged with .sidekick.toml docs\n/sessions  ·  /resume <n>  ·  /fork [n]   # list, switch, branch past sessions\n/rewind [n]  ·  /compact [focus]          # undo a file edit · fold history now\n/diff  ·  /review [base]                 # show working-tree diff · ask the agent to review it\nsk export --out session.md     # transcript as Markdown\nsk audit --format md           # compliance log   ·   sk stats  # usage + cost`}
           />
 
           <h2 id="skills">Skills & plugins</h2>
@@ -183,6 +189,7 @@ export default function Docs() {
           <p>
             <b>History budget:</b> {inline('history_budget_tokens')} (default 3000) caps per-turn history;
             over-budget sessions compact to a rolling summary via the current model (DB history stays complete).
+            {inline('/compact')} forces the same squeeze on demand with a token report.
           </p>
           <p>
             <b>Per-project config:</b> a {inline('.sidekick.toml')} in any repo layers over the global file. It
@@ -198,7 +205,10 @@ export default function Docs() {
             prompt in CLI), HOME/{inline('/tmp')} only, ≤100KB, never {inline('~/.ssh')},{' '}
             {inline('~/.gnupg')}, {inline('/etc')}, {inline('/usr')}. Multi-tool turns with destructive actions
             get <b>one plan review</b> up front instead of per-tool prompts (silent in {inline('--yes')}/
-            {inline('/yolo')}; denials execute nothing). {inline('shell')} hard-refuses {inline('rm -rf /')},{' '}
+            {inline('/yolo')}; denials execute nothing). Need a guarantee of zero writes? {inline('/readonly')}{' '}
+            (or {inline('sk run --read-only')}) denies every approval-gated tool, and {inline('/rewind')} restores
+            pre-edit snapshots of any file the agent touched ({inline('shell')} mutations excepted — use git
+            for those). {inline('shell')} hard-refuses {inline('rm -rf /')},{' '}
             {inline('mkfs')}, {inline('dd')} to devices, fork bombs even with approval.{' '}
             {inline('read_url')}/{inline('web_search')} block localhost/private IPs. API keys chmod 600, masked
             in output.
@@ -217,7 +227,7 @@ export default function Docs() {
 
           <h2 id="tests">Tests & contributing</h2>
           <CodeBlock
-            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 480 passed, no Ollama needed`}
+            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 543 passed, no Ollama needed`}
           />
           <p>
             The eval harness ({inline('tests/test_eval.py')}) locks in every past quality bug as an offline

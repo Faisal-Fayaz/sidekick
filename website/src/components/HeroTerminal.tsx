@@ -100,7 +100,7 @@ export default function HeroTerminal() {
               </div>
             )}
             <div className="t-dim" style={{ marginTop: 8 }}>
-              ── 480 tests passing · offline · no API bill ──
+              ── 543 tests passing · offline · no API bill ──
             </div>
           </>
         )}
@@ -120,7 +120,7 @@ export default function HeroTerminal() {
             <div>
               <span className="ps1">/ </span>sk<span className="typed-caret" />
             </div>
-            <div className="t-dim">slash autocomplete: 20+ commands · fuzzy filter · Tab completes</div>
+            <div className="t-dim">slash autocomplete: 30+ commands · fuzzy filter · Tab completes</div>
           </>
         )}
 

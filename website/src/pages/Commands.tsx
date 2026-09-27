@@ -19,7 +19,7 @@ export default function Commands() {
       <SectionHeading
         prompt="$ sk --help --"
         title="Command reference"
-        sub="One input, every surface. Fullscreen TUI and plain REPL share the same dispatcher — 20+ slash commands with fuzzy autocomplete."
+        sub="One input, every surface. Fullscreen TUI and plain REPL share the same dispatcher — 30+ slash commands with fuzzy autocomplete."
       />
       <input
         className="search"
@@ -63,7 +63,7 @@ export default function Commands() {
         )}
       </div>
       <div style={{ marginTop: 16 }}>
-        <CodeBlock code={`sk run "refactor auth" --yes --model smart --json   # single-shot, machine-readable\nsk run "watch CI" --bg       # detaches, returns job id, notifies on completion\nsk jobs -n 5`} />
+        <CodeBlock code={`sk run "refactor auth" --yes --model smart --json   # single-shot, machine-readable\nsk run "audit deps" --read-only                 # research, zero writes\nsk run "watch CI" --bg       # detaches, returns job id, notifies on completion\nsk jobs -n 5`} />
       </div>
     </div>
   );
