@@ -235,11 +235,11 @@ export const FAQS = [
   },
   {
     q: 'How do I use Claude / ChatGPT with it?',
-    a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 17 tools to Claude Desktop over stdio.',
+    a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 17 tools to Claude Desktop over stdio. The reverse works too: `sk mcp-servers` consumes external MCP servers as approval-gated `mcp__*` agent tools.',
   },
   {
     q: 'Is it safe to let it run shell?',
-    a: 'Reads auto-run; shell/writes/deletes need approval (one plan review per turn, silent only in --yes). Shell hard-refuses rm -rf /, mkfs, dd-to-device and fork bombs even with approval. URL tools block localhost/private IPs.',
+    a: 'Reads auto-run; shell/writes/deletes need approval (one plan review per turn, silent only in --yes). Need zero writes? /readonly (or sk run --read-only) blocks them all, and /rewind undoes any file edit from snapshots. Shell hard-refuses rm -rf /, mkfs, dd-to-device and fork bombs even with approval. URL tools block localhost/private IPs.',
   },
 ];
 
