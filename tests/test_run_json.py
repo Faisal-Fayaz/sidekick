@@ -44,12 +44,12 @@ def test_json_failure_exit_code(monkeypatch):
 
 def test_json_denial_is_completed_turn(monkeypatch):
     monkeypatch.setattr(
-        run_mod, "run_agent", lambda *a, **k: "Plan denied by user — nothing was executed."
+        run_mod, "run_agent", lambda *a, **k: "Denied: plan denied by user — nothing was executed."
     )
     runner, app = _runner()
     res = runner.invoke(app, ["run", "hi", "--json", "--yes"])
     assert res.exit_code == 0
-    assert json.loads(res.output)["answer"].startswith("Plan denied")
+    assert json.loads(res.output)["answer"].startswith("Denied: plan denied")
 
 
 def test_human_output_unchanged(monkeypatch):

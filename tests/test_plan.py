@@ -179,7 +179,7 @@ def test_run_agent_plan_denied_runs_nothing(tmp_path, monkeypatch):
         review_plan=lambda p, c: False,
         session="s",
     )
-    assert out == "Plan denied by user — nothing was executed."
+    assert out == "Denied: plan denied by user — nothing was executed."
     assert ran == []
 
 

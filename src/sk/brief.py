@@ -14,7 +14,7 @@ def _run(argv: list[str], timeout: int = 8) -> str:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         return (r.stdout or "").strip()
     except Exception as e:
-        return f"(error: {e})"
+        return f"Error: {e}"
 
 
 def git_snapshot(path: str) -> dict:
