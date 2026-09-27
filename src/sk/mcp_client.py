@@ -53,7 +53,7 @@ class MCPClient:
         self._pending: dict[int, queue.Queue] = {}
         self._wlock = threading.Lock()
 
-    def __enter__(self) -> "MCPClient":
+    def __enter__(self) -> MCPClient:
         self.connect()
         return self
 
@@ -251,8 +251,12 @@ _failed_until: dict[str, float] = {}
 
 def _spec_key(spec: dict) -> str:
     try:
-        return spec["name"] + "\x00" + json.dumps(
-            {k: spec.get(k) for k in ("command", "args", "env", "timeout")}, sort_keys=True
+        return (
+            spec["name"]
+            + "\x00"
+            + json.dumps(
+                {k: spec.get(k) for k in ("command", "args", "env", "timeout")}, sort_keys=True
+            )
         )
     except Exception:
         return spec.get("name", "?") + "\x00?"
