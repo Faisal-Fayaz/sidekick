@@ -51,7 +51,7 @@ def _code_version() -> str:
 
 @app.command()
 def version():
-    """Show running code version (git hash). Compare with TUI header."""
+    """Show the running code version (git hash). Compare with the TUI header."""
     console.print(f"sk {_code_version()}")
 
 
@@ -60,7 +60,7 @@ def upgrade(
     check: bool = typer.Option(False, "--check", help="Only report, do not upgrade"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
-    """Self-update from PyPI: sk upgrade [--check] [--yes]"""
+    """Upgrade from PyPI: sk upgrade [--check] [--yes]"""
     from sk import __version__ as current
     from sk.upgrade import detect_installer, is_newer, pypi_latest_version, upgrade_package
 
@@ -369,7 +369,7 @@ def build_report(cfg, status: tuple[bool, str] | None = None) -> str:
 
 @app.command()
 def report():
-    """Diagnostics bundle for issues (keys masked) — paste into bug reports."""
+    """Print a diagnostics bundle for issues (keys masked) — paste into bug reports."""
     from sk.auth import provider_status
 
     cfg = _cfg()
@@ -394,7 +394,7 @@ def config(
     spend_cap: str = typer.Option("", help="Per-session spend cap USD, 0 = unlimited"),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
-    """View/set config. Keys are chmod-600’d; env vars always win."""
+    """View and set config. Keys are chmod-600’d; env vars always win."""
     from sk.config import PRESETS
 
     cfg = _cfg()
@@ -462,7 +462,7 @@ def config(
 
 @app.command()
 def model():
-    """Interactive picker: provider → live model list → default."""
+    """Pick a model: provider → live model list → default."""
     from sk.auth import chat_models, fetch_models
     from sk.config import PRESETS
 
@@ -494,7 +494,7 @@ def model():
 
 @app.command()
 def connect():
-    """Connect a provider: pick → key → model → ping. The one-command setup."""
+    """Set up a provider: pick → key → model → ping. The one-command setup."""
     from sk.auth import ping
 
     cfg = _connect_flow()
@@ -517,7 +517,7 @@ def connect():
 
 @app.command()
 def setup():
-    """Full setup: connect flow + shell hook. (For just keys: `sk connect`.)"""
+    """Set up sidekick fully: connect flow + shell hook. (For just keys: `sk connect`.)"""
     from sk.auth import ping
 
     console.print(Panel("[bold]sidekick setup[/] — connect, then hook.", expand=False))
@@ -537,7 +537,7 @@ def setup():
 
 @app.command(name="init")
 def init_cmd():
-    """Guided first-run: detect hardware, pull the right Ollama model, verify."""
+    """Start a guided first-run: detect hardware, pull the right Ollama model, verify."""
     import platform
 
     from rich.panel import Panel
@@ -705,7 +705,7 @@ def audit(
     format: str = typer.Option("md", "--format", "-f", help="md or json"),
     limit: int = typer.Option(200, "--limit", "-n", help="Rows to show"),
 ):
-    """Compliance log: tool runs with approve/deny + local-vs-egress. Fully offline."""
+    """Show the compliance log: tool runs with approve/deny + local-vs-egress. Fully offline."""
     import datetime as _dt
     import json as _json
 
@@ -749,7 +749,7 @@ def stats(
     session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
     format: str = typer.Option("md", "--format", "-f", help="md or json"),
 ):
-    """Usage + cost stats from audit rows. Fully offline, estimates marked."""
+    """Show usage + cost stats from audit rows. Fully offline, estimates marked."""
     import json as _json
 
     from sk.store import usage_stats
@@ -870,7 +870,7 @@ def brief(
     smart: bool = typer.Option(False, "--smart", help="Pipe digest through LLM for 2-line summary"),
     model: str = typer.Option("", help="Model for --smart (or fast/smart)"),
 ):
-    """Morning digest: system + git + memories. Instant, no LLM unless --smart."""
+    """Show a morning digest: system + git + memories. Instant, no LLM unless --smart."""
     from rich.table import Table
 
     from sk.brief import DEFAULT_PROJECTS, gather_brief

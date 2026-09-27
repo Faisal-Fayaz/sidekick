@@ -82,7 +82,7 @@ def todo_list(all: bool = typer.Option(False, "--all", help="Include done")):
 
 @todo_app.command("done")
 def todo_done(tid: int = typer.Argument(..., help="Todo id")):
-    """Done: sk todo done 1"""
+    """Mark a todo done: sk todo done 1"""
     from sk.store import complete_todo
 
     console.print(f"[green]{complete_todo(tid)}[/green]")
