@@ -41,6 +41,7 @@ def create_job(
     spend_cap: float = 0.0,
     allow: tuple[str, ...] | list[str] = (),
     readonly: bool = False,
+    plan: bool = False,
 ) -> str:
     """Persist a running job. Returns the job id. Never raises ('' on failure)."""
     try:
@@ -54,6 +55,7 @@ def create_job(
             "model": model,
             "yes": bool(yes),
             "readonly": bool(readonly),
+            "plan": bool(plan),
             "spend_cap": float(spend_cap or 0.0),
             "allow": [str(e) for e in (allow or [])],
             "status": "running",
@@ -128,8 +130,13 @@ def run_bg_worker(job_id: str) -> str:
         allow = tuple(str(e) for e in (job.get("allow", []) or []))
         save_message(session, "user", task)
         readonly = bool(job.get("readonly", False))
+        plan = bool(job.get("plan", False))
         approve = _make_approver(
-            bool(job.get("yes", False)), cfg.approved_commands, allow, readonly=readonly
+            bool(job.get("yes", False)),
+            cfg.approved_commands,
+            allow,
+            readonly=readonly,
+            plan_mode=plan,
         )
         try:
             answer = run_agent(
@@ -142,6 +149,7 @@ def run_bg_worker(job_id: str) -> str:
                 auto_approve=bool(job.get("yes", False)),
                 session=session,
                 read_only=readonly,
+                plan_mode=plan,
             )
         except Exception as e:
             err = str(e)[:500]
