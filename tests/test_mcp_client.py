@@ -123,3 +123,88 @@ def test_bad_command_raises():
     with pytest.raises(RuntimeError):
         client.connect()
     client.close()
+
+
+def _write_config(tmp_path, monkeypatch, server_path=None, extra=""):
+    import sk.config as config_mod
+
+    d = tmp_path / "cfg"
+    d.mkdir(exist_ok=True)
+    body = ""
+    if server_path is not None:
+        body += (
+            "[mcp_servers.demo]\n"
+            f"command = '{sys.executable}'\n"
+            f"args = ['{server_path}']\n"
+            "timeout = 10\n"
+        )
+    (d / "config.toml").write_text(body + extra)
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", d)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", d / "config.toml")
+    monkeypatch.chdir(tmp_path)
+
+
+def test_config_parsing(tmp_path, monkeypatch, fake_server):
+    _write_config(
+        tmp_path,
+        monkeypatch,
+        fake_server,
+        "[mcp_servers.noname]\nargs = ['x']\n[mcp_servers.'weird name']\ncommand = 'x'\n",
+    )
+    from sk.config import Config
+
+    servers = Config.load().mcp_servers
+    assert len(servers) == 1
+    demo = servers[0]
+    assert demo["name"] == "demo" and demo["args"] == [fake_server]
+    assert demo["timeout"] == 10.0
+
+
+def test_schema_and_approval_include_mcp(tmp_path, monkeypatch, fake_server):
+    _write_config(tmp_path, monkeypatch, fake_server)
+    from sk.tools import approval_tools, tools_schema
+
+    names = {e["function"]["name"] for e in tools_schema()}
+    assert "mcp__demo__echo" in names
+    assert "mcp__demo__echo" in approval_tools()
+
+
+def test_dispatch_routes_to_server(tmp_path, monkeypatch, fake_server):
+    _write_config(tmp_path, monkeypatch, fake_server)
+    from sk.tools import dispatch_tool
+
+    assert dispatch_tool("mcp__demo__echo", {"message": "yo"}) == "echo:yo"
+
+
+def test_dispatch_unknown_server(tmp_path, monkeypatch):
+    _write_config(tmp_path, monkeypatch)
+    from sk.tools import dispatch_tool
+
+    assert dispatch_tool("mcp__ghost__echo", {}).startswith("Error:")
+
+
+def test_server_not_reserved_over_mcp(tmp_path, monkeypatch, fake_server):
+    _write_config(tmp_path, monkeypatch, fake_server)
+    from sk.mcp_server import mcp_tools
+
+    assert not any(t["name"].startswith("mcp__") for t in mcp_tools())
+
+
+def test_dead_server_degrades(tmp_path, monkeypatch):
+    import sk.config as config_mod
+
+    d = tmp_path / "cfg"
+    d.mkdir(exist_ok=True)
+    (d / "config.toml").write_text(
+        "[mcp_servers.dead]\ncommand = '/nonexistent/mcp-binary-xyz'\n"
+    )
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", d)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", d / "config.toml")
+    monkeypatch.chdir(tmp_path)
+    from sk.tools import approval_tools, dispatch_tool, tools_schema
+
+    assert not any("mcp__" in e["function"]["name"] for e in tools_schema())
+    assert not any(n.startswith("mcp__") for n in approval_tools())
+    # second pass exercises the failure cooldown branch
+    assert not any("mcp__" in e["function"]["name"] for e in tools_schema())
+    assert dispatch_tool("mcp__dead__echo", {}).startswith("Error:")
