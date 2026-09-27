@@ -148,6 +148,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop) |
 | `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
+| `/rewind [n]` | Undo an agent file edit — snapshots write/edit/delete targets (`shell` mutations are not tracked, use git for those) |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools) |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
