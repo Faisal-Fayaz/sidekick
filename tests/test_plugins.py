@@ -186,3 +186,55 @@ def test_example_word_definition_manifest_parses_successfully():
     assert warning is None, f"Expected zero warnings, got: {warning}"
     assert spec is not None
     assert spec.get("name") == "word_definition"
+
+
+def test_example_age_guess_manifest_parses_successfully():
+    """Second example pack (docs/examples/age_guess): keyless API, parses clean."""
+    from pathlib import Path
+
+    from sk.tools import dispatch_tool
+
+    manifest_path = Path(__file__).parent.parent / "docs" / "examples" / "age_guess" / "TOOLS.md"
+    content = manifest_path.read_text(encoding="utf-8-sig")
+
+    spec, warning = plugins.parse_manifest(content, "age_guess")
+    assert warning is None, f"Expected zero warnings, got: {warning}"
+    assert spec is not None
+    assert spec.get("name") == "age_guess"
+    assert spec.get("kind") == "url-template"
+    assert spec.get("approval") == "auto"
+    assert "api.agify.io" in spec.get("template", "")
+
+
+def test_example_age_guess_dispatch_mocks_fetch(monkeypatch):
+    """Dispatch route for the age_guess example is offline-testable: fetch mocked
+    exactly like the url-template weather test."""
+    from pathlib import Path
+
+    from sk.tools import dispatch_tool
+
+    manifest_path = Path(__file__).parent.parent / "docs" / "examples" / "age_guess" / "TOOLS.md"
+    content = manifest_path.read_text(encoding="utf-8-sig")
+    spec, warning = plugins.parse_manifest(content, "age_guess")
+    assert warning is None
+
+    # Mirror plugins.clear_plugin_cache + a fake loader host (like _write) so
+    # dispatch sees the example pack. The mocked read keeps CI offline.
+    d = skills.SKILLS_DIR / "age_guess_example"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "TOOLS.md").write_text(content)
+    plugins.clear_plugin_cache()
+
+    seen: dict = {}
+
+    def fake_read(url: str, max_chars: int = 6000) -> str:
+        seen["url"] = url
+        return "age 42"
+
+    monkeypatch.setattr("sk.tools.web.tool_read_url", fake_read)
+    try:
+        assert dispatch_tool("age_guess", {"name": "alex"}) == "age 42"
+        assert seen["url"] == "https://api.agify.io?name=alex"
+        assert "missing/invalid" in (dispatch_tool("age_guess", {}) or "")
+    finally:
+        plugins.clear_plugin_cache()
