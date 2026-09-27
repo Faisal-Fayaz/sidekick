@@ -24,8 +24,9 @@ COMMANDS: list[tuple[str, str]] = [
     ("sessions [delete <n>]", "list past sessions, or delete one"),
     ("resume <n>", "switch to a past session"),
     ("fork [n]", "branch current session at n messages into a new one"),
-    ("yolo", "auto-approve file writes"),
+    ("yolo", "auto-approve file writes (`/confirm` or `/readonly` to revert)"),
     ("confirm", "ask before file writes (default in TUI)"),
+    ("readonly", "block all file writes — research mode (`/confirm` to revert)"),
     ("remember <fact>", "save a memory"),
     ("recall [words]", "search memories"),
     ("memories", "list all memories"),
@@ -70,7 +71,7 @@ def _apply_provider(cfg, p: str) -> None:
 
 
 def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
-    """Dispatch a /command. state['yolo'] is mutable approve mode."""
+    """Dispatch a /command. state['yolo']/state['readonly'] is the mutable approve mode."""
     if not text.startswith("/"):
         return SlashOut(handled=False)
     parts = text[1:].split(None, 1)
@@ -205,11 +206,18 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
     if cmd == "yolo":
         state["yolo"] = True
+        state["readonly"] = False
         return SlashOut(handled=True, text="_writes auto-approved now (`/confirm` to revert)_")
 
     if cmd == "confirm":
         state["yolo"] = False
+        state["readonly"] = False
         return SlashOut(handled=True, text="_will ask before file writes_")
+
+    if cmd == "readonly":
+        state["readonly"] = True
+        state["yolo"] = False
+        return SlashOut(handled=True, text="_read-only mode: writes blocked (`/confirm` to revert)_")
 
     if cmd == "remember":
         if not arg.strip():
