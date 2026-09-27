@@ -704,9 +704,7 @@ class SidekickTUI(App):
         from sk.agent import _tool_target
         from sk.tools import approval_tools
 
-        if bool(self.state.get("readonly")) and any(
-            n in approval_tools() for n, _ in calls
-        ):
+        if bool(self.state.get("readonly")) and any(n in approval_tools() for n, _ in calls):
             try:
                 self.call_from_thread(
                     _role,

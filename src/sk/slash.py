@@ -217,7 +217,9 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if cmd == "readonly":
         state["readonly"] = True
         state["yolo"] = False
-        return SlashOut(handled=True, text="_read-only mode: writes blocked (`/confirm` to revert)_")
+        return SlashOut(
+            handled=True, text="_read-only mode: writes blocked (`/confirm` to revert)_"
+        )
 
     if cmd == "remember":
         if not arg.strip():

@@ -904,7 +904,10 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
 
 
 def build_messages(
-    user_msg: str, history: list[dict], cfg: Config, auto_approve: bool = False,
+    user_msg: str,
+    history: list[dict],
+    cfg: Config,
+    auto_approve: bool = False,
     read_only: bool = False,
 ) -> list[dict]:
     """Assemble system + history + user messages with all grounding. Pure I/O, no LLM.

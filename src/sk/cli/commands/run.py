@@ -47,9 +47,7 @@ def run(
     cfg.model = _resolve_model(cfg, model, task, quiet=as_json)
     allowed = parse_allow_list(allow)
     if bg:
-        job_id = create_job(
-            task, session, cfg.model, yes, cfg.spend_cap_usd, allowed, read_only
-        )
+        job_id = create_job(task, session, cfg.model, yes, cfg.spend_cap_usd, allowed, read_only)
         if not job_id or not spawn_worker(job_id):
             msg = "Error: could not start background worker."
             if as_json:
