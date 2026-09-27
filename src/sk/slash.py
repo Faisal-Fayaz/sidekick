@@ -38,6 +38,9 @@ COMMANDS: list[tuple[str, str]] = [
     ("brief", "morning digest (system + git + todos + memories)"),
     ("history [n]", "recent shell commands"),
     ("oops", "explain last failed shell command"),
+    ("compact [focus]", "fold older turns into the saved summary now"),
+    ("diff", "show working-tree git diff (stat + capped)"),
+    ("review [base]", "ask the agent to review the working-tree diff"),
     ("skills", "list skill packs"),
     ("copy [n]", "copy nth-last answer (default: last)"),
     ("copy lines <n>", "copy last n lines of the last answer (for code blocks)"),
@@ -307,6 +310,31 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         prompt = (
             f"My last shell command failed with exit {rc} in {fcwd}: `{fcmd}`. "
             "Explain the likely cause in 2 lines and give the exact fixed command. No fluff."
+        )
+        return SlashOut(handled=True, agent_prompt=prompt)
+
+    if cmd == "compact":
+        from .agent import compact_session_now
+
+        return SlashOut(handled=True, text=compact_session_now(session, cfg, arg))
+
+    if cmd == "diff":
+        from .gitdiff import git_diff_text
+
+        return SlashOut(handled=True, text=git_diff_text())
+
+    if cmd == "review":
+        from .gitdiff import git_diff_text
+
+        ref = arg.strip() or "HEAD"
+        diff = git_diff_text(base=arg.strip(), cap=12000)
+        if "```diff" not in diff:
+            return SlashOut(handled=True, text=diff)
+        prompt = (
+            f"Review this working-tree diff (vs {ref}). For each issue give "
+            "file:line, severity (blocker/major/minor), and the suggested fix. "
+            "End with a one-line verdict: ship it / needs work."
+            f"\n\n```diff\n{diff}\n```"
         )
         return SlashOut(handled=True, agent_prompt=prompt)
 
