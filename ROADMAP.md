@@ -58,6 +58,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.19.0` — agent-capability batch: read-only mode (#98), session slash parity (#100), checkpoints + /rewind (#103), project memory (#105), MCP client (#107).
 - `v0.18.0` — support + adoption: doctor --fix/report (#70), release policy + guard (#71), contributor growth + good-first pipeline (#72).
 - `v0.17.0` — transparency gaps: anthropic streaming (#62), thinking display (#63), stale-card rejection (#64; cards + live Markdown shipped earlier in b0ec8fb).
 - `v0.16.0` — version-bump release (publishes the v0.14.0 skills set to PyPI after the publisher fix).
