@@ -22,11 +22,11 @@ from ..resolve import _resolve_model
 @app.command()
 def run(
     task: str = typer.Argument(..., help='Task in quotes, e.g. "summarize disk usage"'),
-    session: str = typer.Option("default", help="Session name"),
+    session: str = typer.Option("default", help="Set the session name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes (else prompts)"),
-    model: str = typer.Option("auto", help="Model: auto (router), fast, smart, or name"),
+    model: str = typer.Option("auto", help="Pick a model: auto (router), fast, smart, or name"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output + exit codes"),
+    as_json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON + exit codes"),
     bg: bool = typer.Option(
         False, "--bg", help="Run detached, return a job id, notify on completion"
     ),
@@ -155,7 +155,7 @@ def run(
 
 
 @app.command(name="run-bg-worker", hidden=True)
-def run_bg_worker(job_id: str = typer.Argument(..., help="Job id from `sk run --bg`")):
+def run_bg_worker(job_id: str = typer.Argument(..., help="Run this job id from `sk run --bg`")):
     """Internal: execute one background job (spawned detached by --bg)."""
     from sk.jobs import run_bg_worker as _run
 
@@ -164,7 +164,7 @@ def run_bg_worker(job_id: str = typer.Argument(..., help="Job id from `sk run --
 
 @app.command()
 def jobs(
-    limit: int = typer.Option(10, "--limit", "-n", help="How many recent jobs to show"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Show this many recent jobs"),
 ):
     """List background jobs (`sk run --bg`)."""
     from sk.jobs import load_jobs

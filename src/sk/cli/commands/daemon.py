@@ -11,9 +11,11 @@ from ..base import app, console
 
 @app.command()
 def daemon(
-    once: bool = typer.Option(False, "--once", help="Single check, then exit"),
-    interval: int = typer.Option(300, "--interval", help="Seconds between checks in loop mode"),
-    disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
+    once: bool = typer.Option(False, "--once", help="Run a single check, then exit"),
+    interval: int = typer.Option(
+        300, "--interval", help="Wait this many seconds between checks in loop mode"
+    ),
+    disk_warn: int = typer.Option(90, "--disk-warn", help="Warn above this disk % threshold"),
 ):
     """Watch the machine: disk + shell failures + dirty repos. Loop foreground; use --once for cron."""
 
@@ -48,10 +50,12 @@ def daemon(
 
 @app.command(name="daemon-install")
 def daemon_install(
-    interval: int = typer.Option(300, "--interval", help="Seconds between checks"),
-    disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
+    interval: int = typer.Option(300, "--interval", help="Wait this many seconds between checks"),
+    disk_warn: int = typer.Option(90, "--disk-warn", help="Warn above this disk % threshold"),
     schedule: str = typer.Option(
-        "", "--schedule", help="Natural language, e.g. 'every morning' (writes a timer)"
+        "",
+        "--schedule",
+        help="Set a natural-language schedule, e.g. 'every morning' (writes a timer)",
     ),
 ):
     """Install the watcher as a user systemd service (Linux)."""
@@ -69,10 +73,12 @@ def daemon_install(
 
 @app.command(name="daemon-install-macos")
 def daemon_install_macos(
-    interval: int = typer.Option(300, "--interval", help="Seconds between checks"),
-    disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
+    interval: int = typer.Option(300, "--interval", help="Wait this many seconds between checks"),
+    disk_warn: int = typer.Option(90, "--disk-warn", help="Warn above this disk % threshold"),
     schedule: str = typer.Option(
-        "", "--schedule", help="Natural language, e.g. 'every morning' (calendar trigger)"
+        "",
+        "--schedule",
+        help="Set a natural-language schedule, e.g. 'every morning' (calendar trigger)",
     ),
 ):
     """Install the watcher as a launchd agent (macOS)."""
