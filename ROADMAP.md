@@ -24,7 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.20.0 (unplanned — propose by PR)
+## Next — v0.21.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -58,6 +58,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.20.0` — build/plan modes (#131), TUI model picker (#130).
 - `v0.19.0` — agent-capability batch: read-only mode (#98), session slash parity (#100), checkpoints + /rewind (#103), project memory (#105), MCP client (#107).
 - `v0.18.0` — support + adoption: doctor --fix/report (#70), release policy + guard (#71), contributor growth + good-first pipeline (#72).
 - `v0.17.0` — transparency gaps: anthropic streaming (#62), thinking display (#63), stale-card rejection (#64; cards + live Markdown shipped earlier in b0ec8fb).
