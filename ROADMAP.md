@@ -42,18 +42,15 @@ Thesis: own the users cloud agents structurally can't serve
 - **Richer memory** — recency/importance decay, dedup/merge, proactive `remember` proposals, pluggable embeddings (FTS5 stays the floor).
 - **Python SDK + localhost HTTP API** — library and CLI from one core, so others can build on sidekick.
 - **Opt-in crash telemetry** — no data by default, explicit flag only.
-- **`doctor --fix` + `sk report`** — auto-remediation (pull missing model, create config) plus a diagnostics bundle for support. From the original audit, never parked. (Rides `v0.18.0`, #70.)
-- **Release policy** — minor vs patch rules, changelog generation, pre-release testing checklist. Three releases so far have been ad hoc. (Rides `v0.18.0`, #71.)
 - **Testing strategy** — property-based allowlist/SSRF tests, coverage gates, golden-file eval growth. Turns the 300+-test suite into a system.
 - **Security threat model** — documented adversary model (shell gating, SSRF, prompt injection) + what a future audit should probe.
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
-- **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+. (Rides `v0.18.0`, #72.)
 - **Sustainability options** — licensing, seats vs support, what stays open-core if enterprise flavor ever happens. Early thinking, no commitments.
-- **Read-only approval mode (#98)** — `/readonly` + `sk run --read-only` rung between confirm and yolo.
-- **Session slash parity (#100)** — `/compact`, `/diff`, `/review` from inside a session.
-- **Checkpoints (#103)** — snapshot agent file edits + `/rewind` to undo a bad turn.
-- **Project memory auto-discovery (#105)** — `AGENTS.md` et al chain + `/init` scaffold.
-- **MCP client (#107)** — consume external MCP servers as agent tools (we only serve today).
+- **Website governance** — the Vite site in `website/` needs CI ownership (build + link check, preview deploys, named owner) or it rots.
+- **Distribution health** — verify AUR and conda-forge install current releases; per-release install smoke test so channels stop silently rotting behind PyPI.
+- **Windows decision** — CI is ubuntu+macos only and the code assumes POSIX. Either scope Windows support or declare it a non-goal explicitly.
+- **Golden eval seed** — first golden-file tests for the eval harness: 3–5 locked prompt→reply pairs for the highest-traffic turns.
+- **Compaction evals** — quality bar for rolling session summaries: faithfulness checks so long sessions don't silently degrade.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
