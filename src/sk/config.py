@@ -25,9 +25,48 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 PROJECT_FILENAME = ".sidekick.toml"
 # Keys a project file may never set: traffic diverters. A hostile repo could
 # otherwise point your prompts (incl. memories) at its own server.
-PROJECT_BLOCKED_KEYS = ("api_key", "base_url")
+PROJECT_BLOCKED_KEYS = ("api_key", "base_url", "mcp_servers")
 # Policy keys a project file may not set either (warned, not security-critical).
 PROJECT_POLICY_KEYS = ("spend_cap_usd",)
+
+
+def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
+    """Normalize [mcp_servers.<name>] tables from the global config file.
+
+    Invalid entries are dropped. Project files may not set this (blocked key:
+    repos must not auto-spawn processes). Never raises.
+    """
+    import re as _re
+
+    if not isinstance(raw, dict):
+        return ()
+    out: list[dict] = []
+    for name, spec in raw.items():
+        if not _re.fullmatch(r"[A-Za-z0-9_-]+", str(name)) or "__" in str(name):
+            continue
+        if not isinstance(spec, dict):
+            continue
+        command = str(spec.get("command", "") or "").strip()
+        if not command:
+            continue
+        args = spec.get("args", [])
+        args = [str(a) for a in args] if isinstance(args, list) else []
+        env = spec.get("env", {})
+        env = {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
+        try:
+            timeout = float(spec.get("timeout", 30) or 30)
+        except (TypeError, ValueError):
+            timeout = 30.0
+        out.append(
+            {
+                "name": str(name),
+                "command": command,
+                "args": args,
+                "env": env,
+                "timeout": min(max(timeout, 1.0), 300.0),
+            }
+        )
+    return tuple(out)
 
 
 def _parse_spend_cap(raw: object) -> float:
@@ -287,6 +326,7 @@ class Config:
     memory_namespace: str = ""
     approved_commands: tuple[str, ...] = ()
     project_warnings: tuple[str, ...] = ()
+    mcp_servers: tuple[dict, ...] = ()  # global config file only; never from projects
 
     def effective_base_url(self) -> str:
         if self.base_url.strip():
@@ -366,6 +406,7 @@ class Config:
             memory_namespace=str(vals.get("memory_namespace", "")),
             approved_commands=tuple(vals.get("approved_commands", [])),  # type: ignore[arg-type]
             project_warnings=tuple(project_warnings),
+            mcp_servers=_parse_mcp_servers(file_vals.get("mcp_servers", {})),
         )
         cfg.normalize_model_alias()
         try:
