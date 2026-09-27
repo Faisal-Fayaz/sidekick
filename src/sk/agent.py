@@ -1195,7 +1195,11 @@ def run_agent(
 
     history = prepare_history(session, history, cfg, summarize_fn)
     messages = build_messages(
-        user_msg, history, cfg, auto_approve=auto_approve, read_only=read_only,
+        user_msg,
+        history,
+        cfg,
+        auto_approve=auto_approve,
+        read_only=read_only,
         plan_mode=plan_mode,
     )
     try:

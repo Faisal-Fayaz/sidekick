@@ -236,7 +236,8 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         state["yolo"] = False
         state["readonly"] = False
         return SlashOut(
-            handled=True, text="_plan mode: file writes blocked, propose don't implement (`/build` to revert)_"
+            handled=True,
+            text="_plan mode: file writes blocked, propose don't implement (`/build` to revert)_",
         )
 
     if cmd == "build":

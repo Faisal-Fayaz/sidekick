@@ -592,9 +592,7 @@ class SidekickTUI(App):
     def _deny_notice(self, text: str) -> None:
         """Post a denial notice to the chat log. Best effort, never raises."""
         try:
-            self.call_from_thread(
-                _role, self.query_one("#chat-log", RichLog), "sys", text
-            )
+            self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", text)
         except Exception:
             pass
 
