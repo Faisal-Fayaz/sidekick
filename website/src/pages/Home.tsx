@@ -31,7 +31,7 @@ export default function Home() {
           <div>
             <pre className="ascii">{ASCII}</pre>
             <span className="eyebrow">
-              <span className="dot-live" /> v0.19.0 · 543 tests passing · local-first
+              <span className="dot-live" /> v0.19.1 · 543 tests passing · local-first
             </span>
             <h1 className="hero-title">
               A terminal companion <br />

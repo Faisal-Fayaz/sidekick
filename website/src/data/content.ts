@@ -1,4 +1,4 @@
-export const VERSION = '0.19.0';
+export const VERSION = '0.19.1';
 export const PACKAGE_NAME = 'sidekick-agent';
 export const REPO_URL = 'https://github.com/Faisal-Fayaz/sidekick';
 export const PYPI_URL = 'https://pypi.org/project/sidekick-agent/';
