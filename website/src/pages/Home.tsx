@@ -88,9 +88,9 @@ export default function Home() {
 
         <section className="block">
           <SectionHeading
-            prompt="$ git log --oneline -5 --"
-            title="What's new in v0.19.0"
-            sub="Five agent-capability upgrades, all shipped with offline regression tests. Full detail in the command index."
+            prompt="$ git log --oneline -7 --"
+            title="What's new"
+            sub="Recent agent-capability upgrades, all shipped with offline regression tests. Full detail in the command index."
           />
           <div className="grid-3">
             {WHATNEW.map((w) => (

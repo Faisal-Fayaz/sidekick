@@ -105,9 +105,9 @@ export default function Docs() {
           <p>
             TUI keys: <b>Enter</b> sends · <b>ctrl+j</b>/<b>alt+enter</b> newline · <b>↑/↓</b> history ·{' '}
             <b>ctrl+y</b> copies · <b>ctrl+g</b> push-to-talk · <b>pgup/pgdn</b> scroll · <b>F1</b> help ·{' '}
-            <b>F2</b> dark/light theme · <b>F3</b> sessions drawer. Answers stream live as Markdown with role
-            colors; approvals arrive as cards with timeout; the status bar shows model · session · last-turn
-            time/tokens.
+            <b>F2</b> dark/light theme · <b>F3</b> sessions drawer · <b>F4</b> plan mode · <b>F5</b> model
+            picker. Answers stream live as Markdown with role colors; approvals arrive as cards with timeout;
+            the status bar shows model · session · last-turn time/tokens.
           </p>
 
           <h2 id="voice">Voice</h2>
@@ -129,7 +129,9 @@ export default function Docs() {
           </p>
           <p>
             Presets: {inline('ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|opencode|custom')}{' '}
-            (anthropic speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible
+            (anthropic speaks the native Messages API; the rest are OpenAI-compatible). Switch mid-session
+            without typing names: <b>F5</b> pops a model picker (current ●, fast/smart, live provider list —
+            filter, Enter switches, Esc dismisses). Any OpenAI-compatible
             endpoint works via {inline('--provider custom --base-url https://…')}. Preferred:{' '}
             {inline('SIDEKICK_API_KEY')} env (never touches disk); file keys are chmod 600 and masked in{' '}
             {inline('--show')}.
@@ -190,6 +192,11 @@ export default function Docs() {
             <b>History budget:</b> {inline('history_budget_tokens')} (default 3000) caps per-turn history;
             over-budget sessions compact to a rolling summary via the current model (DB history stays complete).
             {inline('/compact')} forces the same squeeze on demand with a token report.
+          </p>
+          <p>
+            <b>Plan mode:</b> {inline('/plan')} (or <b>F4</b>) proposes without implementing — file writes are
+            denied while approved shell exploration still works. {inline('/build')} flips back to build mode;
+            {inline('sk run --plan')} plans one-shot.
           </p>
           <p>
             <b>Per-project config:</b> a {inline('.sidekick.toml')} in any repo layers over the global file. It
