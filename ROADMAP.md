@@ -53,6 +53,11 @@ Thesis: own the users cloud agents structurally can't serve
 - **Performance plan** — latency/token budgets per surface, benchmark harness, perf regression tests. No numbers exist anywhere today.
 - **Contributor growth** — good-first-issue curation, onboarding path, review SLAs. For turning 2 maintainers into 3+. (Rides `v0.18.0`, #72.)
 - **Sustainability options** — licensing, seats vs support, what stays open-core if enterprise flavor ever happens. Early thinking, no commitments.
+- **Read-only approval mode (#98)** — `/readonly` + `sk run --read-only` rung between confirm and yolo.
+- **Session slash parity (#100)** — `/compact`, `/diff`, `/review` from inside a session.
+- **Checkpoints (#103)** — snapshot agent file edits + `/rewind` to undo a bad turn.
+- **Project memory auto-discovery (#105)** — `AGENTS.md` et al chain + `/init` scaffold.
+- **MCP client (#107)** — consume external MCP servers as agent tools (we only serve today).
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
