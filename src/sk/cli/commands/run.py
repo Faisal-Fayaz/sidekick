@@ -34,7 +34,7 @@ def run(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
     ),
 ):
-    """Single-shot: sk run \"summarize disk usage in ~/\""""
+    """Run a one-shot task: sk run \"summarize disk usage in ~/\""""
     import json as _json
 
     from sk.config import parse_allow_list

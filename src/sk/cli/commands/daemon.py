@@ -15,7 +15,7 @@ def daemon(
     interval: int = typer.Option(300, "--interval", help="Seconds between checks in loop mode"),
     disk_warn: int = typer.Option(90, "--disk-warn", help="Disk % threshold"),
 ):
-    """Watcher: disk + shell failures + dirty repos. Loop foreground; use --once for cron."""
+    """Watch the machine: disk + shell failures + dirty repos. Loop foreground; use --once for cron."""
 
     from sk.daemon import append_log, check_once, load_state, notify, save_state
 
@@ -93,7 +93,7 @@ def daemon_schedule(
     set_text: str = typer.Option("", "--set", help="Set schedule, e.g. --set 'every morning'"),
     clear: bool = typer.Option(False, "--clear", help="Remove the schedule"),
 ):
-    """Show/set the watcher schedule (natural language)."""
+    """View or set the watcher schedule (natural language)."""
     from sk.daemon import clear_schedule, describe_schedule, get_schedule, set_schedule
 
     if clear:
@@ -115,7 +115,7 @@ def daemon_schedule(
 def digest(
     force: bool = typer.Option(False, "--force", help="Notify even in quiet hours"),
 ):
-    """Morning digest: brief + overnight failures, via desktop nudge or log."""
+    """Show the morning digest: brief + overnight failures, via desktop nudge or log."""
     from rich.markdown import Markdown
 
     from sk.daemon import deliver_digest

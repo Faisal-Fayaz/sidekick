@@ -44,7 +44,7 @@ def _default(
     ctx: typer.Context,
     cwd: str = typer.Option("", "--cwd", help="Run as if in this directory"),
 ) -> None:
-    """Bare `sk` launches the fullscreen TUI (same as `sk tui`)."""
+    """Launch the fullscreen TUI (same as `sk tui`)."""
     if cwd.strip():
         import os
 

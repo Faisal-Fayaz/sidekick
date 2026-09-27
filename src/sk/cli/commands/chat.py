@@ -31,7 +31,7 @@ def chat(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
     ),
 ):
-    """Interactive REPL: sk chat — try /help"""
+    """Run an interactive REPL: sk chat — try /help"""
     from sk.config import parse_allow_list
     from sk.store import latest_session, new_session_id
 
@@ -135,7 +135,7 @@ def talk(
     install: bool = typer.Option(False, "--install", help="Install faster-whisper without asking"),
     device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
 ):
-    """Push-to-talk voice chat. All transcription happens on your CPU."""
+    """Start push-to-talk voice chat. All transcription happens on your CPU."""
     import tempfile
     import time as _t
 
@@ -281,7 +281,7 @@ def tui(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
     ),
 ):
-    """Fullscreen chat (fresh session each launch unless --continue)."""
+    """Open the fullscreen chat (fresh session each launch unless --continue)."""
     from sk.config import parse_allow_list
     from sk.tui import launch
 
