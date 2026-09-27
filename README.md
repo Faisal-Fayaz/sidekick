@@ -162,6 +162,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
+| `sk mcp-servers` | List configured MCP client servers + live tool check (see `docs/mcp-client.md`) |
 | `sk doctor [--fix]` / `sk report` / `sk models [list \| pull <id> \| prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
 | `sk model` / `sk auth add/list/status/remove` | Ask the provider for its live model list and set the default / manage provider keys (masked, validated live) |
