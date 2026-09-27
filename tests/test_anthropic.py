@@ -513,3 +513,28 @@ def test_agent_stream_error_surfaces_when_post_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(ab, "_post", _post_boom)
     out = ab.run_anthropic_agent("hi", [], _cfg(), session="s")
     assert out.startswith("Error talking to anthropic")
+
+
+def test_readonly_prompt_line_on_native_path(tmp_path, monkeypatch):
+    """Follow-up to #98: read_only must reach the native backend's prompt."""
+    import json as _json
+
+    _iso(tmp_path, monkeypatch)
+    payloads = []
+
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        payloads.append(payload)
+        return _stream_resp([{"type": "text", "text": "researched"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    out = ab.run_anthropic_agent(
+        "survey the repo", [], _cfg(), approve=lambda n, a: True, session="s", read_only=True
+    )
+    assert out == "researched"
+    system = _json.dumps(payloads[0].get("system", ""))
+    assert "Approval mode: READ-ONLY" in system
+
+    payloads.clear()
+    ab.run_anthropic_agent("survey the repo", [], _cfg(), approve=lambda n, a: True, session="s")
+    system = _json.dumps(payloads[0].get("system", ""))
+    assert "Approval mode: READ-ONLY" not in system
