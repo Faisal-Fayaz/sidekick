@@ -145,6 +145,8 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 |---|---|
 | `sk` / `sk tui [--continue]` | Fullscreen chat, fresh session each launch |
 | `sk chat [--continue]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
+| `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop) |
+| `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
 | `sk run "task" [--yes] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools) |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
@@ -157,10 +159,11 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens) |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
-| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
+| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
-| `sk doctor [--fix]` / `sk report` / `sk models [pull <id> | prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
+| `sk doctor [--fix]` / `sk report` / `sk models [list \| pull <id> \| prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
+| `sk model` / `sk auth add/list/status/remove` | Ask the provider for its live model list and set the default / manage provider keys (masked, validated live) |
 
 Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked index; the agent loads full instructions on demand via the `skill` tool. `fast`/`smart` resolve per provider (Ollama: llama3.2:3b/qwen2.5-coder:7b, Groq: gpt-oss-20b/120b).
 
