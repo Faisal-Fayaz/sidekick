@@ -21,7 +21,7 @@ def skills():
 
 @app.command(name="skills-install")
 def skills_install(
-    name: str = typer.Argument("superpowers", help="Preset, registry name, or git URL"),
+    name: str = typer.Argument("superpowers", help="Install a preset, registry name, or git URL"),
     force: bool = typer.Option(False, "--force", help="Re-clone if present"),
 ):
     """Install skill packs: sk skills-install superpowers"""
@@ -55,7 +55,7 @@ def plugins():
 
 @app.command(name="skills-search")
 def skills_search(
-    query: str = typer.Argument("", help="Keywords (empty = list all packs)"),
+    query: str = typer.Argument("", help="Search by keywords (empty = list all packs)"),
 ):
     """Search skill packs by keyword: sk skills-search debug"""
     from sk.skills import SKILLS_DIR, search_skills
@@ -76,7 +76,7 @@ def skills_search(
 
 @app.command(name="skills-registry")
 def skills_registry(
-    query: str = typer.Argument("", help="Keywords (empty = list the whole registry)"),
+    query: str = typer.Argument("", help="Search by keywords (empty = list the whole registry)"),
 ):
     """Browse installable packs beyond superpowers: sk skills-registry agents"""
     from sk.skills import REGISTRY, search_registry

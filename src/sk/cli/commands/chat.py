@@ -22,9 +22,11 @@ from ..resolve import _resolve_model
 
 @app.command()
 def chat(
-    session: str = typer.Option("", help="Session name (omit for fresh, --continue for latest)"),
+    session: str = typer.Option(
+        "", help="Use this session name (omit for fresh, --continue for latest)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes"),
-    model: str = typer.Option("", help="Model override: name or fast/smart"),
+    model: str = typer.Option("", help="Override the model: name or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
     cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
     allow: str = typer.Option(
@@ -125,15 +127,15 @@ def chat(
 
 @app.command()
 def talk(
-    session: str = typer.Option("voice", help="Session name for history"),
+    session: str = typer.Option("voice", help="Use this session name for history"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve writes"),
-    model: str = typer.Option("", help="Model override: name or fast/smart"),
-    stt_model: str = typer.Option("tiny", help="faster-whisper size: tiny/base/small"),
+    model: str = typer.Option("", help="Override the model: name or fast/smart"),
+    stt_model: str = typer.Option("tiny", help="Choose the faster-whisper size: tiny/base/small"),
     duration: int = typer.Option(
-        0, "--duration", "-d", help="Fixed record seconds (0 = Enter to start/stop)"
+        0, "--duration", "-d", help="Record for this many seconds (0 = Enter to start/stop)"
     ),
     install: bool = typer.Option(False, "--install", help="Install faster-whisper without asking"),
-    device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
+    device: str = typer.Option("default", help="Use this ALSA device, e.g. hw:2,0"),
 ):
     """Start push-to-talk voice chat. All transcription happens on your CPU."""
     import tempfile
@@ -256,8 +258,8 @@ def talk(
 
 @app.command(name="mic-test")
 def mic_test(
-    duration: int = typer.Option(3, "--duration", "-d", help="Record seconds"),
-    device: str = typer.Option("default", help="ALSA device, e.g. hw:2,0"),
+    duration: int = typer.Option(3, "--duration", "-d", help="Record for this many seconds"),
+    device: str = typer.Option("default", help="Use this ALSA device, e.g. hw:2,0"),
 ):
     """Check mic levels: records, measures peak/RMS, tells you what to fix."""
     from sk import voice as _voice
@@ -275,7 +277,7 @@ def mic_test(
 
 @app.command()
 def tui(
-    model: str = typer.Option("", help="Model override or fast/smart"),
+    model: str = typer.Option("", help="Override the model: name or fast/smart"),
     cont: bool = typer.Option(False, "--continue", help="Resume the latest session"),
     allow: str = typer.Option(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"

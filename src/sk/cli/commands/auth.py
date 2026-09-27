@@ -8,7 +8,7 @@ from sk.config import Config
 
 from ..base import _cfg, app, console
 
-auth_app = typer.Typer(help="Keys: sk auth add/list/status/remove (keys masked, validated live)")
+auth_app = typer.Typer(help="Manage keys: add/list/status/remove (masked, validated live)")
 
 app.add_typer(auth_app, name="auth")
 
@@ -47,8 +47,8 @@ def _ask_key() -> str:
 
 @auth_app.command("add")
 def auth_add(
-    provider: str = typer.Argument("", help="Provider, omit for picker"),
-    key: str = typer.Option("", help="Key inline (hidden prompt if omitted)"),
+    provider: str = typer.Argument("", help="Pick a provider, or omit for the picker"),
+    key: str = typer.Option("", help="Pass the key inline (hidden prompt if omitted)"),
 ):
     """Add a key: sk auth add groq (validates live before saving)."""
     from sk.auth import validate_key
@@ -112,7 +112,7 @@ def auth_list():
 
 
 @auth_app.command("status")
-def auth_status(provider: str = typer.Argument("", help="Provider, omit for current")):
+def auth_status(provider: str = typer.Argument("", help="Pick a provider, or omit for current")):
     """Validate reachability + key for a provider."""
     from sk.auth import provider_status
 
@@ -139,7 +139,7 @@ def auth_status(provider: str = typer.Argument("", help="Provider, omit for curr
 
 
 @auth_app.command("remove")
-def auth_remove(provider: str = typer.Argument("", help="Provider, omit for current")):
+def auth_remove(provider: str = typer.Argument("", help="Pick a provider, or omit for current")):
     """Forget a key (and reset model default)."""
     from sk.config import PRESETS
 

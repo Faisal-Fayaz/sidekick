@@ -8,7 +8,7 @@ from ..base import _cfg, app, console
 
 
 @app.command()
-def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers fast model'")):
+def remember(text: str = typer.Argument(..., help="Save a fact, e.g. 'prefers fast model'")):
     """Save a memory: sk remember \"prefers qwen3:4b\""""
     from sk.store import save_memory
 
@@ -17,7 +17,7 @@ def remember(text: str = typer.Argument(..., help="Fact to save, e.g. 'prefers f
 
 
 @app.command(name="recall")
-def recall_cmd(query: str = typer.Argument("", help="Search terms (empty = recent)")):
+def recall_cmd(query: str = typer.Argument("", help="Search by terms (empty = recent)")):
     """Search memories: sk recall \"model\""""
     from sk.store import recall_memories
 
@@ -45,7 +45,7 @@ def memories_cmd():
 
 
 @app.command()
-def forget(query: str = typer.Argument(..., help="Substring to delete")):
+def forget(query: str = typer.Argument(..., help="Delete memories matching this substring")):
     """Delete matching memories: sk forget \"qwen\""""
     from sk.store import forget_memory
 
@@ -53,13 +53,13 @@ def forget(query: str = typer.Argument(..., help="Substring to delete")):
     console.print(f"[yellow]{forget_memory(query)}[/yellow]")
 
 
-todo_app = typer.Typer(help="Todos: sk todo add/list/done/clear")
+todo_app = typer.Typer(help="Manage todos: add/list/done/clear")
 
 app.add_typer(todo_app, name="todo")
 
 
 @todo_app.command("add")
-def todo_add(text: str = typer.Argument(..., help="Todo text")):
+def todo_add(text: str = typer.Argument(..., help="Add this todo text")):
     """Add: sk todo add \"clean disk\""""
     from sk.store import add_todo
 
@@ -81,7 +81,7 @@ def todo_list(all: bool = typer.Option(False, "--all", help="Include done")):
 
 
 @todo_app.command("done")
-def todo_done(tid: int = typer.Argument(..., help="Todo id")):
+def todo_done(tid: int = typer.Argument(..., help="Mark this todo id done")):
     """Mark a todo done: sk todo done 1"""
     from sk.store import complete_todo
 

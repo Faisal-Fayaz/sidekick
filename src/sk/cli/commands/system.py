@@ -57,7 +57,7 @@ def version():
 
 @app.command()
 def upgrade(
-    check: bool = typer.Option(False, "--check", help="Only report, do not upgrade"),
+    check: bool = typer.Option(False, "--check", help="Check for updates only, do not upgrade"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Upgrade from PyPI: sk upgrade [--check] [--yes]"""
@@ -97,7 +97,7 @@ def upgrade(
         raise typer.Exit(1)
 
 
-models_app = typer.Typer(help="Models: list/pull/prune (ollama)")
+models_app = typer.Typer(help="Manage models: list/pull/prune (ollama)")
 
 app.add_typer(models_app, name="models")
 
@@ -145,8 +145,8 @@ def _require_ollama(cfg) -> bool:
 
 @models_app.command("pull")
 def models_pull(
-    name: str = typer.Argument(..., help="Model id, e.g. qwen3:4b"),
-    timeout: int = typer.Option(1200, "--timeout", help="Seconds to wait for download"),
+    name: str = typer.Argument(..., help="Specify the model id, e.g. qwen3:4b"),
+    timeout: int = typer.Option(1200, "--timeout", help="Wait this many seconds for download"),
 ):
     """Download a model: sk models pull qwen3:4b"""
     from sk.auth import fetch_models
@@ -173,7 +173,7 @@ def models_pull(
 
 @models_app.command("prune")
 def models_prune(
-    name: str = typer.Argument(..., help="Model id to remove, e.g. qwen3:4b"),
+    name: str = typer.Argument(..., help="Remove this model id, e.g. qwen3:4b"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Remove a model to free disk: sk models prune qwen3:4b"""
@@ -248,7 +248,7 @@ def repair_config() -> str | None:
 @app.command()
 def doctor(
     fix: bool = typer.Option(
-        False, "--fix", help="Auto-repair: pull missing model, (re)create config"
+        False, "--fix", help="Repair automatically: pull missing model, (re)create config"
     ),
 ):
     """Check provider + model + config health."""
@@ -412,9 +412,9 @@ def config(
     ),
     api_key: str = typer.Option("", help="Set API key (or use SIDEKICK_API_KEY env)"),
     base_url: str = typer.Option(
-        "", help="Custom base URL (sets provider=custom unless --provider given)"
+        "", help="Set a custom base URL (provider=custom unless --provider given)"
     ),
-    spend_cap: str = typer.Option("", help="Per-session spend cap USD, 0 = unlimited"),
+    spend_cap: str = typer.Option("", help="Cap per-session spend in USD, 0 = unlimited"),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
     """View and set config. Keys are chmod-600’d; env vars always win."""
@@ -662,9 +662,9 @@ add-zsh-hook precmd _sk_log_precmd
 
 @app.command(name="hook-log", hidden=True)
 def hook_log(
-    cmd: str = typer.Option("", "--cmd", help="Command line"),
-    exit: int = typer.Option(0, "--exit", help="Exit code"),
-    cwd: str = typer.Option("", "--cwd", help="Working dir"),
+    cmd: str = typer.Option("", "--cmd", help="Log this command line"),
+    exit: int = typer.Option(0, "--exit", help="Log this exit code"),
+    cwd: str = typer.Option("", "--cwd", help="Log this working directory"),
 ):
     """Internal: called by shell hook. Not for manual use."""
     from sk.store import log_shell
@@ -673,7 +673,7 @@ def hook_log(
 
 
 @app.command()
-def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show")):
+def history(limit: int = typer.Option(15, "--limit", "-n", help="Show this many rows")):
     """Show recent shell commands: sk history"""
     from sk.store import list_shell
 
@@ -688,7 +688,7 @@ def history(limit: int = typer.Option(15, "--limit", "-n", help="Rows to show"))
 
 @app.command()
 def export(
-    session: str = typer.Argument("", help="Session id (omit for latest)"),
+    session: str = typer.Argument("", help="Choose a session id (omit for latest)"),
     out: str = typer.Option("", "--out", help="Write to file instead of stdout"),
     force: bool = typer.Option(False, "--force", help="Overwrite existing --out file"),
 ):
@@ -724,9 +724,9 @@ def export(
 
 @app.command()
 def audit(
-    session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
-    format: str = typer.Option("md", "--format", "-f", help="md or json"),
-    limit: int = typer.Option(200, "--limit", "-n", help="Rows to show"),
+    session: str = typer.Option("", "--session", "-s", help="Choose a session id (omit for all)"),
+    format: str = typer.Option("md", "--format", "-f", help="Output as md or json"),
+    limit: int = typer.Option(200, "--limit", "-n", help="Show this many rows"),
 ):
     """Show the compliance log: tool runs with approve/deny + local-vs-egress. Fully offline."""
     import datetime as _dt
@@ -769,8 +769,8 @@ def audit(
 
 @app.command()
 def stats(
-    session: str = typer.Option("", "--session", "-s", help="Session id (omit for all)"),
-    format: str = typer.Option("md", "--format", "-f", help="md or json"),
+    session: str = typer.Option("", "--session", "-s", help="Choose a session id (omit for all)"),
+    format: str = typer.Option("md", "--format", "-f", help="Output as md or json"),
 ):
     """Show usage + cost stats from audit rows. Fully offline, estimates marked."""
     import json as _json
@@ -815,7 +815,7 @@ def stats(
 
 @app.command()
 def oops(
-    model: str = typer.Option("", help="Model override or fast/smart"),
+    model: str = typer.Option("", help="Override the model: name or fast/smart"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable streaming"),
 ):
     """Explain last failed command: sk oops"""
@@ -861,7 +861,7 @@ def oops(
 
 @app.command(name="hook-install")
 def hook_install(
-    shell: str = typer.Option("", help="bash or zsh (auto-detect)"),
+    shell: str = typer.Option("", help="Target bash or zsh (auto-detect)"),
     write: bool = typer.Option(False, "--write", help="Append to rc file"),
 ):
     """Print shell hook. Use --write to append to ~/.bashrc or ~/.zshrc."""
@@ -888,10 +888,10 @@ def hook_install(
 @app.command()
 def brief(
     project: list[str] = typer.Option(
-        [], "--project", "-p", help="Extra project path (repeatable)"
+        [], "--project", "-p", help="Add an extra project path (repeatable)"
     ),
     smart: bool = typer.Option(False, "--smart", help="Pipe digest through LLM for 2-line summary"),
-    model: str = typer.Option("", help="Model for --smart (or fast/smart)"),
+    model: str = typer.Option("", help="Set the model for --smart (or fast/smart)"),
 ):
     """Show a morning digest: system + git + memories. Instant, no LLM unless --smart."""
     from rich.table import Table
