@@ -83,8 +83,10 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Chat & Voice', cmd: '/readonly', what: 'Research mode: block all file writes. /confirm reverts.' },
   { group: 'Chat & Voice', cmd: '/compact [focus] · /diff · /review [base]', what: 'Fold history now, show the working-tree diff, ask the agent to review it.' },
   { group: 'Chat & Voice', cmd: '/rewind [n]', what: 'Undo an agent file edit — every write/edit/delete is snapshotted.' },
+  { group: 'Chat & Voice', cmd: '/plan · /build', what: 'Propose without writing (file writes blocked) · back to build mode. F4 toggles.' },
+  { group: 'Chat & Voice', cmd: 'F5 model picker', what: 'Popup: current ●, fast/smart, live provider models. Filter, Enter switches.' },
   { group: 'Chat & Voice', cmd: '/init', what: 'Scaffold SIDEKICK.md repo conventions in this directory.' },
-  { group: 'Runs & Jobs', cmd: 'sk run "task" [--yes] [--read-only] [--model auto|fast|smart] [--json] [--bg]', what: 'Single-shot agent run. --json emits one machine-readable doc + exit codes.' },
+  { group: 'Runs & Jobs', cmd: 'sk run "task" [--yes] [--read-only] [--plan] [--model auto|fast|smart] [--json] [--bg]', what: 'Single-shot agent run. --json emits one machine-readable doc + exit codes.' },
   { group: 'Runs & Jobs', cmd: 'sk jobs [-n N]', what: 'List background jobs from `sk run --bg`.' },
   { group: 'Runs & Jobs', cmd: 'sk brief [-p PATH] [--smart]', what: 'Morning digest: system + git + todos + memories, instant without LLM.' },
   { group: 'Runs & Jobs', cmd: 'sk digest [--force]', what: 'Teammate pilot: brief + overnight failures, desktop nudge or log.' },
@@ -193,6 +195,18 @@ export const WHATNEW = [
     body: 'Sidekick already served MCP — now it consumes it too. Server tools arrive as approval-gated `mcp__*` tools.',
     link: '/docs#mcp',
   },
+  {
+    tag: '/plan · F4',
+    title: 'Propose without implementing',
+    body: 'Plan mode blocks file writes while approved shell exploration still works. Flip back to build with /build.',
+    link: '/commands',
+  },
+  {
+    tag: 'F5 picker',
+    title: 'Switch models mid-session',
+    body: 'A popup with the current model, fast/smart aliases and the live provider list. Filter, Enter, done.',
+    link: '/commands',
+  },
 ];
 
 export const COMPARISON: { label: string; sidekick: string; typical: string }[] = [
@@ -214,6 +228,8 @@ export const TUI_KEYS = [
   { keys: ['F1'], action: 'help cheatsheet' },
   { keys: ['F2'], action: 'dark / light theme' },
   { keys: ['F3'], action: 'sessions drawer' },
+  { keys: ['F4'], action: 'plan mode toggle' },
+  { keys: ['F5'], action: 'model picker' },
 ];
 
 export const FAQS = [
@@ -243,16 +259,7 @@ export const FAQS = [
   },
 ];
 
-export const ROADMAP_NEXT = [
-  {
-    v: 'v0.18.0',
-    items: [
-      '`doctor --fix` + `sk report` (#70) — auto-remediation + redacted diagnostics',
-      'Release policy (#71) — minor/patch rules, changelog, pre-release checklist',
-      'Contributor growth (#72) — good-first-issues, onboarding, review SLAs',
-    ],
-  },
-];
+export const ROADMAP_NEXT: { v: string; items: string[] }[] = [];
 
 export const ROADMAP_DONE = [
   'v0.20.0 — build/plan modes (#131), TUI model picker (#130)',
