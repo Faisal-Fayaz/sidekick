@@ -9,6 +9,7 @@ import {
   PROVIDERS,
   QUICKSTART_STEPS,
   TUI_KEYS,
+  WHATNEW,
 } from '../data/content';
 
 const ASCII = ` ___ _    _      _   _      _
@@ -30,7 +31,7 @@ export default function Home() {
           <div>
             <pre className="ascii">{ASCII}</pre>
             <span className="eyebrow">
-              <span className="dot-live" /> v0.17.0 · 480 tests passing · local-first
+              <span className="dot-live" /> v0.19.0 · 543 tests passing · local-first
             </span>
             <h1 className="hero-title">
               A terminal companion <br />
@@ -73,13 +74,35 @@ export default function Home() {
           <div className="stat-row">
             {[
               { n: '17', l: 'gated tools · reads auto-run, writes approved' },
-              { n: '480', l: 'tests incl. prompt-regression evals' },
+              { n: '543', l: 'tests incl. prompt-regression evals' },
               { n: '11', l: 'provider presets incl. ollama + custom URL' },
               { n: '0', l: 'cloud accounts required · $0 default bill' },
             ].map((s) => (
               <div className="card stat" key={s.l}>
                 <div className="n">{s.n}</div>
                 <div className="l">{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="block">
+          <SectionHeading
+            prompt="$ git log --oneline -5 --"
+            title="What's new in v0.19.0"
+            sub="Five agent-capability upgrades, all shipped with offline regression tests. Full detail in the command index."
+          />
+          <div className="grid-3">
+            {WHATNEW.map((w) => (
+              <div className="card" key={w.tag}>
+                <span className="tag">{w.tag}</span>
+                <h3>{w.title}</h3>
+                <p>{w.body}</p>
+                <p style={{ marginTop: 8 }}>
+                  <Link to={w.link} className="btn" style={{ fontSize: 12, padding: '4px 10px' }}>
+                    try it →
+                  </Link>
+                </p>
               </div>
             ))}
           </div>
@@ -150,7 +173,7 @@ export default function Home() {
                 ))}
               </div>
               <p style={{ marginTop: 12 }}>
-                Type <span className="kbd">/</span> for fuzzy slash-autocomplete over 20+ commands. F1 opens a
+                Type <span className="kbd">/</span> for fuzzy slash-autocomplete over 30+ commands. F1 opens a
                 generated cheatsheet built from the same tables as the dispatcher — it can’t rot.
               </p>
             </div>
