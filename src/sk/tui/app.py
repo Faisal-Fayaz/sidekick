@@ -29,6 +29,7 @@ class SidekickTUI(App):
         ("f1", "toggle_help", "help"),
         ("f2", "toggle_theme", "theme"),
         ("f3", "toggle_sessions", "sessions"),
+        ("f4", "toggle_plan", "plan mode"),
         ("escape", "close_help", "close"),
     ]
     CSS = """
@@ -52,7 +53,7 @@ class SidekickTUI(App):
 
         self.session = session or new_session_id("tui")
         self._continued = bool(session)
-        self.state: dict = {"yolo": False, "readonly": False, "allow": tuple(allow)}
+        self.state: dict = {"yolo": False, "readonly": False, "plan": False, "allow": tuple(allow)}
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
         self._live_n: int = 0
@@ -136,6 +137,24 @@ class SidekickTUI(App):
             cfg.save()
         except Exception:
             pass
+        try:
+            self._sub()
+        except Exception:
+            pass
+
+    def action_toggle_plan(self) -> None:
+        """F4: flip plan mode (propose, don't implement). Mirrors /plan + /build."""
+        from sk import slash as _slash
+
+        cfg = getattr(self, "_cfg", None)
+        cmd = "/build" if self.state.get("plan") else "/plan"
+        out = _slash.handle(cmd, session=self.session, cfg=cfg, state=self.state)
+        if out.text:
+            try:
+                log = self.query_one("#chat-log", RichLog)
+                _role(log, "sys", out.text.strip("_"))
+            except Exception:
+                pass
         try:
             self._sub()
         except Exception:
@@ -553,6 +572,8 @@ class SidekickTUI(App):
         model = self.model_override or cfg.model
         if self.state.get("readonly"):
             mode = "readonly"
+        elif self.state.get("plan"):
+            mode = "plan"
         else:
             mode = "yolo" if self.state.get("yolo") else "confirm"
         tail = f" · {self._stats}" if self._stats else ""
@@ -568,6 +589,13 @@ class SidekickTUI(App):
         except Exception:
             pass
 
+    def _deny_notice(self, text: str) -> None:
+        """Post a denial notice to the chat log. Best effort, never raises."""
+        try:
+            self.call_from_thread(_role, self.query_one("#chat-log", RichLog), "sys", text)
+        except Exception:
+            pass
+
     def _approve(self, name: str, args: dict) -> bool:
         """Approval gate for worker threads. Reads auto-pass; writes either
         auto-pass (/yolo) or block on an inline [y/N] question answered by
@@ -577,16 +605,14 @@ class SidekickTUI(App):
         if name not in approval_tools():
             return True
         if bool(self.state.get("readonly")):
-            try:
-                self.call_from_thread(
-                    _role,
-                    self.query_one("#chat-log", RichLog),
-                    "sys",
-                    f"read-only mode: denied {name} (`/confirm` to revert)",
-                )
-            except Exception:
-                pass
+            self._deny_notice(f"read-only mode: denied {name} (`/confirm` to revert)")
             return False
+        if bool(self.state.get("plan")):
+            from sk.cli.approvers import PLAN_DENIED_TOOLS
+
+            if name in PLAN_DENIED_TOOLS:
+                self._deny_notice(f"plan mode: denied {name} (`/build` to implement)")
+                return False
         if bool(self.state.get("yolo")):
             return True
         cfg = getattr(self, "_cfg", None)
@@ -705,16 +731,14 @@ class SidekickTUI(App):
         from sk.tools import approval_tools
 
         if bool(self.state.get("readonly")) and any(n in approval_tools() for n, _ in calls):
-            try:
-                self.call_from_thread(
-                    _role,
-                    self.query_one("#chat-log", RichLog),
-                    "sys",
-                    "read-only mode: denied plan with file writes (`/confirm` to revert)",
-                )
-            except Exception:
-                pass
+            self._deny_notice("read-only mode: denied plan with file writes (`/confirm` to revert)")
             return False
+        if bool(self.state.get("plan")):
+            from sk.cli.approvers import PLAN_DENIED_TOOLS
+
+            if any(n in PLAN_DENIED_TOOLS for n, _ in calls):
+                self._deny_notice("plan mode: denied plan with file writes (`/build` to implement)")
+                return False
 
         approved = frozenset({_tool_target(n, a) for n, a in calls})
         ok = self._wait_slot("plan", f"{len(calls)} tools", plan_text)
@@ -1072,6 +1096,7 @@ class SidekickTUI(App):
                     bool(self.state.get("yolo")),
                     review_plan=self._review_plan,
                     read_only=bool(self.state.get("readonly")),
+                    plan_mode=bool(self.state.get("plan")),
                 )
             finally:
                 audit_session.reset(token)

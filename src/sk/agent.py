@@ -1021,6 +1021,7 @@ def build_messages(
     cfg: Config,
     auto_approve: bool = False,
     read_only: bool = False,
+    plan_mode: bool = False,
 ) -> list[dict]:
     """Assemble system + history + user messages with all grounding. Pure I/O, no LLM.
 
@@ -1077,9 +1078,15 @@ def build_messages(
         "is disabled, so never call one; read tools need no approval."
         if read_only
         else (
-            "Approval mode: AUTOMATIC — call write tools directly, do not ask."
-            if auto_approve
-            else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
+            "Approval mode: PLAN — research, then propose a step-by-step plan. "
+            "File-write tools are disabled, so never call one; use approved "
+            "shell exploration when it helps the plan."
+            if plan_mode
+            else (
+                "Approval mode: AUTOMATIC — call write tools directly, do not ask."
+                if auto_approve
+                else "Approval mode: CONFIRM — each write triggers a user prompt, but still CALL the tool (never ask in prose)."
+            )
         )
     )
     try:
@@ -1124,6 +1131,7 @@ def run_agent(
     session: str = "",
     review_plan=None,
     read_only: bool = False,
+    plan_mode: bool = False,
 ) -> str:
     """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
 
@@ -1134,6 +1142,8 @@ def run_agent(
     approve callback); pass True when --yes/yolo so the model calls directly.
     read_only switches the prompt line to research-only; the caller's approve
     callback must still deny writes (see sk.cli.approvers).
+    plan_mode switches the prompt line to propose-a-plan; the caller's approve
+    callback must still deny file writes (shell keeps asking).
     session tags audit rows (tool_runs) for `sk audit`. Empty session falls
     back to the audit_session context var (used by the TUI worker path).
     review_plan(plan_text, calls) -> bool: one confirmation for multi-tool
@@ -1171,6 +1181,7 @@ def run_agent(
             session=session,
             review_plan=review_plan,
             read_only=read_only,
+            plan_mode=plan_mode,
         )
     client = get_client(cfg)
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
@@ -1184,7 +1195,12 @@ def run_agent(
 
     history = prepare_history(session, history, cfg, summarize_fn)
     messages = build_messages(
-        user_msg, history, cfg, auto_approve=auto_approve, read_only=read_only
+        user_msg,
+        history,
+        cfg,
+        auto_approve=auto_approve,
+        read_only=read_only,
+        plan_mode=plan_mode,
     )
     try:
         from .store import log_tool_run

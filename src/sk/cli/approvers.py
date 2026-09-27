@@ -14,11 +14,21 @@ def _deny_readonly(name: str) -> bool:
     return False
 
 
+PLAN_DENIED_TOOLS = ("write_file", "edit_file", "delete_file", "make_dir")
+
+
+def _deny_plan(name: str) -> bool:
+    """Deny + explain for plan mode (file writes only; shell still asks)."""
+    console.print(f"[dim]plan mode: denied {name} (propose, don't implement)[/dim]")
+    return False
+
+
 def _make_approver(
     auto_yes: bool,
     preapproved: tuple[str, ...] = (),
     allow: tuple[str, ...] = (),
     readonly: bool = False,
+    plan_mode: bool = False,
 ):
     from sk.config import is_project_approved, is_session_allowed
     from sk.tools import approval_tools
@@ -28,6 +38,8 @@ def _make_approver(
             return True
         if readonly:
             return _deny_readonly(name)
+        if plan_mode and name in PLAN_DENIED_TOOLS:
+            return _deny_plan(name)
         if is_project_approved(name, args, preapproved):
             console.print(f"[dim]project-approved {name} -> {args.get('cmd', '?')}[/dim]")
             return True
@@ -72,8 +84,8 @@ def _make_approver_state(
     preapproved: tuple[str, ...] = (),
     allow: tuple[str, ...] = (),
 ):
-    """Like _make_approver but reads live state['yolo']/state['readonly']
-    (for /yolo and /readonly toggling)."""
+    """Like _make_approver but reads live state['yolo']/state['readonly']/
+    state['plan'] (for slash toggling)."""
 
     def approve(name: str, args: dict) -> bool:
         from sk.config import is_project_approved, is_session_allowed
@@ -83,6 +95,8 @@ def _make_approver_state(
             return True
         if state.get("readonly"):
             return _deny_readonly(name)
+        if state.get("plan") and name in PLAN_DENIED_TOOLS:
+            return _deny_plan(name)
         if state.get("yolo"):
             console.print(f"[dim]yolo: auto-approved {name} -> {args.get('path', '?')}[/dim]")
             return True
@@ -125,7 +139,8 @@ def _make_plan_reviewer(state: dict):
     """One confirmation for a whole multi-tool plan (no per-tool re-prompts).
 
     Reads live state['yolo'] like the approvers: yolo mode proceeds silently.
-    Read-only mode denies any plan containing an approval-gated tool.
+    Read-only mode denies any plan containing an approval-gated tool; plan
+    mode denies plans containing file writes (shell-only plans still ask).
     """
 
     def review(plan_text: str, calls: list) -> bool:
@@ -134,6 +149,9 @@ def _make_plan_reviewer(state: dict):
         gated = approval_tools()
         if state.get("readonly") and any(n in gated for n, _ in calls):
             console.print("[dim]read-only mode: denied plan with file writes[/dim]")
+            return False
+        if state.get("plan") and any(n in PLAN_DENIED_TOOLS for n, _ in calls):
+            console.print("[dim]plan mode: denied plan with file writes[/dim]")
             return False
         if state.get("yolo"):
             console.print(f"[dim]yolo: auto-approved plan ({len(calls)} tools)[/dim]")

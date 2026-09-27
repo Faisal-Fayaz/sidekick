@@ -27,6 +27,9 @@ def run(
     read_only: bool = typer.Option(
         False, "--read-only", help="Block all file writes (research mode, beats --yes)"
     ),
+    plan: bool = typer.Option(
+        False, "--plan", help="Propose a plan without writing files (beats --yes)"
+    ),
     model: str = typer.Option("auto", help="Pick a model: auto (router), fast, smart, or name"),
     no_stream: bool = typer.Option(False, "--no-stream", help="Disable live token streaming"),
     as_json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON + exit codes"),
@@ -47,7 +50,9 @@ def run(
     cfg.model = _resolve_model(cfg, model, task, quiet=as_json)
     allowed = parse_allow_list(allow)
     if bg:
-        job_id = create_job(task, session, cfg.model, yes, cfg.spend_cap_usd, allowed, read_only)
+        job_id = create_job(
+            task, session, cfg.model, yes, cfg.spend_cap_usd, allowed, read_only, plan
+        )
         if not job_id or not spawn_worker(job_id):
             msg = "Error: could not start background worker."
             if as_json:
@@ -89,11 +94,18 @@ def run(
         return
     history = get_history(session)
     if not as_json:
-        mode = "read-only" if read_only else ("auto-approve writes" if yes else "confirm writes")
+        if read_only:
+            mode = "read-only"
+        elif plan:
+            mode = "plan"
+        else:
+            mode = "auto-approve writes" if yes else "confirm writes"
         console.print(f"[dim]task: {task}  model: {cfg.model} ({mode})[/dim]")
     save_message(session, "user", task)
 
-    approve = _make_approver(yes, cfg.approved_commands, allowed, readonly=read_only)
+    approve = _make_approver(
+        yes, cfg.approved_commands, allowed, readonly=read_only, plan_mode=plan
+    )
     used_tools: list[str] = []
 
     def _recorder(name: str, args: dict) -> None:
@@ -135,8 +147,9 @@ def run(
             on_reasoning=on_reasoning,
             auto_approve=yes,
             session=session,
-            review_plan=_make_plan_reviewer({"yolo": yes, "readonly": read_only}),
+            review_plan=_make_plan_reviewer({"yolo": yes, "readonly": read_only, "plan": plan}),
             read_only=read_only,
+            plan_mode=plan,
         )
     except Exception as e:
         if as_json:
