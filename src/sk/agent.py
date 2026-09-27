@@ -958,6 +958,48 @@ def make_summarizer(cfg):
     return _summarize
 
 
+def compact_session_now(session: str, cfg, hint: str = "") -> str:
+    """Force compaction of a session's history now. Returns a human report.
+
+    Same squeeze as the auto path (make_summarizer + compact_history over the
+    uncovered tail) plus token accounting. Never raises — failures report.
+    """
+    try:
+        from .store import get_history_full, get_summary, save_summary
+
+        full = get_history_full(session)
+        if not full:
+            return "_nothing to compact — session is empty_"
+        budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        prior, up_to = get_summary(session)
+        uncovered = [m for m in full if m.get("id", 0) > up_to]
+        if not uncovered:
+            return f"_already compacted — {len(full)} messages covered by the saved summary_"
+        if (hint or "").strip():
+            prior = ((prior or "") + f"\n[Compaction focus]: {hint.strip()}").strip()
+        base = (
+            [{"role": "user", "content": f"[Session summary so far]:\n{prior}"}]
+            if (prior or "").strip()
+            else []
+        )
+        as_role = _as_role_content(uncovered)
+        if estimate_tokens(_render_turns(base + as_role)) <= budget:
+            return "_under budget — history kept verbatim_"
+        before = estimate_tokens(_render_turns(uncovered))
+        prompt, new_summary = compact_history(prior, uncovered, budget, make_summarizer(cfg))
+        if new_summary is None:
+            return "_compaction failed (summarizer unreachable?) — history untouched_"
+        top = max([m.get("id", 0) for m in full] + [up_to])
+        save_summary(session, new_summary, top)
+        after = estimate_tokens(_render_turns(prompt))
+        return (
+            f"_compacted {len(uncovered)} messages (~{before} tokens) into the "
+            f"session summary; prompt view now ~{after} tokens_"
+        )
+    except Exception as e:
+        return f"_compaction failed ({e}) — history untouched_"
+
+
 def build_messages(
     user_msg: str,
     history: list[dict],
