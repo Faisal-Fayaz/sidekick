@@ -24,11 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.18.0 (support + adoption)
-
-1. **`doctor --fix` + `sk report` (#70)** — auto-remediation plus redacted diagnostics bundle.
-2. **Release policy (#71)** — minor/patch rules, changelog, pre-release checklist.
-3. **Contributor growth (#72)** — good-first-issues, onboarding, review SLAs.
+## Next — v0.19.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -65,6 +61,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.18.0` — support + adoption: doctor --fix/report (#70), release policy + guard (#71), contributor growth + good-first pipeline (#72).
 - `v0.17.0` — transparency gaps: anthropic streaming (#62), thinking display (#63), stale-card rejection (#64; cards + live Markdown shipped earlier in b0ec8fb).
 - `v0.16.0` — version-bump release (publishes the v0.14.0 skills set to PyPI after the publisher fix).
 - `v0.15.0` — version-bump release carrying the skills compound (#48–50); first PyPI publish of that code (`v0.14.0` was tagged in code but never published — PyPI went 0.13.0 → 0.15.0).
