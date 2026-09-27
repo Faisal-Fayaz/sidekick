@@ -225,6 +225,7 @@ async def _pilot_streaming(monkeypatch):
         auto_approve=False,
         review_plan=None,
         read_only=False,
+        plan_mode=False,
     ):
         if on_reasoning:
             on_reasoning("hmm ")
@@ -679,6 +680,7 @@ def _approval_fake(store):
         auto_approve=False,
         review_plan=None,
         read_only=False,
+        plan_mode=False,
     ):
         ok = approve("write_file", {"path": "/tmp/x", "content": "hi"})
         store.append(ok)
@@ -842,6 +844,7 @@ async def _pilot_stale_pending_ignored(monkeypatch):
         auto_approve=False,
         review_plan=None,
         read_only=False,
+        plan_mode=False,
     ):
         agent_calls.append(text)
         return "agent heard you"
@@ -922,6 +925,7 @@ async def _pilot_slash_bypasses_pending(monkeypatch):
         auto_approve=False,
         review_plan=None,
         read_only=False,
+        plan_mode=False,
     ):
         agent_calls.append(text)
         return "done"
@@ -1364,6 +1368,7 @@ async def _pilot_reasoning_stays_display_only(monkeypatch):
         auto_approve=False,
         review_plan=None,
         read_only=False,
+        plan_mode=False,
     ):
         if on_reasoning:
             on_reasoning("secret deliberation")

@@ -72,13 +72,13 @@ def test_slash_readonly_toggle(tmp_path, monkeypatch):
     c = _sctx(tmp_path, monkeypatch)
     out = slash.handle("/readonly", session=c["session"], cfg=c["cfg"], state=c["state"])
     assert out.handled is True
-    assert c["state"] == {"yolo": False, "readonly": True}
+    assert c["state"] == {"yolo": False, "readonly": True, "plan": False}
     out = slash.handle("/yolo", session=c["session"], cfg=c["cfg"], state=c["state"])
-    assert c["state"] == {"yolo": True, "readonly": False}
+    assert c["state"] == {"yolo": True, "readonly": False, "plan": False}
     slash.handle("/readonly", session=c["session"], cfg=c["cfg"], state=c["state"])
     out = slash.handle("/confirm", session=c["session"], cfg=c["cfg"], state=c["state"])
     assert out.handled is True
-    assert c["state"] == {"yolo": False, "readonly": False}
+    assert c["state"] == {"yolo": False, "readonly": False, "plan": False}
 
 
 def test_help_lists_readonly(tmp_path, monkeypatch):
