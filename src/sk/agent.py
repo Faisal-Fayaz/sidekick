@@ -58,32 +58,44 @@ def get_client(cfg: Config) -> OpenAI:
 
 
 def _project_docs_block(cfg: Config) -> str:
-    """Render project docs (AGENTS.md et al) for the system prompt. Capped, never raises."""
+    """Render project docs for the system prompt. Capped, never raises.
+
+    Explicit .sidekick.toml [project] docs first, then auto-discovered
+    SIDEKICK.md/AGENTS.md/CLAUDE.md/GEMINI.md (cwd → git root).
+    """
+    parts: list[str] = []
     docs = list(getattr(cfg, "project_docs", None) or [])
     root = str(getattr(cfg, "project_root", "") or "")
-    if not docs or not root:
-        return "(none)"
-    parts: list[str] = []
-    budget = 3000
-    try:
-        root_resolved = Path(root).expanduser().resolve()
-    except Exception:
-        return "(none)"
-    for rel in docs[:8]:
+    if docs and root:
+        budget = 3000
         try:
-            p = (root_resolved / rel).expanduser().resolve()
-            if root_resolved not in p.parents and p != root_resolved:
-                continue  # escape attempt (../../..) — skip
-            if not p.is_file() or p.stat().st_size > 100_000:
-                continue
-            text = p.read_text(errors="replace").strip()[:budget]
-            if text:
-                parts.append(f"[{rel}]\n{text}")
-                budget -= len(text)
-                if budget <= 0:
-                    break
+            root_resolved = Path(root).expanduser().resolve()
         except Exception:
-            continue
+            root_resolved = None
+        if root_resolved is not None:
+            for rel in docs[:8]:
+                try:
+                    p = (root_resolved / rel).expanduser().resolve()
+                    if root_resolved not in p.parents and p != root_resolved:
+                        continue  # escape attempt (../../..) — skip
+                    if not p.is_file() or p.stat().st_size > 100_000:
+                        continue
+                    text = p.read_text(errors="replace").strip()[:budget]
+                    if text:
+                        parts.append(f"[{rel}]\n{text}")
+                        budget -= len(text)
+                        if budget <= 0:
+                            break
+                except Exception:
+                    continue
+    try:
+        from .memory_files import discover_memory_files, render_memory_files
+
+        rendered = render_memory_files(discover_memory_files())
+        if rendered:
+            parts.append(rendered)
+    except Exception:
+        pass
     return "\n\n".join(parts) if parts else "(none)"
 
 

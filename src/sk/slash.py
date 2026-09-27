@@ -42,6 +42,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("diff", "show working-tree git diff (stat + capped)"),
     ("review [base]", "ask the agent to review the working-tree diff"),
     ("rewind [n]", "undo an agent file edit (latest, or checkpoint n)"),
+    ("init", "scaffold SIDEKICK.md repo conventions in this directory"),
     ("skills", "list skill packs"),
     ("copy [n]", "copy nth-last answer (default: last)"),
     ("copy lines <n>", "copy last n lines of the last answer (for code blocks)"),
@@ -348,6 +349,11 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         except ValueError:
             return SlashOut(handled=True, text="usage: `/rewind [n]`")
         return SlashOut(handled=True, text=_rewind(session, num))
+
+    if cmd == "init":
+        from .memory_files import scaffold_memory
+
+        return SlashOut(handled=True, text=scaffold_memory())
 
     if cmd == "skills":
         from .skills import SKILLS_DIR, list_skills
