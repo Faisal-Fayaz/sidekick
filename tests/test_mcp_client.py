@@ -216,7 +216,8 @@ def test_cli_mcp_servers(tmp_path, monkeypatch, fake_server):
 
     res = CliRunner().invoke(app, ["mcp-servers"])
     assert res.exit_code == 0, res.output
-    assert "demo" in res.output and "3 tools" in res.output and "echo" in res.output
+    flat = " ".join(res.output.split())  # Rich wraps console lines by width
+    assert "demo" in flat and "3 tools" in flat and "echo" in flat
 
 
 def test_cli_mcp_servers_empty(tmp_path, monkeypatch):
@@ -227,7 +228,8 @@ def test_cli_mcp_servers_empty(tmp_path, monkeypatch):
 
     res = CliRunner().invoke(app, ["mcp-servers"])
     assert res.exit_code == 0, res.output
-    assert "no MCP servers" in res.output
+    flat = " ".join(res.output.split())  # Rich wraps console lines by width
+    assert "no MCP servers" in flat
 
 
 def test_cli_mcp_servers_dead(tmp_path, monkeypatch):
