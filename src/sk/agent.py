@@ -587,6 +587,9 @@ def _gated_dispatch(
                 f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.",
                 False,
             )
+    from .checkpoints import snapshot_before
+
+    snapshot_before(session, name, args)  # never raises; file edits gain a /rewind point
     result = dispatch_tool(name, args)
     failed = result.startswith("Error") or "blocked" in result[:60].lower()
     log_tool_run(session, name, target, approved=True, provider=provider, host=host, ok=not failed)
