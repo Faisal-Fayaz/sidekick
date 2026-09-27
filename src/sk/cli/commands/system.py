@@ -290,18 +290,41 @@ def doctor(
                             )
                     except Exception as e:
                         console.print(f"[red]pulled, but cannot verify: {e}[/red]")
+                        console.print(
+                            "[dim]Next: check the model list with `ollama list` / `sk models list`, then re-run `sk doctor`.[/dim]"
+                        )
             else:
                 console.print(
                     f"[yellow]! model '{cfg.model}' not found. Run: ollama pull {cfg.model}[/yellow]"
                 )
         except Exception as e:
             console.print(f"[red]✗ {cfg.provider} not reachable: {e}[/red]")
+            if cfg.provider == "lmstudio":
+                console.print(
+                    "[dim]Next: keep LM Studio running with its local server enabled, then re-run `sk doctor`.[/dim]"
+                )
+            else:
+                console.print(
+                    "[dim]Next: check the model list with `ollama list` / `sk models list`, then re-run `sk doctor`.[/dim]"
+                )
     elif ok:
         console.print(f"[green]✓ {cfg.provider} reachable[/green] ({msg})")
     else:
         console.print(f"[red]✗ {msg}[/red]")
         if cfg.provider == "ollama":
-            console.print("[dim]Run `ollama serve` in another terminal.[/dim]")
+            console.print(
+                "[dim]Run `ollama serve` in another terminal, then re-run `sk doctor`.[/dim]"
+            )
+        elif cfg.provider == "lmstudio":
+            console.print(
+                "[dim]Start LM Studio with its local server enabled, then re-run `sk doctor`.[/dim]"
+            )
+        else:
+            _hint = (
+                f"[dim]Next: check the key with `sk auth status {cfg.provider}`, re-save it with `sk auth add {cfg.provider}`, "
+                f"or start over with `sk config` / `sk connect`. Then re-run `sk doctor`.[/dim]"
+            )
+            console.print(_hint)
     # quick tool sanity
     from sk.tools import tool_exec
 

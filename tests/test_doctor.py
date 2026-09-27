@@ -139,3 +139,117 @@ def test_report_cli_no_network(monkeypatch, tmp_path):
     res = CliRunner().invoke(app, ["report"])
     assert res.exit_code == 0, res.output
     assert "# sidekick report" in res.output and "mocked down" in res.output
+
+
+def _patch_config_dir(monkeypatch, tmp_path):
+    import sk.config as config_mod
+
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
+
+
+def test_doctor_remote_provider_failure_names_fix(monkeypatch, tmp_path):
+    """Remote provider down -> key/config next step naming the provider."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.auth as auth
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setenv("SIDEKICK_PROVIDER", "groq")
+    monkeypatch.setattr(
+        auth, "provider_status", lambda cfg: (False, "key rejected by groq (401/403)")
+    )
+    res = CliRunner().invoke(app, ["doctor"])
+    assert res.exit_code == 0, res.output
+    assert "key rejected by groq" in res.output
+    flat = " ".join(res.output.split())
+    assert "sk auth status groq" in flat
+    assert "sk auth add groq" in flat
+    assert "sk connect" in flat
+
+
+def test_doctor_ollama_unreachable_names_ollama_serve(monkeypatch, tmp_path):
+    """Ollama provider down -> point at `ollama serve` explicitly."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.auth as auth
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        auth, "provider_status", lambda cfg: (False, "unreachable: connect refused")
+    )
+    res = CliRunner().invoke(app, ["doctor"])
+    assert res.exit_code == 0, res.output
+    assert "unreachable" in res.output
+    assert "ollama serve" in res.output
+
+
+def test_doctor_lmstudio_unreachable_names_local_server(monkeypatch, tmp_path):
+    """LM Studio provider down -> point at enabling its local server."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.auth as auth
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setenv("SIDEKICK_PROVIDER", "lmstudio")
+    monkeypatch.setattr(
+        auth, "provider_status", lambda cfg: (False, "unreachable: connect refused")
+    )
+    res = CliRunner().invoke(app, ["doctor"])
+    assert res.exit_code == 0, res.output
+    assert "unreachable" in res.output
+    assert "LM Studio" in res.output
+
+
+def test_doctor_local_provider_refetch_failure_names_model_list(monkeypatch, tmp_path):
+    """Provider reachable but model list fails -> point at the model list commands."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.auth as auth
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(auth, "provider_status", lambda cfg: (True, "ok"))
+
+    def boom(*a, **k):
+        raise RuntimeError("model list 500")
+
+    monkeypatch.setattr(auth, "fetch_models", boom)
+    res = CliRunner().invoke(app, ["doctor"])
+    assert res.exit_code == 0, res.output
+    assert "not reachable" in res.output
+    assert "ollama list" in res.output
+
+
+def test_doctor_fix_pull_cannot_verify_names_model_list(monkeypatch, tmp_path):
+    """--fix pulled a model but re-verify fails -> actionable next step, not a bare red line."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.auth as auth
+    import sk.init_wizard as wizard
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(auth, "provider_status", lambda cfg: (True, "ok"))
+    monkeypatch.setattr(wizard, "pull_model", lambda name, **k: (True, "pulled"))
+    calls = {"n": 0}
+
+    def fake_fetch(*a, **k):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("verify 500")
+        return ["other-model"]
+
+    monkeypatch.setattr(auth, "fetch_models", fake_fetch)
+    res = CliRunner().invoke(app, ["doctor", "--fix"])
+    assert res.exit_code == 0, res.output
+    assert "pulled, but cannot verify" in res.output
+    assert "ollama list" in res.output
