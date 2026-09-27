@@ -259,16 +259,7 @@ export const FAQS = [
   },
 ];
 
-export const ROADMAP_NEXT = [
-  {
-    v: 'v0.18.0',
-    items: [
-      '`doctor --fix` + `sk report` (#70) — auto-remediation + redacted diagnostics',
-      'Release policy (#71) — minor/patch rules, changelog, pre-release checklist',
-      'Contributor growth (#72) — good-first-issues, onboarding, review SLAs',
-    ],
-  },
-];
+export const ROADMAP_NEXT: { v: string; items: string[] }[] = [];
 
 export const ROADMAP_DONE = [
   'v0.20.0 — build/plan modes (#131), TUI model picker (#130)',
