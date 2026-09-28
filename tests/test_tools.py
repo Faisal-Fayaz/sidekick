@@ -154,3 +154,34 @@ def test_shell_delete_need_approval():
     assert ok is False and "Denied" in out
     out, ok = _gated_dispatch("delete_file", {"path": "/tmp/x"}, approve=lambda n, a: False)
     assert ok is False
+
+
+def test_missing_required_gate():
+    from sk.tools import dispatch_tool, missing_required
+
+    assert missing_required("write_file", {}) == ["path", "content"]
+    assert missing_required("write_file", {"path": "/tmp/x"}) == ["content"]
+    assert missing_required("write_file", {"path": "/tmp/x", "content": ""}) == ["content"]
+    assert missing_required("sysinfo", {}) == []
+    assert missing_required("nosuchtool", {}) == []
+    out = dispatch_tool("write_file", {})
+    assert "missing required params" in out and "path" in out and "content" in out
+    # no-arg tools still dispatch
+    assert "does not exist" in dispatch_tool(
+        "list_dir", {"path": "/nope-xyz"}
+    ) or "Error" in dispatch_tool("list_dir", {})
+
+
+def test_gated_dispatch_refuses_empty_before_approval(tmp_path, monkeypatch):
+    import sk.store as store
+    from sk.agent import _gated_dispatch
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    prompted: list = []
+    out, ok = _gated_dispatch(
+        "write_file", {}, approve=lambda n, a: prompted.append((n, a)) or True, session="t"
+    )
+    assert ok is False and "missing required params" in out
+    assert prompted == []  # doomed calls never prompt
+    rows = store.list_tool_runs("t")
+    assert any(r["tool"] == "write_file" and not r["approved"] for r in rows)

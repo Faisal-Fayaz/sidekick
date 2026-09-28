@@ -16,7 +16,14 @@ from .read import (
     tool_read_file,
     tool_sysinfo,
 )
-from .registry import APPROVAL_TOOLS, TOOLS_SCHEMA, approval_tools, dispatch_tool, tools_schema
+from .registry import (
+    APPROVAL_TOOLS,
+    TOOLS_SCHEMA,
+    approval_tools,
+    dispatch_tool,
+    missing_required,
+    tools_schema,
+)
 from .shell import SHELL_BLOCK_PATTERNS, _check_shell, tool_shell
 from .web import _html_to_text, _url_blocked, tool_read_url, tool_web_search
 from .write import (
@@ -45,6 +52,7 @@ __all__ = [
     "_url_blocked",
     "approval_tools",
     "dispatch_tool",
+    "missing_required",
     "tool_delete_file",
     "tool_edit_file",
     "tool_exec",

@@ -11,7 +11,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
-from .tools import approval_tools, dispatch_tool, tool_sysinfo, tools_schema
+from .tools import approval_tools, dispatch_tool, missing_required, tool_sysinfo, tools_schema
 
 # Audit session tag. Direct callers pass session= to run_agent; the TUI
 # dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
@@ -602,6 +602,14 @@ def _gated_dispatch(
     if not allowed:
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (reason, False)
+    missing = missing_required(name, args)
+    if missing:
+        msg = (
+            f"Error: '{name}' missing required params ({', '.join(missing)}). "
+            f"Re-emit the call with them filled in."
+        )
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (msg, False)
     if name in approval_tools() and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore

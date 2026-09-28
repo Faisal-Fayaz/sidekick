@@ -98,7 +98,11 @@ def test_timing_beats_serial_floor(monkeypatch):
     monkeypatch.setattr(agent, "dispatch_tool", fake)
     t0 = time.monotonic()
     outs = _run_tools_batch(
-        [("list_dir", {}), ("sysinfo", {}), ("exec", {})], None, None, {}, session="s"
+        [("list_dir", {"path": "/tmp"}), ("sysinfo", {}), ("exec", {"cmd": "pwd"})],
+        None,
+        None,
+        {},
+        session="s",
     )
     elapsed = time.monotonic() - t0
     assert [r for r, _ in outs] == ["ok-list_dir", "ok-sysinfo", "ok-exec"]
