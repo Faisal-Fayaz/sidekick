@@ -160,22 +160,28 @@ class SidekickTUI(App):
 
         cur = current_name()
         return [
-            (name, f"● {name} (current)" if name == cur else f"○ {name}")
-            for name in THEME_NAMES
+            (name, f"● {name} (current)" if name == cur else f"○ {name}") for name in THEME_NAMES
         ]
 
     def _render_theme_picker(self) -> None:
-        """Fill the theme list. Never raises."""
+        """Fill the theme list, highlighting the current theme. Never raises."""
         try:
             lst = self.query_one("#theme-list", ListView)
         except Exception:
             return
         try:
+            from .theme import current_name
+
             self._drawer_themes = []
             lst.clear()
             for tid, label in self._theme_choices():
                 self._drawer_themes.append(tid)
                 lst.append(ListItem(Label(label)))
+            cur = current_name()
+            for i, tid in enumerate(self._drawer_themes):
+                if tid == cur:
+                    lst.index = i
+                    break
         except Exception:
             pass
 
