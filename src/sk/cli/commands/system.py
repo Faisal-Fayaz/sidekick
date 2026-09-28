@@ -859,6 +859,24 @@ def oops(
     console.print("[dim]--- done ---[/dim]")
 
 
+@app.command()
+def imagine(
+    prompt: str = typer.Argument(..., help='Image description in quotes, e.g. "a red panda"'),
+    out: str = typer.Option("", "--out", help="Save to this path (else ~/.sidekick/images/)"),
+    size: str = typer.Option("", "--size", help="One of 256x256, 512x512, 1024x1024, 1024x1792, 1792x1024"),
+    model: str = typer.Option("", help="Override the image model id"),
+):
+    """Generate an image: sk imagine "a red panda" --out ~/pics/panda.png"""
+    from sk.images import generate_image
+
+    cfg = _cfg()
+    out_text = generate_image(cfg, prompt, size=size, model=model, out=out)
+    if out_text.startswith("Error"):
+        console.print(f"[red]{out_text}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]{out_text}[/green]")
+
+
 @app.command(name="hook-install")
 def hook_install(
     shell: str = typer.Option("", help="Target bash or zsh (auto-detect)"),

@@ -165,6 +165,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
+| `sk imagine "prompt" [--out f.png]` | Generate an image via the provider images endpoint |
 | `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |

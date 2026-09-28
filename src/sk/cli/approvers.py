@@ -14,7 +14,7 @@ def _deny_readonly(name: str) -> bool:
     return False
 
 
-PLAN_DENIED_TOOLS = ("write_file", "edit_file", "delete_file", "make_dir")
+PLAN_DENIED_TOOLS = ("write_file", "edit_file", "delete_file", "make_dir", "generate_image")
 
 
 def _deny_plan(name: str) -> bool:

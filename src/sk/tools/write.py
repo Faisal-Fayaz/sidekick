@@ -28,7 +28,7 @@ def tool_delete_file(path: str) -> str:
         return f"Error: {e}"
 
 
-WRITE_TOOLS = {"write_file", "edit_file", "make_dir"}
+WRITE_TOOLS = {"write_file", "edit_file", "make_dir", "generate_image"}
 
 WRITE_BLOCKLIST = (
     Path.home() / ".ssh",
@@ -141,3 +141,11 @@ def tool_edit_file(path: str, old_string: str, new_string: str) -> str:
         return f"Edited {p} (1 replacement, {len(new_string)} chars in)"
     except Exception as e:
         return f"Error: {e}"
+
+
+def tool_generate_image(path: str, prompt: str, size: str = "", model: str = "") -> str:
+    """Generate an image via the provider images endpoint. Approval-gated."""
+    from sk.config import Config
+    from sk.images import generate_image
+
+    return generate_image(Config.load(), prompt, size=size, model=model, out=path)
