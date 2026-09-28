@@ -290,6 +290,12 @@ TOOLS_SCHEMA = [
 
 
 def dispatch_tool(name: str, args: dict) -> str:
+    missing = missing_required(name, args)
+    if missing:
+        return (
+            f"Error: '{name}' missing required params ({', '.join(missing)}). "
+            f"Re-emit the call with them filled in."
+        )
     if name == "sysinfo":
         return tool_sysinfo()
     if name == "list_dir":
@@ -373,6 +379,38 @@ def dispatch_tool(name: str, args: dict) -> str:
     if plugin is not None:
         return plugin
     return f"Error: unknown tool '{name}'"
+
+
+def missing_required(name: str, args: dict) -> list[str]:
+    """Required params absent from this call. Pure function, never raises.
+
+    Compares against the tool's own TOOLS_SCHEMA entry, so the gate can only
+    ever be as strict as what we advertise to the model. Absent, None, or
+    blank-string values count as missing; unknown tools return [] (the
+    unknown-tool error below owns that case).
+    """
+    try:
+        from typing import Any
+
+        target: Any = None
+        for e in TOOLS_SCHEMA:
+            if isinstance(e, dict):
+                fn = e.get("function", {})
+                if isinstance(fn, dict) and fn.get("name") == name:
+                    target = fn
+                    break
+        if not isinstance(target, dict):
+            return []
+        required = target.get("parameters", {}).get("required", []) or []
+        data = args if isinstance(args, dict) else {}
+        missing = []
+        for key in required:
+            val = data.get(key)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                missing.append(str(key))
+        return missing
+    except Exception:
+        return []
 
 
 def _dispatch_plugin(name: str, args: dict) -> str | None:
