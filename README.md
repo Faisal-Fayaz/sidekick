@@ -2,7 +2,7 @@
 
 # Sidekick
 
-**A local-first terminal companion you can talk to — chat, voice, and 17 tools, on your hardware.**
+**A local-first terminal companion you can talk to — chat, voice, and 18 tools, on your hardware.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
@@ -127,7 +127,7 @@ Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS),
 sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps
 ```
 
-All 17 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run; shell/writes/delete need `--allow-writes`, else a clean denied error. Stdout carries protocol only. Claude Desktop snippet:
+All 18 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run; shell/writes/delete need `--allow-writes`, else a clean denied error. Stdout carries protocol only. Claude Desktop snippet:
 
 ```json
 { "mcpServers": { "sidekick": { "command": "sk", "args": ["mcp"] } } }
@@ -172,7 +172,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
-| `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
+| `sk mcp [--allow-writes]` | MCP server over stdio (18 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see `docs/mcp-client.md`) |
 | `sk doctor [--fix]` / `sk report` / `sk models [list \| pull <id> \| prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
@@ -193,7 +193,7 @@ flowchart TB
     CLI --> AGENT[agent.py: stream → tools → synthesize]
     TUI --> AGENT
     AGENT --> GROUND[deterministic grounding: ~/paths, URLs,\nsysinfo — injected before the model sees the prompt]
-    AGENT --> TOOLS[tools.py: 17 tools, allowlists,\nhard-blocks, SSRF guard]
+    AGENT --> TOOLS[tools.py: 18 tools, allowlists,\nhard-blocks, SSRF guard]
     AGENT --> MEM[(store.py: history, memories FTS5,\ntodos, shell log)]
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```
