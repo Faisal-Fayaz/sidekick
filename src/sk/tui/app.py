@@ -16,6 +16,24 @@ from .helpers import _load_history, _now, _role, _rule, _w, is_affirmative, log_
 from .theme import install_sidekick_theme
 from .widgets import ChatArea, ChatLog
 
+TAIL_MESSAGES = 10
+TAIL_CHARS = 1500
+
+
+def _tail_slice(messages: list[dict], limit: int = TAIL_MESSAGES) -> tuple[bool, list[dict]]:
+    """(was_truncated, tail). Pure session-tail honesty helper."""
+    if len(messages) > limit:
+        return True, messages[-limit:]
+    return False, messages
+
+
+def _tail_text(text: str, limit: int = TAIL_CHARS) -> str:
+    """Cap message text with an explicit marker when cut. Pure."""
+    text = text or ""
+    if len(text) > limit:
+        return text[:limit] + f"\n… [+{len(text) - limit} chars hidden]"
+    return text
+
 
 class SidekickTUI(App):
     TITLE = "sidekick"
@@ -570,18 +588,26 @@ class SidekickTUI(App):
         self._sub()
         log.clear()
         _role(log, "sys", f"now on `{self.session}`")
-        for m in _gh(self.session)[-10:]:
+        all_msgs = _gh(self.session)
+        truncated, tail = _tail_slice(all_msgs)
+        if truncated:
+            _role(
+                log,
+                "sys",
+                f"… showing last {len(tail)} of {len(all_msgs)} messages (older hidden)",
+            )
+        for m in tail:
             role = "you" if m["role"] == "user" else "sidekick"
             if role == "sidekick":
                 _role(log, role, "")
                 try:
                     from rich.markdown import Markdown
 
-                    log.write(Markdown(m["content"][:1500]))
+                    log.write(Markdown(_tail_text(m["content"])))
                 except Exception:
-                    _role(log, role, m["content"][:1500])
+                    _role(log, role, _tail_text(m["content"]))
             else:
-                _role(log, role, m["content"][:1500])
+                _role(log, role, _tail_text(m["content"]))
         if notice:
             _role(log, "", notice)
 
@@ -715,17 +741,25 @@ class SidekickTUI(App):
             from sk.store import get_history
 
             _role(log, "sys", f"continued `{self.session}`")
-            for m in get_history(self.session)[-10:]:
+            all_msgs = get_history(self.session)
+            truncated, tail = _tail_slice(all_msgs)
+            if truncated:
+                _role(
+                    log,
+                    "sys",
+                    f"… showing last {len(tail)} of {len(all_msgs)} messages (older hidden)",
+                )
+            for m in tail:
                 if m["role"] == "user":
-                    _role(log, "you", m["content"][:1500])
+                    _role(log, "you", _tail_text(m["content"]))
                 else:
                     _role(log, "sidekick", "")
                     try:
                         from rich.markdown import Markdown
 
-                        log.write(Markdown(m["content"][:1500]))
+                        log.write(Markdown(_tail_text(m["content"])))
                     except Exception:
-                        _role(log, "sidekick", m["content"][:1500])
+                        _role(log, "sidekick", _tail_text(m["content"]))
         try:
             from sk.cli import _code_version
 
