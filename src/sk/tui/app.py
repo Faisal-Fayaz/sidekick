@@ -100,7 +100,7 @@ class SidekickTUI(App):
     def _help_text(self) -> str:
         from textual.binding import Binding
 
-        from sk.slash import COMMANDS
+        from sk.slash import all_commands
 
         def entries(bindings) -> list[str]:
             out = []
@@ -120,7 +120,7 @@ class SidekickTUI(App):
         migrated = (
             "Recently changed: scroll was ctrl+b/f → pageup/pagedown · talk was ctrl+t → ctrl+g"
         )
-        cmds = [f"/{n} — {d}" for n, d in COMMANDS]
+        cmds = [f"/{n} — {d}" for n, d in all_commands()]
         return "KEYS\n" + "\n".join(keys) + "\n\n" + migrated + "\n\nCOMMANDS\n" + "\n".join(cmds)
 
     def action_toggle_help(self) -> None:
@@ -566,21 +566,23 @@ class SidekickTUI(App):
 
     # ---- slash autocomplete ----
     def _slash_items(self, fragment: str) -> list[tuple[str, str]]:
-        from sk.slash import COMMANDS
+        from sk.slash import all_commands
 
+        commands = all_commands()
         frag = fragment.lower()
-        starts = [(n, d) for n, d in COMMANDS if n.split()[0].lower().startswith(frag)]
+        starts = [(n, d) for n, d in commands if n.split()[0].lower().startswith(frag)]
         contains = [
             (n, d)
-            for n, d in COMMANDS
+            for n, d in commands
             if frag and frag not in n.split()[0].lower() and frag in n.lower()
         ]
         return (starts + contains)[:12]
 
     def slash_update(self, text: str) -> None:
         """Refresh/hide the suggestion list from current input. Returns nothing."""
-        from sk.slash import COMMANDS
+        from sk.slash import all_commands
 
+        commands = all_commands()
         try:
             lst = self.query_one("#slash-list", ListView)
         except Exception:
@@ -590,7 +592,7 @@ class SidekickTUI(App):
             lst.styles.display = "none"
             return
         token = first[1:].split()[0] if len(first) > 1 else ""
-        items = [(n, d) for n, d in COMMANDS[:12]] if not token else self._slash_items(token)
+        items = [(n, d) for n, d in commands[:12]] if not token else self._slash_items(token)
         self._slash_names = [n for n, _ in items]
         lst.clear()
         for name, desc in items:
