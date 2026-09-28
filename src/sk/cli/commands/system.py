@@ -863,7 +863,9 @@ def oops(
 def imagine(
     prompt: str = typer.Argument(..., help='Image description in quotes, e.g. "a red panda"'),
     out: str = typer.Option("", "--out", help="Save to this path (else ~/.sidekick/images/)"),
-    size: str = typer.Option("", "--size", help="One of 256x256, 512x512, 1024x1024, 1024x1792, 1792x1024"),
+    size: str = typer.Option(
+        "", "--size", help="One of 256x256, 512x512, 1024x1024, 1024x1792, 1792x1024"
+    ),
     model: str = typer.Option("", help="Override the image model id"),
 ):
     """Generate an image: sk imagine "a red panda" --out ~/pics/panda.png"""
