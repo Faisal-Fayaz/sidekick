@@ -248,7 +248,7 @@ class SidekickTUI(App):
             )
         except Exception:
             live = []
-        for m in (live or [])[:40]:
+        for m in live or []:
             m = str(m or "").strip()
             if m and m not in seen:
                 seen.add(m)

@@ -123,3 +123,13 @@ def test_pilot_open_filter_select(monkeypatch, tmp_path):
 
 def test_pilot_escape_dismisses(monkeypatch, tmp_path):
     _run(_pilot_escape_dismisses(monkeypatch, tmp_path))
+
+
+def test_choices_shows_all_live_models(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    many = [f"model-{i:03d}" for i in range(60)]
+    monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: many)
+    app = SidekickTUI()
+    ids = [mid for mid, _ in app._model_choices()]
+    for m in many:
+        assert m in ids

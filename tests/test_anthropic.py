@@ -538,3 +538,27 @@ def test_readonly_prompt_line_on_native_path(tmp_path, monkeypatch):
     ab.run_anthropic_agent("survey the repo", [], _cfg(), approve=lambda n, a: True, session="s")
     system = _json.dumps(payloads[0].get("system", ""))
     assert "Approval mode: READ-ONLY" not in system
+
+
+def test_fetch_models_anthropic_requests_full_page(monkeypatch):
+    import httpx
+
+    import sk.auth as auth
+
+    seen = {}
+
+    def fake_get(url, headers=None, **k):
+        seen.update(k)
+
+        class R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": []}
+
+        return R()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert auth.fetch_models("anthropic", "https://api.anthropic.com", "k") == []
+    assert seen.get("params", {}).get("limit") == 1000
