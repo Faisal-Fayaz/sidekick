@@ -401,17 +401,17 @@ class SidekickTUI(App):
         except Exception:
             return
         try:
-            from sk.config import Config, PRESETS
+            from sk.config import PRESETS, Config
             from sk.slash import _resolve_model_name
 
             cfg = Config.load()
-            switched = bool(prov and prov != cfg.provider and prov in PRESETS)
-            if switched:
+            if prov and prov != cfg.provider and prov in PRESETS:
                 cfg.provider = prov
+                switched = True
+            else:
+                switched = False
             name = (
-                _resolve_model_name(cfg, mid)
-                if mid in ("fast", "smart") or not switched
-                else mid
+                _resolve_model_name(cfg, mid) if mid in ("fast", "smart") or not switched else mid
             )
             self.model_override = name
             cfg.model = name
