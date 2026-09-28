@@ -44,6 +44,7 @@ class SidekickTUI(App):
     #mic-status { width: 22; height: 5; border: solid $primary-muted; color: $text-muted; content-align: center middle; }
     #mic-status.recording { border: solid $error; color: $error; }
     #status-bar { height: 1; color: $text-muted; background: $surface; }
+    #key-hints { height: 1; color: $text-muted; background: $surface; }
     #sessions-drawer { dock: left; width: 44; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     #model-picker { dock: right; width: 46; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     #model-filter { height: 3; }
@@ -96,6 +97,37 @@ class SidekickTUI(App):
             yield ChatArea(id="chat-input", show_line_numbers=False)
             yield Static("ctrl+g\nto talk", id="mic-status")
         yield Static("", id="status-bar")
+        yield Static(self._key_hints_text(), id="key-hints")
+
+    HINT_ACTIONS = (
+        ("send", "send"),
+        ("toggle_help", "help"),
+        ("toggle_models", "models"),
+        ("copy_last", "copy"),
+        ("close_help", "close"),
+    )
+
+    @classmethod
+    def _key_hints_text(cls) -> str:
+        """One-line footer built from BINDINGS so hints can't rot. Never raises."""
+        try:
+            from textual.binding import Binding
+
+            from .widgets import ChatArea
+
+            keys: dict[str, str] = {}
+            for b in list(cls.BINDINGS) + list(ChatArea.BINDINGS):
+                if isinstance(b, tuple):
+                    key, action, _desc = b
+                elif isinstance(b, Binding):
+                    key, action = b.key, b.action
+                else:  # pragma: no cover - defensive
+                    continue
+                if action and key and action not in keys:
+                    keys[str(action)] = str(key)
+            return " · ".join(f"{keys[a]} {label}" for a, label in cls.HINT_ACTIONS if a in keys)
+        except Exception:
+            return ""
 
     def _help_text(self) -> str:
         from textual.binding import Binding
