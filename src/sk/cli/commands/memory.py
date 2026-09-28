@@ -45,6 +45,27 @@ def memories_cmd():
 
 
 @app.command()
+def search(
+    query: str = typer.Argument(..., help="Search past transcripts, e.g. 'deploy friday'"),
+    session: str = typer.Option("", "--session", "-s", help="Only this session"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Show this many hits"),
+):
+    """Search past transcripts: sk search \"deploy friday\" --session chat-1"""
+    import datetime as _dt
+
+    from sk.store import search_sessions
+
+    _cfg()  # establish project namespace default
+    hits = search_sessions(query, session=session, limit=max(1, limit))
+    if not hits:
+        console.print("[yellow](no matching transcript lines)[/yellow]")
+        return
+    for h in hits:
+        when = _dt.datetime.fromtimestamp(h["ts"]).strftime("%m-%d %H:%M") if h["ts"] else "?"
+        console.print(f"• [cyan]{h['session']}[/cyan] {h['role']} · {when}\n  {h['snippet']}")
+
+
+@app.command()
 def forget(query: str = typer.Argument(..., help="Delete memories matching this substring")):
     """Delete matching memories: sk forget \"qwen\""""
     from sk.store import forget_memory

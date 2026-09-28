@@ -14,7 +14,8 @@ DB_PATH = Path.home() / ".sidekick" / "history.db"
 # v2 = tool_runs audit log (session, tool, target, approved, provider, host).
 # v3 = memories.namespace for per-project scoping (Config.load publishes it).
 # v4 = session_summaries rolling compaction watermarks.
-SCHEMA_VERSION = 4
+# v5 = messages.namespace + messages_fts for transcript search.
+SCHEMA_VERSION = 5
 
 # Process-wide memory namespace, published by Config.load() from the active
 # project file (or "" outside projects). Callers may pass an explicit
@@ -120,6 +121,9 @@ def _migrate(conn: sqlite3.Connection) -> int:
     if v < 4:
         _migrate_3_to_4(conn)
         v = 4
+    if v < 5:
+        _migrate_4_to_5(conn)
+        v = 5
     _set_version(conn, v)
     conn.commit()
     return v
@@ -159,6 +163,22 @@ def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
             ts REAL NOT NULL
         )"""
     )
+
+
+def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
+    """v5: messages.namespace + messages_fts transcript search. Idempotent."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()]
+    if "namespace" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN namespace TEXT NOT NULL DEFAULT ''")
+    try:
+        conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content)")
+        conn.execute(
+            "INSERT INTO messages_fts(rowid, content) SELECT id, content FROM messages"
+            " WHERE id NOT IN (SELECT rowid FROM messages_fts)"
+        )
+        conn.commit()
+    except Exception:
+        pass
 
 
 def _connect() -> sqlite3.Connection:
@@ -288,10 +308,18 @@ def latest_session(prefix: str = "") -> str:
 def save_message(session: str, role: str, content: str) -> None:
     conn = _connect()
     try:
+        ns = _resolve_namespace(None)
         conn.execute(
-            "INSERT INTO messages (session, role, content, ts) VALUES (?, ?, ?, ?)",
-            (session, role, content, time.time()),
+            "INSERT INTO messages (session, role, content, namespace, ts) VALUES (?, ?, ?, ?, ?)",
+            (session, role, content, ns, time.time()),
         )
+        try:
+            conn.execute(
+                "INSERT INTO messages_fts(rowid, content) VALUES (last_insert_rowid(), ?)",
+                (content,),
+            )
+        except Exception:
+            pass
         conn.commit()
     finally:
         conn.close()
@@ -482,6 +510,61 @@ def list_memories(limit: int = 50, namespace: str | None = None) -> list[str]:
         return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+def search_sessions(
+    query: str, session: str = "", limit: int = 10, namespace: str | None = None
+) -> list[dict]:
+    """Full-text search across past transcripts. Returns [{session, role,
+    snippet, ts}] newest-first. Namespace-scoped like memories; optional
+    exact session filter. Empty query returns []. Never raises."""
+    conn = None
+    try:
+        ns = _resolve_namespace(namespace)
+        keys = _keywords(query or "")
+        if not keys:
+            return []
+        scope, params = _ns_clause(ns, alias="m")
+        if (session or "").strip():
+            scope += " AND m.session = ?"
+            params = (*params, session.strip())
+        conn = _connect()
+        try:
+            fq = _fts_query(keys)
+            if fq:
+                cur = conn.execute(
+                    "SELECT m.session, m.role,"
+                    " snippet(messages_fts, 0, '»', '«', '…', 12), m.ts"
+                    " FROM messages_fts f JOIN messages m ON m.id = f.rowid"
+                    f" WHERE f.messages_fts MATCH ? AND {scope}"
+                    " ORDER BY m.id DESC LIMIT ?",
+                    (fq, *params, limit),
+                )
+                rows = [
+                    {"session": s, "role": r, "snippet": t, "ts": ts}
+                    for s, r, t, ts in cur.fetchall()
+                ]
+                if rows:
+                    return rows
+        except Exception:
+            pass
+        like = "%" + "%".join(keys[:4]) + "%"
+        cur = conn.execute(
+            f"SELECT m.session, m.role, substr(m.content, 1, 160), m.ts FROM messages m"
+            f" WHERE m.content LIKE ? AND {scope} ORDER BY m.id DESC LIMIT ?",
+            (like, *params, limit),
+        )
+        return [
+            {"session": s, "role": r, "snippet": t, "ts": ts} for s, r, t, ts in cur.fetchall()
+        ]
+    except Exception:
+        return []
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
 
 
 def forget_memory(query: str, namespace: str | None = None) -> str:

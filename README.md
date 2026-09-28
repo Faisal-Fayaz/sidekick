@@ -163,6 +163,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk digest [--force]` | Teammate pilot: brief + overnight failures, desktop nudge or log |
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
+| `sk search QUERY [--session S]` | Full-text search across past transcripts |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
 | `sk imagine "prompt" [--out f.png]` | Generate an image via the provider images endpoint |
