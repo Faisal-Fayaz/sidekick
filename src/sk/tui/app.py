@@ -1013,6 +1013,20 @@ class SidekickTUI(App):
             preview = "(PERMANENT delete)"
         return self._wait_slot(name, path, preview)
 
+    def _mark_resolved(self, name: str, path: str, verdict: str, detail: str = "") -> None:
+        """Resolved-state line under an approval card (the log is append-only,
+        so the card itself can't change). verdict is 'approved' or 'denied'.
+        Best effort, never raises."""
+        glyph = "✓" if verdict == "approved" else "✗"
+        text = f"{glyph} {verdict} {name} -> {path}"
+        if (detail or "").strip():
+            text += f" ({detail.strip()})"
+        role = "warn" if verdict == "denied" and "timed out" in text else "sys"
+        try:
+            self.call_from_thread(_role, self.query_one("#chat-log", RichLog), role, text)
+        except Exception:
+            pass
+
     def _wait_slot(self, name: str, path: str, preview: str, timeout: float = 300) -> bool:
         """Post an inline [y/N] slot, wait for the answer, clean up. Shared by
         per-tool approval and plan review so timeout/stale semantics match."""
@@ -1066,35 +1080,21 @@ class SidekickTUI(App):
                 pending = None
         if expired:
             _log_outcome("timeout-denied")
-            try:
-                self.call_from_thread(
-                    _role,
-                    self.query_one("#chat-log", RichLog),
-                    "warn",
-                    f"no answer in {int(timeout)}s — denied (reply faster, or /yolo)",
-                )
-            except Exception:
-                pass
+            self._mark_resolved(
+                name, path, "denied", f"timed out after {int(timeout)}s — reply faster, or /yolo"
+            )
             return False
         if pending is None:
             _log_outcome("slot-stolen-denied")
+            self._mark_resolved(name, path, "denied", "superseded by a newer prompt")
             return False  # slot stolen/cleared concurrently: fail closed
-        _log_outcome(
-            "approved"
-            if pending.get("answer")
-            else f"denied reply={pending.get('reply', '')[:20]!r}"
-        )
-        if not bool(pending.get("answer", False)):
-            try:
-                self.call_from_thread(
-                    _role,
-                    self.query_one("#chat-log", RichLog),
-                    "sys",
-                    f"denied (you answered '{pending.get('reply', '')[:20]}')",
-                )
-            except Exception:
-                pass
-        return bool(pending.get("answer", False))
+        approved = bool(pending.get("answer", False))
+        _log_outcome("approved" if approved else f"denied reply={pending.get('reply', '')[:20]!r}")
+        if approved:
+            self._mark_resolved(name, path, "approved")
+        else:
+            self._mark_resolved(name, path, "denied", f"you answered '{pending.get('reply', '')[:20]}'")
+        return approved
 
     def _review_plan(self, plan_text: str, calls: list) -> bool:
         """One confirmation for a whole multi-tool plan. Plan-approved targets
