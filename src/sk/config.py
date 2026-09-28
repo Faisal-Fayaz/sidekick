@@ -145,6 +145,19 @@ def _parse_spend_cap(raw: object) -> float:
         return 0.0
 
 
+REASONING_EFFORTS = ("off", "minimal", "low", "medium", "high", "max")
+
+
+def _parse_reasoning_effort(raw: object) -> str:
+    """Reasoning effort level. Unparseable → 'low' (garbage config must not
+    brick the tool; unknown levels would 400 on strict providers)."""
+    try:
+        level = str(raw or "").strip().lower()
+    except Exception:
+        return "low"
+    return level if level in REASONING_EFFORTS else "low"
+
+
 def find_project_file(start: str | Path = "") -> Path | None:
     """Nearest .sidekick.toml walking up from start (default: cwd). None if absent."""
     cur = Path(start or os.getcwd()).expanduser().resolve()
@@ -373,6 +386,7 @@ DEFAULTS: dict[str, str | int | float] = {
     "theme": "dark",
     "history_budget_tokens": 3000,
     "spend_cap_usd": 0.0,
+    "reasoning_effort": "low",
 }
 
 
@@ -392,6 +406,7 @@ class Config:
     theme: str = str(DEFAULTS["theme"])
     history_budget_tokens: int = int(DEFAULTS["history_budget_tokens"])
     spend_cap_usd: float = float(DEFAULTS["spend_cap_usd"])  # 0 = unlimited; global/env only
+    reasoning_effort: str = str(DEFAULTS["reasoning_effort"])  # off|minimal|low|medium|high|max
     # project layer (from .sidekick.toml; empty when outside a project)
     project_root: str = ""
     project_docs: tuple[str, ...] = ()
@@ -438,6 +453,7 @@ class Config:
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
         api_key = os.getenv("SIDEKICK_API_KEY", "")
         spend_cap = os.getenv("SIDEKICK_SPEND_CAP", "")
+        reasoning_effort = os.getenv("SIDEKICK_REASONING_EFFORT", "")
 
         file_vals: dict[str, object] = {}
         if CONFIG_PATH.exists():
@@ -473,6 +489,9 @@ class Config:
             ),
             spend_cap_usd=_parse_spend_cap(
                 spend_cap or vals.get("spend_cap_usd", DEFAULTS["spend_cap_usd"])
+            ),
+            reasoning_effort=_parse_reasoning_effort(
+                reasoning_effort or vals.get("reasoning_effort", DEFAULTS["reasoning_effort"])
             ),
             theme=theme,
             project_root=str(project_file.parent) if project_file else "",
@@ -536,6 +555,7 @@ class Config:
             "theme": self.theme,
             "history_budget_tokens": self.history_budget_tokens,
             "spend_cap_usd": self.spend_cap_usd,
+            "reasoning_effort": self.reasoning_effort,
         }
         if _HAS_TOMLI_W:
             with open(CONFIG_PATH, "wb") as f:

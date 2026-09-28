@@ -415,6 +415,9 @@ def config(
         "", help="Set a custom base URL (provider=custom unless --provider given)"
     ),
     spend_cap: str = typer.Option("", help="Cap per-session spend in USD, 0 = unlimited"),
+    reasoning_effort: str = typer.Option(
+        "", help="Reasoning effort for OpenRouter models: off|minimal|low|medium|high|max"
+    ),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
 ):
     """View and set config. Keys are chmod-600’d; env vars always win."""
@@ -456,6 +459,14 @@ def config(
         cfg.spend_cap_usd = _parse_spend_cap(spend_cap)
         changed = True
         console.print(f"[green]spend cap ${cfg.spend_cap_usd:.2f}/session (0 = unlimited).[/green]")
+    if reasoning_effort.strip():
+        from sk.config import REASONING_EFFORTS, _parse_reasoning_effort
+
+        cfg.reasoning_effort = _parse_reasoning_effort(reasoning_effort)
+        changed = True
+        console.print(
+            f"[green]reasoning effort {cfg.reasoning_effort} ({'/'.join(REASONING_EFFORTS)}).[/green]"
+        )
     if model:
         m = model.strip()
         low = m.lower()
@@ -475,7 +486,7 @@ def config(
         cfg.save()
     if show or not changed:
         console.print(
-            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}"
+            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}\nreasoning_effort={cfg.reasoning_effort}"
         )
         if cfg.project_note():
             console.print(f"[dim]{cfg.project_note()}[/dim]")
