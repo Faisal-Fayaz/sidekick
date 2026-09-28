@@ -10,7 +10,7 @@ export default function Footer() {
             <span style={{ color: 'var(--green)' }}>$ </span>sidekick
           </div>
           <div>
-            A local-first terminal companion you can talk to — chat, voice, and 17 tools, on your hardware. MIT
+            A local-first terminal companion you can talk to — chat, voice, and 19 tools, on your hardware. MIT
             licensed. No cloud account required.
           </div>
           <div style={{ marginTop: 10 }}>

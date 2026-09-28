@@ -79,6 +79,7 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Chat & Voice', cmd: 'sk chat [--continue]', what: 'Fallback plain-text REPL for dumb terminals, screen readers, broken TUIs.' },
   { group: 'Chat & Voice', cmd: 'sk talk [-d SECS] [--stt-model base]', what: 'Push-to-talk voice chat. Enter records, Enter stops. CPU transcription.' },
   { group: 'Chat & Voice', cmd: 'sk mic-test [-d SECS]', what: 'Mic level check: peak dB + silent / quiet / good verdict.' },
+  { group: 'Chat & Voice', cmd: 'sk imagine "prompt" [--out f.png]', what: 'Generate an image via the provider images endpoint.' },
   { group: 'Chat & Voice', cmd: '/sessions · /resume <n> · /fork [n]', what: 'List, switch, delete, and branch past sessions.' },
   { group: 'Chat & Voice', cmd: '/readonly', what: 'Research mode: block all file writes. /confirm reverts.' },
   { group: 'Chat & Voice', cmd: '/compact [focus] · /diff · /review [base]', what: 'Fold history now, show the working-tree diff, ask the agent to review it.' },
@@ -95,12 +96,13 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Memory & Todos', cmd: 'sk remember / recall / memories / forget', what: 'Long-term memory with FTS5 search, auto-injected into prompts.' },
   { group: 'Memory & Todos', cmd: 'SIDEKICK.md · AGENTS.md auto-load', what: 'Repo conventions injected root-down; /init scaffolds them.' },
   { group: 'Memory & Todos', cmd: 'sk todo add / list / done / clear', what: 'Persistent todos surfaced in briefs.' },
+  { group: 'Memory & Todos', cmd: 'sk search QUERY [--session S]', what: 'Full-text search across past transcripts.' },
   { group: 'Memory & Todos', cmd: 'sk audit [--session S] [--format md|json]', what: 'Compliance log: tool runs, approve/deny, local-vs-egress.' },
   { group: 'Memory & Todos', cmd: 'sk stats [--session S] [--format md|json]', what: 'Usage + cost estimates from audit rows.' },
   { group: 'Skills & Daemon', cmd: 'sk skills · skills-search · skills-install NAME', what: 'SKILL.md packs incl. registry + superpowers.' },
   { group: 'Skills & Daemon', cmd: 'sk plugins', what: 'User-defined tools via TOOLS.md.' },
   { group: 'Skills & Daemon', cmd: 'sk daemon [--once] · daemon-install [--schedule TXT]', what: 'Background watcher (systemd/launchd, calendar schedules).' },
-  { group: 'Skills & Daemon', cmd: 'sk mcp [--allow-writes]', what: 'MCP server over stdio. 17 tools, safe defaults. Reads auto-run.' },
+  { group: 'Skills & Daemon', cmd: 'sk mcp [--allow-writes]', what: 'MCP server over stdio. 19 tools, safe defaults. Reads auto-run.' },
   { group: 'Skills & Daemon', cmd: 'sk mcp-servers', what: 'List configured MCP client servers + live tool check.' },
   { group: 'Skills & Daemon', cmd: 'sk hook-install [--write]', what: 'Bash/zsh shell logging hook.' },
   { group: 'Providers & Models', cmd: 'sk init  /  sk setup  /  sk connect', what: 'Guided first-run / full setup / provider key flow.' },
@@ -146,7 +148,7 @@ export const FEATURES = [
   },
   {
     icon: '⚙',
-    title: '17 tools, gated right',
+    title: '19 tools, gated right',
     body: 'Reads auto-run. Writes, deletes and shell need approval. HOME//tmp only, ≤100KB, hard-refusals on rm -rf /, mkfs, fork bombs. SSRF guards on fetchers.',
     tag: 'safety gates',
   },
@@ -213,6 +215,24 @@ export const WHATNEW = [
     body: 'Sidekick dark/light plus opencode, dracula and tokyonight palettes. F2 pops the picker; choice persists.',
     link: '/commands',
   },
+  {
+    tag: 'sk imagine',
+    title: 'Generate images',
+    body: 'Describe it; provider image endpoints render PNGs home. Clear errors where unsupported.',
+    link: '/commands',
+  },
+  {
+    tag: 'shell_session',
+    title: 'Shell that remembers',
+    body: 'Persistent bash per name: cwd, env and venv survive across calls. Approval-gated like shell.',
+    link: '/docs#safety',
+  },
+  {
+    tag: 'sk search',
+    title: 'Search past transcripts',
+    body: 'Full-text FTS across sessions with match snippets, session filter and namespace scoping.',
+    link: '/docs#memory',
+  },
 ];
 
 export const COMPARISON: { label: string; sidekick: string; typical: string }[] = [
@@ -257,7 +277,7 @@ export const FAQS = [
   },
   {
     q: 'How do I use Claude / ChatGPT with it?',
-    a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 17 tools to Claude Desktop over stdio. The reverse works too: `sk mcp-servers` consumes external MCP servers as approval-gated `mcp__*` agent tools.',
+    a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 19 tools to Claude Desktop over stdio. The reverse works too: `sk mcp-servers` consumes external MCP servers as approval-gated `mcp__*` agent tools.',
   },
   {
     q: 'Is it safe to let it run shell?',
