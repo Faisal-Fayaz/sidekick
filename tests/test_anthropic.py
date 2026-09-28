@@ -231,10 +231,13 @@ def test_denied_tool_logged(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(ab, "_stream", fake_stream)
+    monkeypatch.setattr(
+        ab, "_post", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("recap down"))
+    )
     out = ab.run_anthropic_agent(
         "run it", [], _cfg(max_steps=1), approve=lambda n, a: False, session="s"
     )
-    assert out == "(max steps reached)"
+    assert out == "(max steps reached)"  # recap failed: sentinel survives as fallback
     denied = [r for r in store.list_tool_runs("s") if r["approved"] == 0]
     assert len(denied) == 1 and denied[0]["tool"] == "shell"
 

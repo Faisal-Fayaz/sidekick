@@ -1128,6 +1128,45 @@ def build_messages(
     return messages
 
 
+def _synthesize_exhaustion(
+    client,
+    model: str,
+    messages: list,
+    temperature: float,
+    max_tokens: int,
+    extra: dict,
+    on_token,
+) -> str:
+    """One final no-tools call to report progress + blockers when the step
+    budget dies without a final answer. Bounded (<=400 tokens), streams via
+    on_token like a normal turn. Never raises; returns "" on any failure so
+    callers keep the "(max steps reached)" fallback."""
+    try:
+        recap = list(messages) + [
+            {
+                "role": "user",
+                "content": (
+                    "You hit the step budget. In 3 lines max, report: what was "
+                    "accomplished this turn, and what is blocked. No more tool calls."
+                ),
+            }
+        ]
+        msg = _stream_chat(
+            client,
+            model,
+            recap,
+            None,
+            temperature,
+            min(int(max_tokens or 400), 400),
+            extra,
+            on_token,
+            None,
+        )
+        return ((msg.content or "") + "\n" + (getattr(msg, "reasoning", "") or "")).strip()
+    except Exception:
+        return ""
+
+
 def run_agent(
     user_msg: str,
     history: list[dict],
@@ -1142,7 +1181,9 @@ def run_agent(
     read_only: bool = False,
     plan_mode: bool = False,
 ) -> str:
-    """One agent turn with up to cfg.max_steps tool iterations. Returns final text.
+    """One agent turn with up to the effective step budget (explicit user
+    config wins, else the model profile, else the configured default).
+    Returns final text.
 
     approve(name, args) -> bool: gate for APPROVAL_TOOLS. If None, auto-approve.
     on_tool(name, args, result_or_denied) is notification only.
@@ -1197,11 +1238,19 @@ def run_agent(
         )
     client = get_client(cfg)
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
-    # Token cap is provider-aware: tight on CPU offload, roomy on cloud GPUs
-    # so plans don't get cut off mid-tool-call.
-    # (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
+    # Token cap is profile-aware (model_profiles.max_tokens_for): tight on
+    # local CPU offload, roomy on frontier cloud models so whole-file
+    # tool calls fit. (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
     extra = _extra_body(cfg)
-    max_tokens = 350 if cfg.provider in ("ollama", "lmstudio") else 800
+    from .model_profiles import (
+        effective_max_steps,
+        max_parallel_for,
+        max_tokens_for,
+        native_tools_for,
+    )
+
+    max_tokens = max_tokens_for(cfg.model, cfg.provider)
+    max_steps = effective_max_steps(cfg.model, cfg)
 
     summarize_fn = make_summarizer(cfg)
 
@@ -1231,10 +1280,9 @@ def run_agent(
     final_text = ""
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
-    from .model_profiles import max_parallel_for, native_tools_for
 
     max_parallel = max_parallel_for(cfg.model)
-    # Some providers/models reject native function calling (Groq 400 "tool
+    # Some providers/models reject native function calling (HTTP 400 "tool
     # calling is not supported with this model"). Remember the failure so the
     # rest of this turn AND future turns skip tools and use text-JSON instead.
     # Profiles seed the same switch: known text-only models (llama3.2:3b)
@@ -1247,7 +1295,7 @@ def run_agent(
                 "content": "\n[model does not support native tool calling — emit tools as ```json blocks only]\n",
             }
         )
-    for _ in range(cfg.max_steps):
+    for _ in range(max_steps):
         try:
             msg = _stream_chat(
                 client,
@@ -1358,26 +1406,39 @@ def run_agent(
         outs = _run_tools_batch(
             batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
         )
-        for (tid, _, _), (result, _) in zip(parsed, outs):
+        for (tid, _tname, _targs), (result, _repeated) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
 
         # after tools, loop to let model synthesize (next iteration)
-        # peek: if last iteration, force final synthesis
-        if _ == cfg.max_steps - 1:
-            m2 = _stream_chat(
-                client,
-                cfg.model,
-                messages,
-                None,
-                cfg.temperature,
-                max_tokens,
-                extra,
-                on_token,
-                on_reasoning,
-            )
-            final_text = m2.content or m2.reasoning or ""
+        # peek: if last iteration, force final synthesis (failures fall
+        # through to the exhaustion synthesis below, never out of the turn)
+        if _ == max_steps - 1:
+            try:
+                m2 = _stream_chat(
+                    client,
+                    cfg.model,
+                    messages,
+                    None,
+                    cfg.temperature,
+                    max_tokens,
+                    extra,
+                    on_token,
+                    on_reasoning,
+                )
+                final_text = m2.content or m2.reasoning or ""
+            except Exception:
+                final_text = ""
             messages.append({"role": "assistant", "content": final_text})
+            if final_text.strip():
+                break
     else:
-        final_text = final_text or "(max steps reached)"
+        # Budget spent without a final answer: one bounded no-tools call to
+        # report progress + blockers instead of the bare sentinel. Never raises.
+        final_text = (
+            _synthesize_exhaustion(
+                client, cfg.model, messages, cfg.temperature, max_tokens, extra, on_token
+            )
+            or "(max steps reached)"
+        )
 
     return final_text
