@@ -147,7 +147,7 @@ export default function Docs() {
           <h2 id="mcp">MCP server + client</h2>
           <CodeBlock code={`sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps`} />
           <p>
-            All 17 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run;
+            All 19 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run;
             shell/writes/delete need {inline('--allow-writes')}, else a clean denied error. Stdout carries
             protocol only. Claude Desktop snippet:
           </p>
@@ -161,7 +161,7 @@ export default function Docs() {
 
           <h2 id="memory">Memory · todos · sessions</h2>
           <CodeBlock
-            code={`sk remember "deploy runs on Fridays"   # long-term memory (FTS5, auto-injected)\nsk recall "deploy"  /  sk memories  /  sk forget <id>\nsk todo add "fix flaky eval"  /  sk todo list  /  sk todo done 1\n/init                                    # scaffold SIDEKICK.md repo conventions here\nSIDEKICK.md · AGENTS.md · CLAUDE.md      # auto-loaded root-down, merged with .sidekick.toml docs\n/sessions  ·  /resume <n>  ·  /fork [n]   # list, switch, branch past sessions\n/rewind [n]  ·  /compact [focus]          # undo a file edit · fold history now\n/diff  ·  /review [base]                 # show working-tree diff · ask the agent to review it\nsk export --out session.md     # transcript as Markdown\nsk audit --format md           # compliance log   ·   sk stats  # usage + cost`}
+            code={`sk remember "deploy runs on Fridays"   # long-term memory (FTS5, auto-injected)\nsk recall "deploy"  /  sk memories  /  sk forget <id>\nsk search "deploy friday" [--session S]  # full-text transcript search\nsk todo add "fix flaky eval"  /  sk todo list  /  sk todo done 1\n/init                                    # scaffold SIDEKICK.md repo conventions here\nSIDEKICK.md · AGENTS.md · CLAUDE.md      # auto-loaded root-down, merged with .sidekick.toml docs\n/sessions  ·  /resume <n>  ·  /fork [n]   # list, switch, branch past sessions\n/rewind [n]  ·  /compact [focus]          # undo a file edit · fold history now\n/diff  ·  /review [base]                 # show working-tree diff · ask the agent to review it\nsk export --out session.md     # transcript as Markdown\nsk audit --format md           # compliance log   ·   sk stats  # usage + cost`}
           />
 
           <h2 id="skills">Skills & plugins</h2>
@@ -215,7 +215,9 @@ export default function Docs() {
             {inline('/yolo')}; denials execute nothing). Need a guarantee of zero writes? {inline('/readonly')}{' '}
             (or {inline('sk run --read-only')}) denies every approval-gated tool, and {inline('/rewind')} restores
             pre-edit snapshots of any file the agent touched ({inline('shell')} mutations excepted — use git
-            for those). {inline('shell')} hard-refuses {inline('rm -rf /')},{' '}
+            for those). Need a shell whose directory and env survive across calls? The{' '}
+            {inline('shell_session')} tool runs a persistent bash per name (same approval + hard-refusals
+            as {inline('shell')}; {inline('exit')} closes one). {inline('shell')} hard-refuses {inline('rm -rf /')},{' '}
             {inline('mkfs')}, {inline('dd')} to devices, fork bombs even with approval.{' '}
             {inline('read_url')}/{inline('web_search')} block localhost/private IPs. API keys chmod 600, masked
             in output.
@@ -223,7 +225,7 @@ export default function Docs() {
 
           <h2 id="architecture">Architecture</h2>
           <CodeBlock
-            code={`you → sk / sk run ─→ slash.py (/commands, no LLM)\n   → sk tui (autocomplete, streaming, mic pill)\n   → sk talk (arecord + faster-whisper)\n   → agent.py (stream → tools → synthesize)\n        ├─ grounding: ~/paths, URLs, sysinfo (before the model)\n        ├─ tools.py: 17 tools, allowlists, hard-blocks, SSRF guard\n        ├─ store.py: history, memories FTS5, todos, shell log\n        └─ skills: relevance-ranked SKILL.md index`}
+            code={`you → sk / sk run ─→ slash.py (/commands, no LLM)\n   → sk tui (autocomplete, streaming, mic pill)\n   → sk talk (arecord + faster-whisper)\n   → agent.py (stream → tools → synthesize)\n        ├─ grounding: ~/paths, URLs, sysinfo (before the model)\n        ├─ tools.py: 19 tools, allowlists, hard-blocks, SSRF guard\n        ├─ store.py: history, memories FTS5, todos, shell log\n        └─ skills: relevance-ranked SKILL.md index`}
           />
           <p>
             Design bets that paid off: <b>deterministic grounding beats prompt instructions</b>,{' '}

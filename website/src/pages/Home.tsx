@@ -38,7 +38,7 @@ export default function Home() {
               you can <span className="accent">talk to.</span>
             </h1>
             <p className="hero-sub">
-              <b>Chat, voice, and 17 tools, on your hardware.</b> No cloud account required. No API bill by
+              <b>Chat, voice, and 19 tools, on your hardware.</b> No cloud account required. No API bill by
               default. Your files, memory, and voice never leave your machine unless you hand it a key.
             </p>
             <div className="hero-cta">
