@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 
 
 def _check_shell(cmd: str) -> str | None:
@@ -51,8 +52,8 @@ SHELL_BLOCK_PATTERNS = [
 ]
 
 
-_sessions: dict[str, "subprocess.Popen"] = {}
-_sessions_lock = __import__("threading").RLock()
+_sessions: dict[str, subprocess.Popen] = {}
+_sessions_lock = threading.RLock()
 
 
 def _drop_session(name: str) -> None:
@@ -97,7 +98,13 @@ except Exception:
 
 
 def _session_proc(name: str):
-    """Get-or-spawn the persistent bash for a session. Raises on failure."""
+    """Get-or-spawn the persistent bash for a session. Raises on failure.
+
+    Binary unbuffered pipes: all reading goes through os.read on the fd so
+    no hidden layer (TextIOWrapper snapshot buffers are invisible to
+    select() and would strand lines until timeout).
+    """
+    import os
     import subprocess
 
     with _sessions_lock:
@@ -111,9 +118,18 @@ def _session_proc(name: str):
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            bufsize=0,
         )
+        if proc.stdin is None or proc.stdout is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            raise RuntimeError("no pipes")
+        try:
+            os.set_blocking(proc.stdout.fileno(), False)
+        except Exception:
+            pass
         _sessions[name] = proc
         return proc
 
@@ -140,47 +156,80 @@ def tool_shell_session(cmd: str, session: str = "default", timeout: int = 30) ->
     timeout = max(5, min(int(timeout or 30), 120))
     marker = f"__SK_{uuid.uuid4().hex}__"
     want = re.compile(rf"^{re.escape(marker)}:(\d+)\s*$")
+    stale = re.compile(r"^__SK_[0-9a-f]+__:\d+\s*$")
     with _sessions_lock:
         try:
             proc = _session_proc(name)
         except Exception as e:
             return f"Error: cannot start shell session: {e}"
+        stdin, stdout = proc.stdin, proc.stdout
+        if stdin is None or stdout is None:
+            _drop_session(name)
+            return "Error: shell session failed to start."
+        out_fd = stdout.fileno()
+        payload = (cmd + f"\nprintf '{marker}:%s\\n' \"$?\"\n").encode()
         try:
-            proc.stdin.write(cmd + f"\nprintf '{marker}:%s\\n' \"$?\"\n")
-            proc.stdin.flush()
+            while payload:
+                written = stdin.write(payload)
+                if written is None:
+                    break
+                payload = payload[written:]
+            stdin.flush()
         except Exception as e:
             _drop_session(name)
             return f"Error: shell session died: {e}"
-        out_lines = []
+        out_lines: list[str] = []
+        buf = bytearray()
         deadline = _t.monotonic() + timeout
 
-        def _line_ready() -> bool:
-            # select() cannot see lines already sitting in Python's read
-            # buffer (coalesced writes); check the buffer first or a ready
-            # marker would hang until timeout.
+        def _drain() -> list[str]:
+            """Pull available bytes into lines. BlockingIOError-safe."""
+            import os
+
             try:
-                return b"\n" in proc.stdout.buffer.peek()
-            except Exception:
-                return False
+                chunk = os.read(out_fd, 65536)
+            except BlockingIOError:
+                return []
+            if chunk == b"":
+                raise EOFError
+            buf.extend(chunk)
+            lines = []
+            while True:
+                i = buf.find(b"\n")
+                if i < 0:
+                    break
+                lines.append(bytes(buf[:i]).decode("utf-8", "replace"))
+                del buf[: i + 1]
+            return lines
 
         try:
-            while True:
-                if not _line_ready():
-                    remaining = deadline - _t.monotonic()
-                    if remaining <= 0:
-                        return f"Error: timed out after {timeout}s (session kept, retry to re-sync)"
-                    ready, _, _ = select.select([proc.stdout], [], [], remaining)
-                    if not ready:
-                        return f"Error: timed out after {timeout}s (session kept, retry to re-sync)"
-                line = proc.stdout.readline()
-                if line == "":
-                    _drop_session(name)
-                    return "Error: shell session closed unexpectedly."
-                m = want.match(line.strip())
-                if m:
-                    rc = int(m.group(1))
+            rc = 0
+            done = False
+            while not done:
+                for line in _drain():
+                    m = want.match(line.strip())
+                    if m:
+                        rc = int(m.group(1))
+                        done = True
+                        break
+                    if stale.match(line.strip()):
+                        continue  # leftover marker from a timed-out call
+                    out_lines.append(line)
+                if done:
                     break
-                out_lines.append(line.rstrip("\n"))
+                remaining = deadline - _t.monotonic()
+                if remaining <= 0:
+                    return f"Error: timed out after {timeout}s (session kept, retry to re-sync)"
+                try:
+                    ready, _, _ = select.select([out_fd], [], [], remaining)
+                except Exception as e:
+                    _drop_session(name)
+                    return f"Error: shell session failed: {e}"
+                if not ready:
+                    return f"Error: timed out after {timeout}s (session kept, retry to re-sync)"
+        except EOFError:
+            _drop_session(name)
+            return "Error: shell session closed unexpectedly."
         except Exception as e:
             _drop_session(name)
             return f"Error: shell session failed: {e}"
