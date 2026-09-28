@@ -1164,8 +1164,11 @@ def _synthesize_exhaustion(
             {
                 "role": "user",
                 "content": (
-                    "You hit the step budget. In 3 lines max, report: what was "
-                    "accomplished this turn, and what is blocked. No more tool calls."
+                    "You hit the step budget. Reply with ONLY these 3 lines, "
+                    "filled in, no other text:\n"
+                    "Accomplished: <one line>\n"
+                    "Blocked: <one line>\n"
+                    "Next: <one line>"
                 ),
             }
         ]
@@ -1183,6 +1186,30 @@ def _synthesize_exhaustion(
         return ((msg.content or "") + "\n" + (getattr(msg, "reasoning", "") or "")).strip()
     except Exception:
         return ""
+
+
+# Prefix marking loop-machinery instructions (tool-protocol notes, continue
+# prompts). They steer the immediate next call only; _drop_stale_control
+# removes older copies so dead instructions stop haunting later turns.
+CONTROL_TAG = "[sidekick-control] "
+
+
+def _drop_stale_control(messages: list) -> None:
+    """Drop older control-tagged user messages in place, keeping the newest.
+    Never raises; no-op when fewer than two exist."""
+    try:
+        idx = [
+            i
+            for i, m in enumerate(messages)
+            if isinstance(m, dict)
+            and m.get("role") == "user"
+            and isinstance(m.get("content"), str)
+            and str(m["content"]).lstrip().startswith(CONTROL_TAG)
+        ]
+        for i in sorted(idx[:-1], reverse=True):
+            del messages[i]
+    except Exception:
+        pass
 
 
 def run_agent(
@@ -1310,10 +1337,12 @@ def run_agent(
         messages.append(
             {
                 "role": "user",
-                "content": "\n[model does not support native tool calling — emit tools as ```json blocks only]\n",
+                "content": CONTROL_TAG
+                + "[model does not support native tool calling — emit tools as ```json blocks only]\n",
             }
         )
     for _ in range(max_steps):
+        _drop_stale_control(messages)
         try:
             msg = _stream_chat(
                 client,
@@ -1330,22 +1359,31 @@ def run_agent(
             if tools_enabled and _tools_rejected(e):
                 _tools_unsupported.add(cfg.model)
                 tools_enabled = False
-                note = "\n[model does not support native tool calling — emit tools as ```json blocks only]\n"
+                note = (
+                    CONTROL_TAG
+                    + "[model does not support native tool calling — emit tools as ```json blocks only]\n"
+                )
                 if on_token is not None:
                     try:
-                        on_token(note)  # type: ignore
+                        on_token(note.replace(CONTROL_TAG, ""))  # type: ignore
                     except Exception:
                         pass
                 messages.append({"role": "user", "content": note})
                 continue
             raise
 
-        # qwen3-style reasoning models put text in .reasoning, content empty
+        # Reasoning-only turn (reasoning models, empty content): the trace
+        # already streamed live via on_reasoning; never post it as chat.
+        # Ask the model to continue with its answer instead.
         msg_text = (msg.content or "").strip()
         if not msg_text:
             reason = getattr(msg, "reasoning", "") or ""
             if isinstance(reason, str) and reason.strip():
-                msg_text = reason.strip()[-1500:]  # fallback so we never return ""
+                messages.append({"role": "assistant", "content": ""})
+                messages.append(
+                    {"role": "user", "content": CONTROL_TAG + "Continue with your answer now."}
+                )
+                continue
 
         # fallback: some Ollama models (qwen2.5-coder via OpenAI endpoint)
         # emit tool JSON as text instead of native tool_calls. Parse ALL of them.
@@ -1386,7 +1424,11 @@ def run_agent(
                 continued += 1
                 messages.append({"role": "assistant", "content": msg_text})
                 messages.append(
-                    {"role": "user", "content": "Continue: emit the tool calls now, no more prose."}
+                    {
+                        "role": "user",
+                        "content": CONTROL_TAG
+                        + "Continue: emit the tool calls now, no more prose.",
+                    }
                 )
                 continue
             final_text = msg_text
