@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .custom_commands import render_custom_command
+
 
 @dataclass
 class SlashOut:
@@ -59,6 +61,36 @@ HELP_TEXT = (
 )
 
 
+def all_commands() -> list[tuple[str, str]]:
+    """Builtin COMMANDS plus user-defined ones (builtins win on collision)."""
+    try:
+        from .custom_commands import list_custom_commands
+
+        builtins = {n.split()[0].lower() for n, _ in COMMANDS}
+        extra = [(n, d) for n, d, _ in list_custom_commands() if n not in builtins]
+        return COMMANDS + extra
+    except Exception:
+        return list(COMMANDS)
+
+
+def help_text() -> str:
+    """HELP_TEXT plus user commands and collision notices. Never raises."""
+    try:
+        from .custom_commands import custom_warnings, list_custom_commands
+
+        builtins = {n.split()[0].lower() for n, _ in COMMANDS}
+        lines = [f"- `/{n}` — {d}" for n, d, _ in list_custom_commands() if n not in builtins]
+        warns = custom_warnings()
+    except Exception:
+        return HELP_TEXT
+    text = HELP_TEXT
+    if lines:
+        text += "\n**your commands** (`~/.sidekick/commands/*.md`)\n" + "\n".join(lines)
+    if warns:
+        text += "\n" + "\n".join(f"_skipped {w}_" for w in warns)
+    return text
+
+
 def _resolve_model_name(cfg, raw: str) -> str:
     from .config import resolve_alias
 
@@ -86,7 +118,7 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     arg = parts[1] if len(parts) > 1 else ""
 
     if cmd in ("help", "h", "?"):
-        return SlashOut(handled=True, text=HELP_TEXT)
+        return SlashOut(handled=True, text=help_text())
 
     if cmd == "model":
         from .config import PRESETS as _PRESETS
@@ -435,4 +467,7 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
             handled=True, text=f"_copied answer {-n if n > 1 else 'last'} via {method}_{extra}"
         )
 
+    rendered = render_custom_command(cmd, arg)
+    if rendered is not None:
+        return SlashOut(handled=True, agent_prompt=rendered)
     return SlashOut(handled=True, text=f"unknown command `/{cmd}` — try `/help`")
