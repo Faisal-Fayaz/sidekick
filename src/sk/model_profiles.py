@@ -13,18 +13,31 @@ Fields:
   JSON parses. (Consumed by future prompt tuning; recorded now.)
 - max_parallel: concurrent tool budget for _run_tools_batch. Weak models
   serialize more; strong ones fan out.
+- max_tokens: per-turn generation cap. Local class stays tight (VRAM);
+  frontier class gets room for whole-file tool calls.
+- max_steps: loop iterations, or None to defer to user config. Local class
+  pins the lean default; frontier class raises it.
 - note: one-line human rationale (shows in router reason strings).
 
-Only verified entries live here (same rule as config.TIERS). To add one:
-reproduce the behavior twice, then add the row + a test.
+Only verified entries live here (same rule as config.TIERS). Budget rows
+are policy, not observed behavior: local rows lock today's constants so
+regressions show in tests; frontier rows encode the tested whole-file
+turns. To add one: reproduce the behavior twice, then add the row + a test.
 """
 
 from __future__ import annotations
+
+LOCAL_TOKENS = 350
+CLOUD_TOKENS = 800
+FRONTIER_TOKENS = 2000
+FRONTIER_STEPS = 15
 
 DEFAULT_PROFILE: dict[str, object] = {
     "native_tools": True,
     "json_discipline": "high",
     "max_parallel": 4,
+    "max_tokens": None,  # None → provider default (no behavior change)
+    "max_steps": None,  # None → user config (no behavior change)
     "note": "unprofiled model: current heuristics apply",
 }
 
@@ -33,13 +46,41 @@ PROFILES: dict[str, dict[str, object]] = {
         "native_tools": False,
         "json_discipline": "medium",
         "max_parallel": 2,
+        "max_tokens": LOCAL_TOKENS,
+        "max_steps": 5,
         "note": "3B class: text-JSON only, keep batches small",
     },
     "qwen2.5-coder:7b": {
         "native_tools": True,
         "json_discipline": "high",
         "max_parallel": 4,
+        "max_tokens": LOCAL_TOKENS,
+        "max_steps": 5,
         "note": "reliable native tools + clean JSON fallback",
+    },
+    "gpt-4o": {
+        "native_tools": True,
+        "json_discipline": "high",
+        "max_parallel": 4,
+        "max_tokens": FRONTIER_TOKENS,
+        "max_steps": FRONTIER_STEPS,
+        "note": "frontier class: whole-file turns fit",
+    },
+    "claude-sonnet-5": {
+        "native_tools": True,
+        "json_discipline": "high",
+        "max_parallel": 4,
+        "max_tokens": FRONTIER_TOKENS,
+        "max_steps": FRONTIER_STEPS,
+        "note": "frontier class: whole-file turns fit",
+    },
+    "deepseek-chat": {
+        "native_tools": True,
+        "json_discipline": "high",
+        "max_parallel": 4,
+        "max_tokens": FRONTIER_TOKENS,
+        "max_steps": FRONTIER_STEPS,
+        "note": "frontier class: whole-file turns fit",
     },
 }
 
@@ -72,3 +113,38 @@ def max_parallel_for(model_id: str) -> int:
         return max(1, int(str(match_profile(model_id).get("max_parallel", 4))))
     except Exception:
         return 4
+
+
+def max_tokens_for(model_id: str, provider: str = "") -> int:
+    """Per-turn generation cap. Profile value wins; else provider default
+    (tight on local CPU offload, roomy on cloud). Never raises."""
+    try:
+        profiled = match_profile(model_id).get("max_tokens", None)
+        if profiled is not None:
+            return max(64, int(str(profiled)))
+    except Exception:
+        pass
+    return LOCAL_TOKENS if (provider or "") in ("ollama", "lmstudio") else CLOUD_TOKENS
+
+
+def max_steps_for(model_id: str) -> int | None:
+    """Loop iterations from the profile, or None to defer to user config."""
+    try:
+        profiled = match_profile(model_id).get("max_steps", None)
+        return max(1, int(str(profiled))) if profiled is not None else None
+    except Exception:
+        return None
+
+
+def effective_max_steps(model_id: str, cfg) -> int:
+    """Loop iterations for this turn. Precedence: explicit user config wins,
+    else profile, else the configured default. Never raises."""
+    try:
+        if bool(getattr(cfg, "max_steps_custom", False)):
+            return max(1, int(getattr(cfg, "max_steps", 5)))
+        profiled = max_steps_for(model_id)
+        if profiled is not None:
+            return profiled
+        return max(1, int(getattr(cfg, "max_steps", 5)))
+    except Exception:
+        return 5

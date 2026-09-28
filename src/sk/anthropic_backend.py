@@ -422,11 +422,13 @@ def run_anthropic_agent(
     )
     tools = openai_tools_to_anthropic(tools_schema())
     system_payload, tools = _cache_breakpoints(system, tools)
-    max_tokens = 800
-    seen: dict[str, str] = {}
-    final_text = ""
+    from .model_profiles import effective_max_steps, max_tokens_for
 
-    for _ in range(max(1, cfg.max_steps)):
+    max_tokens = max_tokens_for(cfg.model, cfg.provider)
+    max_steps = effective_max_steps(cfg.model, cfg)
+    seen: dict[str, str] = {}
+
+    for _ in range(max(1, max_steps)):
         payload: dict = {
             "model": cfg.model,
             "max_tokens": max_tokens,
@@ -499,5 +501,38 @@ def run_anthropic_agent(
                     ],
                 }
             )
-        final_text = text
-    return final_text or "(max steps reached)"
+    # Loop exhausted without a final answer (every in-loop return is one):
+    # one bounded no-tools recap call instead of the bare sentinel.
+    try:
+        recap = {
+            "model": cfg.model,
+            "max_tokens": 400,
+            "messages": messages
+            + [
+                {
+                    "role": "user",
+                    "content": (
+                        "You hit the step budget. In 3 lines max, report: what was "
+                        "accomplished this turn, and what is blocked. No more tool calls."
+                    ),
+                }
+            ],
+        }
+        if system_payload:
+            recap["system"] = system_payload
+        resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), recap)
+        recap_text = "".join(
+            b.get("text", "")
+            for b in (resp.get("content", []) if isinstance(resp, dict) else [])
+            if isinstance(b, dict) and b.get("type") == "text"
+        ).strip()
+        if recap_text:
+            if on_token is not None:
+                try:
+                    on_token(recap_text)
+                except Exception:
+                    pass
+            return recap_text
+    except Exception:
+        pass
+    return "(max steps reached)"

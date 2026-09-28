@@ -30,6 +30,23 @@ PROJECT_BLOCKED_KEYS = ("api_key", "base_url", "mcp_servers", "hooks")
 PROJECT_POLICY_KEYS = ("spend_cap_usd",)
 
 
+def _is_custom_max_steps(file_vals: dict, project_vals: dict) -> bool:
+    """True when the user set max_steps to a non-default value. Never raises.
+
+    A configured value equal to the default is indistinguishable from an
+    auto-saved default, so it follows the model profile (this is what lets
+    existing installs adopt frontier budgets without editing config).
+    """
+    try:
+        default = int(str(DEFAULTS["max_steps"]))
+        for vals in (file_vals, project_vals):
+            if "max_steps" in vals and int(str(vals["max_steps"])) != default:
+                return True
+        return False
+    except Exception:
+        return False
+
+
 HOOK_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse")
 
 
@@ -366,6 +383,11 @@ class Config:
     base_url: str = str(DEFAULTS["base_url"])  # override; "" = preset default
     api_key: str = str(DEFAULTS["api_key"])
     max_steps: int = int(DEFAULTS["max_steps"])
+    max_steps_custom: bool = False  # runtime provenance: user set max_steps
+    # to a non-default value in a config file (global or project). Never
+    # persisted; lets the agent prefer explicit config over model-profile
+    # budgets. A configured value equal to the default follows the profile
+    # (auto-saved defaults must not pin legacy installs to lean budgets).
     temperature: float = float(DEFAULTS["temperature"])
     theme: str = str(DEFAULTS["theme"])
     history_budget_tokens: int = int(DEFAULTS["history_budget_tokens"])
@@ -444,6 +466,7 @@ class Config:
             base_url=str(base_url or vals.get("base_url", "")),
             api_key=str(api_key or vals.get("api_key", "")),
             max_steps=int(str(vals.get("max_steps", DEFAULTS["max_steps"]))),
+            max_steps_custom=_is_custom_max_steps(file_vals, project_vals),
             temperature=float(str(vals.get("temperature", DEFAULTS["temperature"]))),
             history_budget_tokens=int(
                 str(vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]))
