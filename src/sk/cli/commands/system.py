@@ -885,6 +885,52 @@ def hook_install(
     console.print(f"[green]appended to {rc}. Restart shell or `source {rc}`.[/green]")
 
 
+@app.command(name="hooks")
+def hooks(
+    check: bool = typer.Option(False, "--check", help="Dry-run each handler with a sample payload"),
+):
+    """List event hooks ([hooks] in config) + optional live dry-run."""
+    from sk.hooks import HOOK_EVENTS, load_hooks, run_hook
+
+    configured = load_hooks()
+    if not configured:
+        console.print(
+            "[dim](no hooks — add [[hooks.PreToolUse]] to "
+            "~/.sidekick/config.toml, see docs/hooks.md)[/dim]"
+        )
+        return
+    events = sorted({h["event"] for h in configured if h.get("event") in HOOK_EVENTS})
+    for event in events:
+        rows = [h for h in configured if h.get("event") == event]
+        console.print(f"[bold]{event}[/bold] ({len(rows)}):")
+        for h in rows:
+            console.print(f"  [dim]{h['command']} (timeout {h['timeout']:g}s)[/dim]")
+    if not check:
+        return
+    samples: dict[str, dict] = {
+        "SessionStart": {"session": "dry-run"},
+        "PreToolUse": {"session": "dry-run", "tool": "exec", "args": {"cmd": "ls"}},
+        "PostToolUse": {
+            "session": "dry-run",
+            "tool": "exec",
+            "args": {"cmd": "ls"},
+            "result": "dry-run ok",
+        },
+    }
+    for h in configured:
+        payload = dict(samples.get(h["event"], {"session": "dry-run"}))
+        payload["dry_run"] = True
+        try:
+            res = run_hook(h["command"], h["event"], payload, float(h.get("timeout", 30)))
+        except Exception as e:
+            res = {"ok": False, "decision": "error", "reason": str(e)[:200]}
+        mark = "[green]ok[/green]" if res.get("ok") else "[red]FAIL[/red]"
+        console.print(
+            f"  {mark} {h['event']} {h['command']} → "
+            f"{res.get('decision')} {str(res.get('reason', ''))[:120]}"
+        )
+
+
 @app.command()
 def brief(
     project: list[str] = typer.Option(
