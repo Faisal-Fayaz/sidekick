@@ -164,6 +164,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens) |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
+| `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see `docs/mcp-client.md`) |

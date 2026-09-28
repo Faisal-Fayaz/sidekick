@@ -587,6 +587,14 @@ def _gated_dispatch(
 
     target = _tool_target(name, args)
     if name in approval_tools() and approve is not None:
+        from .hooks import pre_tool_use as _pre_hook
+
+        allowed, reason = _pre_hook(session, name, args)
+        if not allowed:
+            log_tool_run(
+                session, name, target, approved=False, provider=provider, host=host, ok=False
+            )
+            return (reason, False)
         try:
             ok = approve(name, args)  # type: ignore
         except Exception:
@@ -599,10 +607,10 @@ def _gated_dispatch(
                 f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.",
                 False,
             )
-    from .checkpoints import snapshot_before
-
-    snapshot_before(session, name, args)  # never raises; file edits gain a /rewind point
     result = dispatch_tool(name, args)
+    from .hooks import post_tool_use as _post_hook
+
+    _post_hook(session, name, args, result)
     failed = result.startswith("Error") or "blocked" in result[:60].lower()
     log_tool_run(session, name, target, approved=True, provider=provider, host=host, ok=not failed)
     return (result, True)
@@ -1150,6 +1158,9 @@ def run_agent(
     turns with destructive actions (skipped when None or auto_approve).
     """
     session = session or audit_session.get()
+    from .hooks import session_start as _session_start
+
+    _session_start(session)  # once per session per process; never raises
     blocked = _spend_blocked(session, cfg)
     if blocked is not None:
         if on_token is not None:
