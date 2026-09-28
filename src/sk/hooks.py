@@ -91,7 +91,7 @@ def run_hook(command: str, event: str, payload: dict, timeout: float) -> dict:
 
 def fire_event(event: str, payload: dict) -> list[dict]:
     """Run every handler for event in config order. Never raises."""
-    out = []
+    out: list[dict] = []
     try:
         handlers = [h for h in load_hooks() if h.get("event") == event]
     except Exception:
@@ -111,7 +111,9 @@ def fire_event(event: str, payload: dict) -> list[dict]:
 def pre_tool_use(session: str, tool: str, args: dict) -> tuple[bool, str]:
     """True+"" when all PreToolUse handlers allow; first deny wins. Never raises."""
     try:
-        for res in fire_event(event="PreToolUse", payload={"session": session, "tool": tool, "args": args}):
+        for res in fire_event(
+            event="PreToolUse", payload={"session": session, "tool": tool, "args": args}
+        ):
             if res.get("decision") == "deny":
                 reason = str(res.get("reason", "") or "denied by hook")
                 return False, f"Denied by hook `{res.get('command', '?')}`: {reason}"

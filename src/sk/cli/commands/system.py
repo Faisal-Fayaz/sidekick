@@ -887,9 +887,7 @@ def hook_install(
 
 @app.command(name="hooks")
 def hooks(
-    check: bool = typer.Option(
-        False, "--check", help="Dry-run each handler with a sample payload"
-    ),
+    check: bool = typer.Option(False, "--check", help="Dry-run each handler with a sample payload"),
 ):
     """List event hooks ([hooks] in config) + optional live dry-run."""
     from sk.hooks import HOOK_EVENTS, load_hooks, run_hook

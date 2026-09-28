@@ -586,15 +586,13 @@ def _gated_dispatch(
     from .store import log_tool_run
 
     target = _tool_target(name, args)
-    if name in approval_tools() and approve is not None:
-        from .hooks import pre_tool_use as _pre_hook
+    from .hooks import pre_tool_use as _pre_hook
 
-        allowed, reason = _pre_hook(session, name, args)
-        if not allowed:
-            log_tool_run(
-                session, name, target, approved=False, provider=provider, host=host, ok=False
-            )
-            return (reason, False)
+    allowed, reason = _pre_hook(session, name, args)
+    if not allowed:
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (reason, False)
+    if name in approval_tools() and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
         except Exception:
@@ -607,6 +605,9 @@ def _gated_dispatch(
                 f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.",
                 False,
             )
+    from .checkpoints import snapshot_before
+
+    snapshot_before(session, name, args)  # never raises; file edits gain a /rewind point
     result = dispatch_tool(name, args)
     from .hooks import post_tool_use as _post_hook
 
