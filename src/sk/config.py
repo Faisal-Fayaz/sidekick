@@ -100,9 +100,7 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
         env = spec.get("env", {})
         env = {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
         headers = spec.get("headers", {})
-        headers = (
-            {str(k): str(v) for k, v in headers.items()} if isinstance(headers, dict) else {}
-        )
+        headers = {str(k): str(v) for k, v in headers.items()} if isinstance(headers, dict) else {}
         try:
             timeout = float(spec.get("timeout", 30) or 30)
         except (TypeError, ValueError):

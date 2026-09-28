@@ -368,9 +368,7 @@ class MCPHttpClient:
         except Exception as e:
             raise RuntimeError(f"notify failed: {e}")
 
-    def _request(
-        self, method: str, params: dict, timeout: float, _retried: bool = False
-    ) -> dict:
+    def _request(self, method: str, params: dict, timeout: float, _retried: bool = False) -> dict:
         """POST + await the response (JSON or SSE). Raises RuntimeError."""
         import httpx
 
@@ -444,10 +442,7 @@ def _spec_key(spec: dict) -> str:
             spec["name"]
             + "\x00"
             + json.dumps(
-                {
-                    k: spec.get(k)
-                    for k in ("command", "args", "env", "timeout", "url", "headers")
-                },
+                {k: spec.get(k) for k in ("command", "args", "env", "timeout", "url", "headers")},
                 sort_keys=True,
             )
         )
