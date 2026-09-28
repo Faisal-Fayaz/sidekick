@@ -1,4 +1,4 @@
-"""TUI theme system: dark + light identities, role styles, toggle.
+"""TUI theme system: sidekick dark/light + opencode/dracula/tokyonight, picker.
 
 Single source of truth for every color in the TUI. No bare hex lives
 anywhere else (CSS uses $variables, roles resolve via active_roles()).
@@ -8,6 +8,11 @@ from __future__ import annotations
 
 DARK_NAME = "sidekick"
 LIGHT_NAME = "sidekick-light"
+OPENCODE_NAME = "opencode"
+DRACULA_NAME = "dracula"
+TOKYONIGHT_NAME = "tokyonight"
+
+THEME_NAMES = (DARK_NAME, LIGHT_NAME, OPENCODE_NAME, DRACULA_NAME, TOKYONIGHT_NAME)
 
 DARK = {
     "primary": "#34f5a2",  # mint — focus, accents, you>
@@ -53,7 +58,80 @@ LIGHT_ROLES = {
     "error": "bold #c62f2f",
 }
 
-_THEMES = {DARK_NAME: (DARK, DARK_ROLES), LIGHT_NAME: (LIGHT, LIGHT_ROLES)}
+# opencode default TUI palette (opencode.ai/docs/themes + theme JSON).
+OPENCODE = {
+    "primary": "#fab283",  # peach — focus, accents
+    "secondary": "#5c9cf5",  # blue
+    "accent": "#9d7cd8",  # purple — highlights
+    "background": "#0a0a0a",
+    "surface": "#141414",
+    "panel": "#141414",
+    "border": "#484848",
+    "muted": "#808080",  # dim secondary text
+    "error": "#e06c75",
+    "warning": "#f5a742",
+}
+
+OPENCODE_ROLES = {
+    "you": "bold #fab283",
+    "sidekick": "bold #5c9cf5",
+    "tool": "#808080",
+    "sys": "#808080 italic",
+    "warn": "bold #e5c07b",
+    "error": "bold #e06c75",
+}
+
+DRACULA = {
+    "primary": "#bd93f9",  # purple
+    "secondary": "#8be9fd",  # cyan
+    "accent": "#ff79c6",  # pink — highlights
+    "background": "#282a36",
+    "surface": "#44475a",
+    "panel": "#44475a",
+    "border": "#6272a4",
+    "muted": "#6272a4",  # comment gray — dim secondary text
+    "error": "#ff5555",
+    "warning": "#f1fa8c",
+}
+
+DRACULA_ROLES = {
+    "you": "bold #bd93f9",
+    "sidekick": "bold #8be9fd",
+    "tool": "#6272a4",
+    "sys": "#6272a4 italic",
+    "warn": "bold #f1fa8c",
+    "error": "bold #ff5555",
+}
+
+TOKYONIGHT = {
+    "primary": "#7aa2f7",  # blue
+    "secondary": "#bb9af7",  # magenta
+    "accent": "#7dcfff",  # cyan — highlights
+    "background": "#1a1b26",
+    "surface": "#292e42",
+    "panel": "#292e42",
+    "border": "#3b4261",
+    "muted": "#545c7e",  # dim secondary text
+    "error": "#f7768e",
+    "warning": "#e0af68",
+}
+
+TOKYONIGHT_ROLES = {
+    "you": "bold #7aa2f7",
+    "sidekick": "bold #bb9af7",
+    "tool": "#545c7e",
+    "sys": "#545c7e italic",
+    "warn": "bold #e0af68",
+    "error": "bold #f7768e",
+}
+
+_THEMES = {
+    DARK_NAME: (DARK, DARK_ROLES),
+    LIGHT_NAME: (LIGHT, LIGHT_ROLES),
+    OPENCODE_NAME: (OPENCODE, OPENCODE_ROLES),
+    DRACULA_NAME: (DRACULA, DRACULA_ROLES),
+    TOKYONIGHT_NAME: (TOKYONIGHT, TOKYONIGHT_ROLES),
+}
 
 _current = DARK_NAME
 
@@ -72,12 +150,28 @@ def mode_for_name(name: str) -> str:
     return "light" if name == LIGHT_NAME else "dark"
 
 
+def normalize_theme_name(name: object) -> str:
+    """Config value -> registered theme name. Legacy dark/light map to the
+    sidekick themes; unknown values fall back to dark. Never raises."""
+    try:
+        key = str(name or "").strip().lower()
+    except Exception:
+        return DARK_NAME
+    if key in _THEMES:
+        return key
+    if key == "dark":
+        return DARK_NAME
+    if key == "light":
+        return LIGHT_NAME
+    return DARK_NAME
+
+
 def active_roles() -> dict[str, str]:
     return _THEMES[_current][1]
 
 
 def install_sidekick_theme(app, name: str = DARK_NAME) -> None:
-    """Register both themes, activate name. Never raises (falls back to default)."""
+    """Register all themes, activate name. Never raises (falls back to default)."""
     global _current
     try:
         from textual.theme import Theme
@@ -94,7 +188,7 @@ def install_sidekick_theme(app, name: str = DARK_NAME) -> None:
                     panel=palette["panel"],
                     warning=palette["warning"],
                     error=palette["error"],
-                    dark=theme_name == DARK_NAME,
+                    dark=theme_name != LIGHT_NAME,
                 )
             )
         if name in _THEMES:

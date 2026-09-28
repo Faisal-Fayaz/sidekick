@@ -81,15 +81,17 @@ def test_extra_body_local_only():
 
 def test_theme_default_and_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "c.toml")
-    assert Config.load().theme == "dark"
+    assert Config.load().theme == "sidekick"
     (tmp_path / "c.toml").write_text('theme = "light"\n')
-    assert Config.load().theme == "light"
+    assert Config.load().theme == "sidekick-light"
+    (tmp_path / "c.toml").write_text('theme = "opencode"\n')
+    assert Config.load().theme == "opencode"
     (tmp_path / "c.toml").write_text('theme = "neon"\n')
-    assert Config.load().theme == "dark"
+    assert Config.load().theme == "sidekick"
     cfg = Config.load()
-    cfg.theme = "light"
+    cfg.theme = "dracula"
     cfg.save()
-    assert Config.load().theme == "light"
+    assert Config.load().theme == "dracula"
 
 
 def test_env_overrides(monkeypatch, tmp_path):
