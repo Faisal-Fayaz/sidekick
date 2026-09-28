@@ -42,7 +42,7 @@ def _sctx(tmp_path, monkeypatch):
 
 
 def test_plan_denied_tools_cover_writes():
-    assert set(PLAN_DENIED_TOOLS) == set(WRITES)
+    assert set(PLAN_DENIED_TOOLS) == set(WRITES) | {"generate_image"}
 
 
 def test_one_shot_approver_plan_denies_writes_shell_asks(monkeypatch):
