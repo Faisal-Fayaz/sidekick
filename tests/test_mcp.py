@@ -36,7 +36,15 @@ def test_tools_list_all_nineteen():
         assert set(t) >= {"name", "description", "inputSchema"}
         assert isinstance(t["inputSchema"], dict)
     names = {t["name"] for t in tools}
-    assert {"sysinfo", "shell", "shell_session", "write_file", "read_url", "skill", "generate_image"} <= names
+    assert {
+        "sysinfo",
+        "shell",
+        "shell_session",
+        "write_file",
+        "read_url",
+        "skill",
+        "generate_image",
+    } <= names
 
 
 def test_call_read_tool():
