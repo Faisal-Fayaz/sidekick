@@ -66,7 +66,7 @@ class SidekickTUI(App):
         self._pending_approval: dict[str, object] | None = None
         self._plan_approved: frozenset[str] | None = None
         self._drawer_sessions: list[str] = []
-        self._drawer_models: list[str] = []
+        self._drawer_models: list[tuple[str | None, str]] = []
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -222,37 +222,90 @@ class SidekickTUI(App):
         except Exception:
             pass
 
-    def _model_choices(self) -> list[tuple[str, str]]:
-        """(id, label) rows: current ●, fast/smart aliases, live provider
-        models. Fetch failures fall back to aliases-only. Never raises."""
+    def _provider_key(self, cfg, provider: str) -> tuple[str, str] | None:
+        """Usable (base_url, api_key) for listing provider models, else None.
+
+        Local providers always qualify; the current provider uses its effective
+        credentials; other clouds need a keyring key. Never raises.
+        """
+        try:
+            from sk.config import PRESETS
+
+            if provider == cfg.provider:
+                base = cfg.effective_base_url()
+                key = cfg.effective_api_key()
+                return (base, key) if (base or "").strip() else None
+            preset = PRESETS.get(provider, {})
+            base = str(preset.get("base_url", "") or "").strip()
+            if not base:
+                return None
+            if provider in ("ollama", "lmstudio"):
+                return (base, str(preset.get("key", "") or ""))
+            try:
+                from sk import keyring as _kr
+
+                key = _kr.get_key(provider)
+            except Exception:
+                key = ""
+            return (base, key) if (key or "").strip() else None
+        except Exception:
+            return None
+
+    def _model_choices(self) -> list[tuple[str | None, str, str]]:
+        """(provider|None, id, label) rows: current ●, fast/smart aliases, live
+        models for the current provider, then one section per other reachable
+        provider (`prov › id`). Unreachable providers are skipped. Never raises.
+        """
         from sk.auth import fetch_models
-        from sk.config import Config
+        from sk.config import PRESETS, Config
 
         try:
             cfg = Config.load()
         except Exception:
             return []
         current = (self.model_override or cfg.model or "").strip()
-        rows: list[tuple[str, str]] = []
+        rows: list[tuple[str | None, str, str]] = []
         seen: set[str] = set()
         if current:
-            rows.append((current, f"● {current} (current)"))
+            rows.append((None, current, f"● {current} (current)"))
             seen.add(current)
         for alias in ("fast", "smart"):
             if alias not in seen:
                 seen.add(alias)
-                rows.append((alias, f"○ {alias}"))
+                rows.append((None, alias, f"○ {alias}"))
         try:
-            live = fetch_models(
-                cfg.provider, cfg.effective_base_url(), cfg.effective_api_key(), timeout=8
-            )
+            creds = self._provider_key(cfg, cfg.provider)
+            live = fetch_models(cfg.provider, creds[0], creds[1], timeout=5) if creds else []
         except Exception:
             live = []
         for m in live or []:
             m = str(m or "").strip()
             if m and m not in seen:
                 seen.add(m)
-                rows.append((m, f"○ {m}"))
+                rows.append((None, m, f"○ {m}"))
+        others = [p for p in PRESETS if p not in (cfg.provider, "custom")]
+        specs = []
+        for p in others:
+            creds = self._provider_key(cfg, p)
+            if creds is not None:
+                specs.append((p, creds))
+        if specs:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _fetch(spec: tuple[str, tuple[str, str]]) -> tuple[str, list[str]]:
+                name, (base, key) = spec
+                try:
+                    return (name, fetch_models(name, base, key, timeout=5))
+                except Exception:
+                    return (name, [])
+
+            workers = max(1, min(4, len(specs)))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for name, models in pool.map(_fetch, specs):
+                    for m in models or []:
+                        m = str(m or "").strip()
+                        if m:
+                            rows.append((name, m, f"○ {name} › {m}"))
         return rows
 
     def _render_model_picker(self, needle: str = "") -> None:
@@ -265,10 +318,10 @@ class SidekickTUI(App):
             needle = (needle or "").strip().lower()
             self._drawer_models = []
             lst.clear()
-            for mid, label in self._model_choices():
-                if needle and needle not in mid.lower():
+            for prov, mid, label in self._model_choices():
+                if needle and needle not in label.lower():
                     continue
-                self._drawer_models.append(mid)
+                self._drawer_models.append((prov, mid))
                 lst.append(ListItem(Label(label)))
             if not self._drawer_models:
                 lst.append(ListItem(Label("(no matches)")))
@@ -341,25 +394,36 @@ class SidekickTUI(App):
         self._choose_model(idx)
 
     def _choose_model(self, idx: int) -> None:
-        """Adopt the highlighted model: override + persist + notice. Never raises."""
+        """Adopt the highlighted model: override (+ provider switch when the
+        row belongs to another provider), persist, notice. Never raises."""
         try:
-            mid = self._drawer_models[idx]
+            prov, mid = self._drawer_models[idx]
         except Exception:
             return
         try:
-            from sk.config import Config
+            from sk.config import PRESETS, Config
             from sk.slash import _resolve_model_name
 
-            name = _resolve_model_name(Config.load(), mid)
-            self.model_override = name
             cfg = Config.load()
+            if prov and prov != cfg.provider and prov in PRESETS:
+                cfg.provider = prov
+                switched = True
+            else:
+                switched = False
+            name = (
+                _resolve_model_name(cfg, mid) if mid in ("fast", "smart") or not switched else mid
+            )
+            self.model_override = name
             cfg.model = name
             try:
                 cfg.save()
             except Exception:
                 pass
             log = self.query_one("#chat-log", RichLog)
-            _role(log, "sys", f"model → `{name}`")
+            if switched:
+                _role(log, "sys", f"provider → `{cfg.provider}` model → `{name}`")
+            else:
+                _role(log, "sys", f"model → `{name}`")
             self._sub()
         except Exception:
             pass
