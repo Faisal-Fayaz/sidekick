@@ -105,7 +105,7 @@ export default function Docs() {
           <p>
             TUI keys: <b>Enter</b> sends · <b>ctrl+j</b>/<b>alt+enter</b> newline · <b>↑/↓</b> history ·{' '}
             <b>ctrl+y</b> copies · <b>ctrl+g</b> push-to-talk · <b>pgup/pgdn</b> scroll · <b>F1</b> help ·{' '}
-            <b>F2</b> dark/light theme · <b>F3</b> sessions drawer · <b>F4</b> plan mode · <b>F5</b> model
+            <b>F2</b> theme picker · <b>F3</b> sessions drawer · <b>F4</b> plan mode · <b>F5</b> model
             picker. Answers stream live as Markdown with role colors; approvals arrive as cards with timeout;
             the status bar shows model · session · last-turn time/tokens.
           </p>
@@ -130,8 +130,8 @@ export default function Docs() {
           <p>
             Presets: {inline('ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|opencode|custom')}{' '}
             (anthropic speaks the native Messages API; the rest are OpenAI-compatible). Switch mid-session
-            without typing names: <b>F5</b> pops a model picker (current ●, fast/smart, live provider list —
-            filter, Enter switches, Esc dismisses). Any OpenAI-compatible
+            without typing names: <b>F5</b> pops a model picker covering every usable provider (current ●,
+            fast/smart, live lists — selecting auto-switches provider too; filter, Enter switches, Esc dismisses). Any OpenAI-compatible
             endpoint works via {inline('--provider custom --base-url https://…')}. Preferred:{' '}
             {inline('SIDEKICK_API_KEY')} env (never touches disk); file keys are chmod 600 and masked in{' '}
             {inline('--show')}.
@@ -234,7 +234,7 @@ export default function Docs() {
 
           <h2 id="tests">Tests & contributing</h2>
           <CodeBlock
-            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 561 passed, no Ollama needed`}
+            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 578 passed, no Ollama needed`}
           />
           <p>
             The eval harness ({inline('tests/test_eval.py')}) locks in every past quality bug as an offline
