@@ -72,8 +72,10 @@ def _parse_hooks(raw: object) -> tuple[dict, ...]:
 def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
     """Normalize [mcp_servers.<name>] tables from the global config file.
 
-    Invalid entries are dropped. Project files may not set this (blocked key:
-    repos must not auto-spawn processes). Never raises.
+    Either `command` (local stdio) or `url` (Streamable HTTP); setting both
+    is refused (entry dropped). Invalid entries are dropped. Project files
+    may not set this (blocked key: repos must not auto-spawn processes or
+    phone home). Never raises.
     """
     import re as _re
 
@@ -86,12 +88,19 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
         if not isinstance(spec, dict):
             continue
         command = str(spec.get("command", "") or "").strip()
-        if not command:
+        url = str(spec.get("url", "") or "").strip()
+        if command and url:
+            continue  # ambiguous transport: refuse, don't guess
+        if url and not _re.match(r"https?://", url):
+            continue
+        if not command and not url:
             continue
         args = spec.get("args", [])
         args = [str(a) for a in args] if isinstance(args, list) else []
         env = spec.get("env", {})
         env = {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
+        headers = spec.get("headers", {})
+        headers = {str(k): str(v) for k, v in headers.items()} if isinstance(headers, dict) else {}
         try:
             timeout = float(spec.get("timeout", 30) or 30)
         except (TypeError, ValueError):
@@ -102,6 +111,8 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
                 "command": command,
                 "args": args,
                 "env": env,
+                "url": url,
+                "headers": headers,
                 "timeout": min(max(timeout, 1.0), 300.0),
             }
         )

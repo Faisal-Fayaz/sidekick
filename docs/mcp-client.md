@@ -4,8 +4,8 @@ Sidekick can consume [Model Context Protocol](https://modelcontextprotocol.io)
 servers and expose their tools to the agent — the same extension point
 opencode, Codex, Claude Code and Gemini CLI offer.
 
-**v1 scope: local stdio servers only.** Remote/streamable transports are out
-of scope (a stdio bridge like `mcp-remote` works if you need one).
+Two transports: local stdio servers (`command`) and Streamable HTTP
+(`url`, with `Mcp-Session-Id` handling and SSE-response fallback).
 
 ## Configure
 
@@ -27,10 +27,15 @@ env = { SQLITE_MCP_RO = "1" }
 
 | key       | required | default | meaning                                    |
 |-----------|----------|---------|--------------------------------------------|
-| `command` | yes      | —       | executable to spawn                        |
-| `args`    | no       | `[]`    | argv                                       |
-| `env`     | no       | `{}`    | extra env vars (merged over the process env) |
+| `command` | yes*     | —       | executable to spawn (stdio transport)      |
+| `url`     | yes*     | —       | `http(s)://…` endpoint (Streamable HTTP)   |
+| `args`    | no       | `[]`    | argv (stdio only)                          |
+| `env`     | no       | `{}`    | extra env vars (stdio only, merged over the process env) |
+| `headers` | no       | `{}`    | extra HTTP headers (url only)              |
 | `timeout` | no       | `30`    | seconds per request, clamped to 1–300      |
+
+\*Exactly one of `command`/`url`. Setting both refuses the entry (fail fast —
+fix the config instead of guessing).
 
 Server names must match `[A-Za-z0-9_-]+` (no `__`); invalid entries are
 skipped. Check wiring with `sk mcp-servers` (live tool count or the error).
