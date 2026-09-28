@@ -2,13 +2,13 @@
 
 # Sidekick
 
-**A local-first terminal companion you can talk to — chat, voice, and 17 tools, on your hardware.**
+**A local-first terminal companion you can talk to — chat, voice, and 18 tools, on your hardware.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-618%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-625%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml/badge.svg)](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sidekick-agent.svg)](https://pypi.org/project/sidekick-agent/)
 
@@ -55,7 +55,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 618-test suite incl. prompt-regression evals | ✅ | rare |
+| 625-test suite incl. prompt-regression evals | ✅ | rare |
 | Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
 | Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
@@ -127,7 +127,7 @@ Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS),
 sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps
 ```
 
-All 17 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run; shell/writes/delete need `--allow-writes`, else a clean denied error. Stdout carries protocol only. Claude Desktop snippet:
+All 18 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run; shell/writes/delete need `--allow-writes`, else a clean denied error. Stdout carries protocol only. Claude Desktop snippet:
 
 ```json
 { "mcpServers": { "sidekick": { "command": "sk", "args": ["mcp"] } } }
@@ -165,13 +165,14 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
+| `sk imagine "prompt" [--out f.png]` | Generate an image via the provider images endpoint |
 | `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
-| `sk mcp [--allow-writes]` | MCP server over stdio (17 tools, safe defaults) |
+| `sk mcp [--allow-writes]` | MCP server over stdio (18 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see `docs/mcp-client.md`) |
 | `sk doctor [--fix]` / `sk report` / `sk models [list \| pull <id> \| prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
 | `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
@@ -192,7 +193,7 @@ flowchart TB
     CLI --> AGENT[agent.py: stream → tools → synthesize]
     TUI --> AGENT
     AGENT --> GROUND[deterministic grounding: ~/paths, URLs,\nsysinfo — injected before the model sees the prompt]
-    AGENT --> TOOLS[tools.py: 17 tools, allowlists,\nhard-blocks, SSRF guard]
+    AGENT --> TOOLS[tools.py: 18 tools, allowlists,\nhard-blocks, SSRF guard]
     AGENT --> MEM[(store.py: history, memories FTS5,\ntodos, shell log)]
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```
@@ -206,7 +207,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 618 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 625 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.

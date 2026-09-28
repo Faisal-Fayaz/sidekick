@@ -9,6 +9,7 @@ from .write import (
     WRITE_TOOLS,
     tool_delete_file,
     tool_edit_file,
+    tool_generate_image,
     tool_make_dir,
     tool_write_file,
 )
@@ -143,6 +144,32 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "generate_image",
+            "description": "Generate an image from a text prompt via the provider images endpoint (saved under HOME or /tmp). REQUIRES user approval. Fails clearly where unsupported.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Output file path, e.g. ~/pics/panda.png",
+                    },
+                    "prompt": {"type": "string", "description": "Image description"},
+                    "size": {
+                        "type": "string",
+                        "description": "One of 256x256, 512x512, 1024x1024, 1024x1792, 1792x1024 (default 1024x1024)",
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Image model id override (else the provider default)",
+                    },
+                },
+                "required": ["path", "prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "remember",
             "description": "Save a short fact for future sessions (e.g. 'prefers qwen3:4b for speed'). No approval needed.",
             "parameters": {
@@ -270,6 +297,13 @@ def dispatch_tool(name: str, args: dict) -> str:
         )
     if name == "make_dir":
         return tool_make_dir(str(args.get("path", "")))
+    if name == "generate_image":
+        return tool_generate_image(
+            str(args.get("path", "")),
+            str(args.get("prompt", "")),
+            str(args.get("size", "") or ""),
+            str(args.get("model", "") or ""),
+        )
     if name == "remember":
         from sk.store import save_memory
 

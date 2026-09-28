@@ -28,15 +28,15 @@ def test_initialized_notification_silent():
     )
 
 
-def test_tools_list_all_seventeen():
+def test_tools_list_all_eighteen():
     out = _req("tools/list")
     tools = out["result"]["tools"]
-    assert len(tools) == 17
+    assert len(tools) == 18
     for t in tools:
         assert set(t) >= {"name", "description", "inputSchema"}
         assert isinstance(t["inputSchema"], dict)
     names = {t["name"] for t in tools}
-    assert {"sysinfo", "shell", "write_file", "read_url", "skill"} <= names
+    assert {"sysinfo", "shell", "write_file", "read_url", "skill", "generate_image"} <= names
 
 
 def test_call_read_tool():
@@ -106,5 +106,5 @@ def test_batch_mixed():
     ]
     out = json.loads(mcp.handle_line(json.dumps(batch)))
     assert isinstance(out, list) and len(out) == 2  # notification answered with silence
-    assert out[0]["id"] == 1 and len(out[0]["result"]["tools"]) == 17
+    assert out[0]["id"] == 1 and len(out[0]["result"]["tools"]) == 18
     assert out[1]["result"]["isError"] is False

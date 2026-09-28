@@ -15,7 +15,7 @@ import re
 import time
 from pathlib import Path
 
-CHECKPOINT_TOOLS = ("write_file", "edit_file", "delete_file")
+CHECKPOINT_TOOLS = ("write_file", "edit_file", "delete_file", "generate_image")
 MAX_CHECKPOINTS = 20
 MAX_FILE_BYTES = 1_000_000
 
