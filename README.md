@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-634%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-639%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml/badge.svg)](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sidekick-agent.svg)](https://pypi.org/project/sidekick-agent/)
 
@@ -55,7 +55,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 634-test suite incl. prompt-regression evals | ✅ | rare |
+| 639-test suite incl. prompt-regression evals | ✅ | rare |
 | Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
 | Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
@@ -163,6 +163,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk digest [--force]` | Teammate pilot: brief + overnight failures, desktop nudge or log |
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
+| `sk search QUERY [--session S]` | Full-text search across past transcripts |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
 | `sk imagine "prompt" [--out f.png]` | Generate an image via the provider images endpoint |
@@ -207,7 +208,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 634 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 639 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.

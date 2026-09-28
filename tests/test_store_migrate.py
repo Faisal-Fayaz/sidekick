@@ -20,7 +20,7 @@ def test_fresh_db_stamped_current(tmp_path, monkeypatch):
     conn = store._connect()
     conn.close()
     assert _version(db) == store.SCHEMA_VERSION
-    assert store.SCHEMA_VERSION == 4
+    assert store.SCHEMA_VERSION == 5
 
 
 def test_preversioning_db_upgrades_preserving_data(tmp_path, monkeypatch):
@@ -112,7 +112,7 @@ def test_v3_to_v4_adds_summaries_preserving_data(tmp_path, monkeypatch):
     store.save_summary("s", "greeting exchanged", 1)
     assert store.get_summary("s") == ("greeting exchanged", 1)
     assert store.get_history("s") == [{"role": "user", "content": "hi"}]
-    assert _version(db) == 4
+    assert _version(db) == store.SCHEMA_VERSION
 
 
 def test_newer_db_left_untouched(tmp_path, monkeypatch):
