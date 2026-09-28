@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .read import tool_exec, tool_list_dir, tool_read_file, tool_sysinfo
-from .shell import tool_shell
+from .shell import tool_shell, tool_shell_session
 from .web import tool_read_url, tool_web_search
 from .write import (
     WRITE_TOOLS,
@@ -15,7 +15,7 @@ from .write import (
 )
 
 # everything requiring user approval (writes + general shell + delete)
-APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "delete_file"}
+APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "shell_session", "delete_file"}
 
 TOOLS_SCHEMA = [
     {
@@ -75,6 +75,25 @@ TOOLS_SCHEMA = [
                 "type": "object",
                 "properties": {
                     "cmd": {"type": "string", "description": "Full bash command"},
+                    "timeout": {"type": "integer", "description": "Seconds, default 30, max 120"},
+                },
+                "required": ["cmd"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell_session",
+            "description": "Run a command in a persistent bash session where cwd/env survive across calls (kills the 'cd did not stick' class). Approval-gated like shell. `exit` as cmd closes the session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cmd": {"type": "string", "description": "Full bash command"},
+                    "session": {
+                        "type": "string",
+                        "description": "Session name (default 'default'); separate names isolate state",
+                    },
                     "timeout": {"type": "integer", "description": "Seconds, default 30, max 120"},
                 },
                 "required": ["cmd"],
@@ -285,6 +304,14 @@ def dispatch_tool(name: str, args: dict) -> str:
         except Exception:
             timeout = 30
         return tool_shell(str(args.get("cmd", "")), timeout)
+    if name == "shell_session":
+        try:
+            timeout = int(args.get("timeout", 30) or 30)
+        except Exception:
+            timeout = 30
+        return tool_shell_session(
+            str(args.get("cmd", "")), str(args.get("session", "") or "default"), timeout
+        )
     if name == "delete_file":
         return tool_delete_file(str(args.get("path", "")))
     if name == "write_file":
