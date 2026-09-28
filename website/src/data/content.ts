@@ -1,4 +1,4 @@
-export const VERSION = '0.20.0';
+export const VERSION = '0.21.0';
 export const PACKAGE_NAME = 'sidekick-agent';
 export const REPO_URL = 'https://github.com/Faisal-Fayaz/sidekick';
 export const PYPI_URL = 'https://pypi.org/project/sidekick-agent/';
@@ -84,7 +84,7 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Chat & Voice', cmd: '/compact [focus] · /diff · /review [base]', what: 'Fold history now, show the working-tree diff, ask the agent to review it.' },
   { group: 'Chat & Voice', cmd: '/rewind [n]', what: 'Undo an agent file edit — every write/edit/delete is snapshotted.' },
   { group: 'Chat & Voice', cmd: '/plan · /build', what: 'Propose without writing (file writes blocked) · back to build mode. F4 toggles.' },
-  { group: 'Chat & Voice', cmd: 'F5 model picker', what: 'Popup: current ●, fast/smart, live provider models. Filter, Enter switches.' },
+  { group: 'Chat & Voice', cmd: 'F5 model picker', what: 'All providers in one list — selecting auto-switches provider. Filter, Enter switches.' },
   { group: 'Chat & Voice', cmd: '/init', what: 'Scaffold SIDEKICK.md repo conventions in this directory.' },
   { group: 'Runs & Jobs', cmd: 'sk run "task" [--yes] [--read-only] [--plan] [--model auto|fast|smart] [--json] [--bg]', what: 'Single-shot agent run. --json emits one machine-readable doc + exit codes.' },
   { group: 'Runs & Jobs', cmd: 'sk jobs [-n N]', what: 'List background jobs from `sk run --bg`.' },
@@ -204,7 +204,13 @@ export const WHATNEW = [
   {
     tag: 'F5 picker',
     title: 'Switch models mid-session',
-    body: 'A popup with the current model, fast/smart aliases and the live provider list. Filter, Enter, done.',
+    body: 'A popup covering every usable provider — selecting auto-switches provider too. Filter, Enter, done.',
+    link: '/commands',
+  },
+  {
+    tag: 'F2 themes',
+    title: 'Five themes, opencode included',
+    body: 'Sidekick dark/light plus opencode, dracula and tokyonight palettes. F2 pops the picker; choice persists.',
     link: '/commands',
   },
 ];
@@ -215,7 +221,7 @@ export const COMPARISON: { label: string; sidekick: string; typical: string }[] 
   { label: 'Copy/paste that works in-terminal', sidekick: 'drag-select, ctrl+y, /copy', typical: 'varies' },
   { label: 'Answers grounded in your system', sidekick: 'deterministic grounding', typical: 'prompt-only' },
   { label: 'Readable skill packs (SKILL.md)', sidekick: 'yes', typical: 'varies' },
-  { label: '561-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
+  { label: '578-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
 ];
 
 export const TUI_KEYS = [
@@ -226,7 +232,7 @@ export const TUI_KEYS = [
   { keys: ['ctrl+g'], action: 'push-to-talk' },
   { keys: ['pgup', 'pgdn'], action: 'scroll' },
   { keys: ['F1'], action: 'help cheatsheet' },
-  { keys: ['F2'], action: 'dark / light theme' },
+  { keys: ['F2'], action: 'theme picker' },
   { keys: ['F3'], action: 'sessions drawer' },
   { keys: ['F4'], action: 'plan mode toggle' },
   { keys: ['F5'], action: 'model picker' },
@@ -262,6 +268,7 @@ export const FAQS = [
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [];
 
 export const ROADMAP_DONE = [
+  'v0.21.0 — cross-provider picker (#139), theme pack: opencode/dracula/tokyonight + F2 picker (#138)',
   'v0.20.0 — build/plan modes (#131), TUI model picker (#130)',
   'v0.19.0 — agent-capability batch: read-only mode (#98), session slash parity (#100), checkpoints + /rewind (#103), project memory (#105), MCP client (#107)',
   'v0.18.0 — support + adoption: doctor --fix/report (#70), release policy + guard (#71), contributor growth + good-first pipeline (#72)',
