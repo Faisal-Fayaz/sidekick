@@ -104,7 +104,9 @@ sk chat              # fallback REPL: dumb terminals, screen readers, broken TUI
 
 Type `/` and an autocomplete popup filters all 20+ commands — Enter completes, Tab too, Esc dismisses, ↑/↓ navigates. `F1` opens a generated cheatsheet (keys + commands, built from the same tables as the dispatcher, so it can't rot).
 
-TUI keys: **Enter** sends · **ctrl+j**/**alt+enter** newline · **↑/↓** history · **ctrl+y** copies · **ctrl+g** push-to-talk · **pgup/pgdn** scroll · **F1** help · **F2** dark/light theme · **F3** sessions drawer. Answers stream live as Markdown with role colors; approvals arrive as cards with timeout; the status bar shows model · session · last-turn time/tokens.
+TUI keys: **Enter** sends · **ctrl+j**/**alt+enter** newline · **↑/↓** history · **ctrl+y** copies · **ctrl+g** push-to-talk · **pgup/pgdn** scroll · **F1** help · **F2** dark/light theme · **F3** sessions drawer · **F4** plan/build toggle · **F5** model picker (filter + live provider list). Answers stream live as Markdown with role colors; approvals arrive as cards with timeout; the status bar shows model · session · last-turn time/tokens.
+
+Plan mode proposes without writing: `/plan` blocks file writes in chat (`/build` reverts), `F4` toggles the same in the TUI, and `sk run --plan` does it single-shot. Sessions carry `/compact [hint]` (summarize history on demand), `/diff` and `/review` (inspect the working tree), plus `/rewind [n]` to undo agent file edits.
 
 ## Voice
 
@@ -148,8 +150,10 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop) |
 | `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
+| `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it from inside a session |
+| `/plan`, `/build` | Plan mode: propose without writing (blocked writes) / back to build mode |
 | `/rewind [n]` | Undo an agent file edit — snapshots write/edit/delete targets (`shell` mutations are not tracked, use git for those) |
-| `sk run "task" [--yes] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools) |
+| `sk run "task" [--yes] [--plan] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools; `--plan` proposes without writing) |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk digest [--force]` | Teammate pilot: brief + overnight failures, desktop nudge or log |
@@ -208,6 +212,8 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 **History budget:** `history_budget_tokens` (default 3000) caps per-turn history; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
 
 **Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may set `provider`, `model`, `max_steps`, `temperature`, plus a `[project]` table (`docs` files injected into the prompt, `memory_namespace`, `approved_commands` for `shell`). `api_key`/`base_url` are *never* read from project files (global/env only) — `sk config --show` prints the active project and any ignored keys. `sk --cwd PATH` runs any command as if in that directory.
+
+**Project memory auto-discovery:** from the cwd upward, the first `SIDEKICK.md` / `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` found (root-down) is injected into the prompt automatically — no config needed for repos that already document themselves.
 
 ## Roadmap
 
