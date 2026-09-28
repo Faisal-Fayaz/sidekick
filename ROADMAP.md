@@ -24,7 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.22.0 (unplanned — propose by PR)
+## Next — v0.24.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -74,7 +74,9 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
-- `v0.21.0` — cross-provider model picker sections with auto-switch (#139), theme pack: opencode/dracula/tokyonight + F2 picker (#138).
+- `v0.23.0` — image generation (#192), persistent shell sessions (#179), session search (#190).
+- `v0.22.0` — cross-provider picker (#139), theme pack (#138), README + website catch-up docs.
+- `v0.21.0` — website plan/picker docs (#135), picker full-list fix (#136).
 - `v0.20.0` — build/plan modes (#131), TUI model picker (#130).
 - `v0.19.1` — website feature-docs follow-up.
 - `v0.19.0` — agent-capability batch: read-only mode (#98), session slash parity (#100), checkpoints + /rewind (#103), project memory (#105), MCP client (#107).
