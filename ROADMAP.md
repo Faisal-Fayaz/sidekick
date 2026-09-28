@@ -51,6 +51,12 @@ Thesis: own the users cloud agents structurally can't serve
 - **Windows decision** — CI is ubuntu+macos only and the code assumes POSIX. Either scope Windows support or declare it a non-goal explicitly.
 - **Golden eval seed** — first golden-file tests for the eval harness: 3–5 locked prompt→reply pairs for the highest-traffic turns.
 - **Compaction evals** — quality bar for rolling session summaries: faithfulness checks so long sessions don't silently degrade.
+- **Registry trust + signing** — checksum pinning for remote packs (deferred from #48/#50): index carries hashes, installs verify before cloning, mismatch fails closed.
+- **Backup + restore** — machine migration for `~/.sidekick` (history, memories, config, skills): single export/import path so a new laptop doesn't mean amnesia.
+- **Docs freshness gate** — CI check locking the README command table to `--help` output, generalizing the badge-gate pattern.
+- **Voice track** — STT quality bar, install-friction reduction, coverage for talk/mic paths. The only user surface with zero roadmap presence.
+- **Release automation for AUR/conda** — auto-push both channels on release (Distribution health covers verifying; this closes the loop to publishing).
+- **Quality tracking** — nightly model-quality scoreboard over a fixed eval set, tracked across releases.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
