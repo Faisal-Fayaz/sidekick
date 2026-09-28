@@ -57,6 +57,8 @@ Thesis: own the users cloud agents structurally can't serve
 - **Voice track** — STT quality bar, install-friction reduction, coverage for talk/mic paths. The only user surface with zero roadmap presence.
 - **Release automation for AUR/conda** — auto-push both channels on release (Distribution health covers verifying; this closes the loop to publishing).
 - **Quality tracking** — nightly model-quality scoreboard over a fixed eval set, tracked across releases.
+- **Egress-proof compliance report (#156)** — tamper-evident proof-of-no-egress from the audit ledger (turns local-vs-egress rows into a sales document for regulated shops; pairs with air-gapped install).
+- **Benchmark proof (#157)** — public fixed-task numbers: local 4GB vs cloud agents, with the $0 cost column. Makes "great on weak hardware" checkable instead of folklore.
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
