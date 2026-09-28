@@ -9,6 +9,8 @@
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-608%20passing-brightgreen.svg)](tests/)
+[![CI](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml/badge.svg)](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/sidekick-agent.svg)](https://pypi.org/project/sidekick-agent/)
 
 *No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
 
@@ -24,7 +26,7 @@ A grounded answer — real tools, real system data, streamed live:
 
 ![Grounded answer](docs/tui-chat.svg)
 
-*Screenshots are real SVG captures of the app running headless (`docs/shot.py`), not mockups.*
+*Screenshots are real SVG captures of the app running headless (`docs/shot.py`), not mockups. A marketing/docs site lives in [`website/`](website/) (Vite + React + TS).*
 
 ```console
 $ sk brief
@@ -54,6 +56,8 @@ heard> what files are in the sidekick repo
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
 | 608-test suite incl. prompt-regression evals | ✅ | rare |
+| Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
+| Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
 ## Quickstart
 
@@ -150,6 +154,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop) |
 | `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
+| `/yolo`, `/confirm`, `/readonly` | Approval modes: auto-approve writes / ask every time / block all file writes (research mode) |
 | `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it from inside a session |
 | `/plan`, `/build` | Plan mode: propose without writing (blocked writes) / back to build mode |
 | `/rewind [n]` | Undo an agent file edit — snapshots write/edit/delete targets (`shell` mutations are not tracked, use git for those) |
@@ -162,7 +167,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk history` / `sk oops` | Shell log / explain last failure |
 | `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
-| `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens) |
+| `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
@@ -208,7 +213,7 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 ## Config
 
-`~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`. Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
+`~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`, `SIDEKICK_SPEND_CAP` (per-session USD cap, `0` = unlimited). Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
 
 **History budget:** `history_budget_tokens` (default 3000) caps per-turn history; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
 
