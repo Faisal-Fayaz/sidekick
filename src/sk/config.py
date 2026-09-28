@@ -382,9 +382,9 @@ class Config:
         prov = str(provider or vals.get("provider", DEFAULTS["provider"])).strip().lower()
         if prov not in PRESETS:
             prov = "custom"
-        theme = str(vals.get("theme", DEFAULTS["theme"])).strip().lower()
-        if theme not in ("dark", "light"):
-            theme = "dark"
+        from sk.tui.theme import normalize_theme_name
+
+        theme = normalize_theme_name(vals.get("theme", DEFAULTS["theme"]))
         cfg = cls(
             provider=prov,
             model=str(

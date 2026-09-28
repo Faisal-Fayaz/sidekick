@@ -27,7 +27,7 @@ class SidekickTUI(App):
         ("ctrl+home", "scroll_log_top", "top"),
         ("ctrl+end", "scroll_log_bottom", "bottom"),
         ("f1", "toggle_help", "help"),
-        ("f2", "toggle_theme", "theme"),
+        ("f2", "toggle_theme", "themes"),
         ("f3", "toggle_sessions", "sessions"),
         ("f4", "toggle_plan", "plan mode"),
         ("f5", "toggle_models", "models"),
@@ -48,6 +48,8 @@ class SidekickTUI(App):
     #model-picker { dock: right; width: 46; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     #model-filter { height: 3; }
     #model-list { height: 1fr; }
+    #theme-picker { dock: right; width: 32; height: auto; max-height: 12; border: solid $primary-muted; background: $surface; display: none; }
+    #theme-list { height: auto; }
     """
 
     def __init__(self, model: str = "", session: str = "", allow: tuple[str, ...] = ()):
@@ -67,6 +69,7 @@ class SidekickTUI(App):
         self._plan_approved: frozenset[str] | None = None
         self._drawer_sessions: list[str] = []
         self._drawer_models: list[tuple[str | None, str]] = []
+        self._drawer_themes: list[str] = []
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -87,6 +90,8 @@ class SidekickTUI(App):
         with Vertical(id="model-picker"):
             yield Input(placeholder="filter models…", id="model-filter")
             yield ListView(id="model-list")
+        with Vertical(id="theme-picker"):
+            yield ListView(id="theme-list")
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
             yield Static("ctrl+g\nto talk", id="mic-status")
@@ -132,23 +137,101 @@ class SidekickTUI(App):
             pass
 
     def action_toggle_theme(self) -> None:
-        """F2: flip dark <-> light, persist to config. Existing log lines keep
-        their baked-in colors; new output uses the new palette."""
-        from sk.config import Config
+        """F2: theme picker popup. Esc dismisses."""
+        from textual.containers import Vertical
 
-        from .theme import mode_for_name, toggle_theme
-
-        name = toggle_theme(self)
         try:
-            cfg = Config.load()
-            cfg.theme = mode_for_name(name)
-            cfg.save()
+            box = self.query_one("#theme-picker", Vertical)
+        except Exception:
+            return
+        if box.display:
+            self._hide_theme_picker()
+            return
+        self._render_theme_picker()
+        box.styles.display = "block"
+        try:
+            self.query_one("#theme-list", ListView).focus()
+        except Exception:
+            pass
+
+    def _theme_choices(self) -> list[tuple[str, str]]:
+        """(id, label) rows for every registered theme, current marked ●."""
+        from .theme import THEME_NAMES, current_name
+
+        cur = current_name()
+        return [
+            (name, f"● {name} (current)" if name == cur else f"○ {name}")
+            for name in THEME_NAMES
+        ]
+
+    def _render_theme_picker(self) -> None:
+        """Fill the theme list. Never raises."""
+        try:
+            lst = self.query_one("#theme-list", ListView)
+        except Exception:
+            return
+        try:
+            self._drawer_themes = []
+            lst.clear()
+            for tid, label in self._theme_choices():
+                self._drawer_themes.append(tid)
+                lst.append(ListItem(Label(label)))
+        except Exception:
+            pass
+
+    def _theme_picker_visible(self) -> bool:
+        try:
+            from textual.containers import Vertical
+
+            return bool(self.query_one("#theme-picker", Vertical).display)
+        except Exception:
+            return False
+
+    def _hide_theme_picker(self) -> None:
+        try:
+            from textual.containers import Vertical
+
+            self.query_one("#theme-picker", Vertical).styles.display = "none"
         except Exception:
             pass
         try:
+            self.query_one("#chat-input", ChatArea).focus()
+        except Exception:
+            pass
+
+    @on(ListView.Selected, "#theme-list")
+    def _theme_chosen(self, ev: ListView.Selected) -> None:
+        try:
+            idx = ev.list_view.index if ev.list_view.index is not None else 0
+        except Exception:
+            return
+        self._choose_theme(idx)
+
+    def _choose_theme(self, idx: int) -> None:
+        """Apply the highlighted theme: activate + persist + refresh. Never raises."""
+        try:
+            tid = self._drawer_themes[idx]
+        except Exception:
+            return
+        try:
+            from sk.config import Config
+
+            from .theme import normalize_theme_name, set_theme
+
+            name = normalize_theme_name(tid)
+            set_theme(self, name)
+            cfg = Config.load()
+            cfg.theme = name
+            try:
+                cfg.save()
+            except Exception:
+                pass
+            log = self.query_one("#chat-log", RichLog)
+            _role(log, "sys", f"theme → `{name}`")
             self._sub()
         except Exception:
             pass
+        self._hide_theme_picker()
 
     def action_toggle_plan(self) -> None:
         """F4: flip plan mode (propose, don't implement). Mirrors /plan + /build."""
@@ -173,6 +256,7 @@ class SidekickTUI(App):
             return
         self._hide_sessions_drawer()
         self._hide_model_picker()
+        self._hide_theme_picker()
 
     def _sessions_visible(self) -> bool:
         try:
@@ -780,11 +864,11 @@ class SidekickTUI(App):
     def _sub(self) -> None:
         from sk.config import Config
 
-        from .theme import name_for_mode, set_theme
+        from .theme import normalize_theme_name, set_theme
 
         cfg = Config.load()
         self._cfg = cfg
-        set_theme(self, name_for_mode(cfg.theme))
+        set_theme(self, normalize_theme_name(cfg.theme))
         model = self.model_override or cfg.model
         if self.state.get("readonly"):
             mode = "readonly"
