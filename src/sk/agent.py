@@ -372,11 +372,21 @@ def _parse_text_tool(text: str) -> tuple[str, dict] | None:
     return hits[0] if hits else None
 
 
-def _extra_body(cfg: Config) -> dict:
+def _extra_body(cfg: Config, plan_mode: bool = False) -> dict:
     """Provider-specific request params. Ollama-only knobs (options/num_ctx)
-    break cloud APIs with 400s, so they ship for local servers exclusively."""
+    break cloud APIs with 400s, so they ship for local servers exclusively.
+    The reasoning effort ships for OpenRouter only (unknown custom endpoints
+    may 400 on unfamiliar keys): plan mode escalates to high, otherwise the
+    configured level applies; "off" omits the key (provider default). Never raises."""
     if cfg.provider in ("ollama", "lmstudio"):
         return {"options": {"num_ctx": 4096, "num_predict": 350}}
+    if cfg.provider == "openrouter":
+        try:
+            level = "high" if plan_mode else str(getattr(cfg, "reasoning_effort", "low") or "low")
+        except Exception:
+            level = "low"
+        if level.strip().lower() not in ("", "off"):
+            return {"reasoning": {"effort": level.strip().lower()}}
     return {}
 
 
@@ -1241,7 +1251,7 @@ def run_agent(
     # Token cap is profile-aware (model_profiles.max_tokens_for): tight on
     # local CPU offload, roomy on frontier cloud models so whole-file
     # tool calls fit. (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
-    extra = _extra_body(cfg)
+    extra = _extra_body(cfg, plan_mode)
     from .model_profiles import (
         effective_max_steps,
         max_parallel_for,

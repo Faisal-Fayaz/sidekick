@@ -72,11 +72,16 @@ def test_extra_body_local_only():
         provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
     )
     assert _extra_body(ollama) == {"options": {"num_ctx": 4096, "num_predict": 350}}
-    for prov in ("openai", "groq", "together", "deepseek", "openrouter", "custom"):
+    for prov in ("openai", "groq", "together", "deepseek", "custom"):
         cfg = Config(
             provider=prov, model="m", base_url="", api_key="k", max_steps=5, temperature=0.2
         )
         assert _extra_body(cfg) == {}, prov  # cloud 400s on Ollama-only 'options'
+    assert _extra_body(
+        Config(
+            provider="openrouter", model="m", base_url="", api_key="k", max_steps=5, temperature=0.2
+        )
+    ) == {"reasoning": {"effort": "low"}}  # effort ships for OpenRouter only
 
 
 def test_theme_default_and_validation(tmp_path, monkeypatch):
