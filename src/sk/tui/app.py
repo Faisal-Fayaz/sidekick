@@ -1093,7 +1093,9 @@ class SidekickTUI(App):
         if approved:
             self._mark_resolved(name, path, "approved")
         else:
-            self._mark_resolved(name, path, "denied", f"you answered '{pending.get('reply', '')[:20]}'")
+            self._mark_resolved(
+                name, path, "denied", f"you answered '{pending.get('reply', '')[:20]}'"
+            )
         return approved
 
     def _review_plan(self, plan_text: str, calls: list) -> bool:
