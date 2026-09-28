@@ -18,10 +18,15 @@ from .helpers import (
 )
 from .launch import launch
 from .theme import (
+    DRACULA_NAME,
+    OPENCODE_NAME,
+    THEME_NAMES,
+    TOKYONIGHT_NAME,
     current_name,
     install_sidekick_theme,
     mode_for_name,
     name_for_mode,
+    normalize_theme_name,
     set_theme,
     toggle_theme,
 )
@@ -36,6 +41,11 @@ __all__ = [
     "set_theme",
     "toggle_theme",
     "current_name",
+    "normalize_theme_name",
+    "THEME_NAMES",
+    "OPENCODE_NAME",
+    "DRACULA_NAME",
+    "TOKYONIGHT_NAME",
     "name_for_mode",
     "mode_for_name",
     "is_affirmative",
