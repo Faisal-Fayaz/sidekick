@@ -81,7 +81,12 @@ def fetch_models(provider: str, base_url: str, api_key: str, timeout: int = 15) 
     if not base:
         raise RuntimeError("no base URL (set provider first)")
     if provider == "anthropic":
-        r = httpx.get(f"{base}/v1/models", headers=anthropic_headers(api_key), timeout=timeout)
+        r = httpx.get(
+            f"{base}/v1/models",
+            headers=anthropic_headers(api_key),
+            params={"limit": 1000},
+            timeout=timeout,
+        )
         r.raise_for_status()
         return [m["id"] for m in r.json().get("data", [])]
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
