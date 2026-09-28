@@ -25,9 +25,48 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 PROJECT_FILENAME = ".sidekick.toml"
 # Keys a project file may never set: traffic diverters. A hostile repo could
 # otherwise point your prompts (incl. memories) at its own server.
-PROJECT_BLOCKED_KEYS = ("api_key", "base_url", "mcp_servers")
+PROJECT_BLOCKED_KEYS = ("api_key", "base_url", "mcp_servers", "hooks")
 # Policy keys a project file may not set either (warned, not security-critical).
 PROJECT_POLICY_KEYS = ("spend_cap_usd",)
+
+
+HOOK_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse")
+
+
+def _parse_hooks(raw: object) -> tuple[dict, ...]:
+    """Normalize [[hooks.<Event>]] handler lists from the global config file.
+
+    Invalid entries are dropped. Project files may not set this (blocked key:
+    repos must not auto-run commands). Never raises.
+    """
+    if not isinstance(raw, dict):
+        return ()
+    out: list[dict] = []
+    for event, handlers in raw.items():
+        if str(event) not in HOOK_EVENTS:
+            continue
+        if isinstance(handlers, dict):
+            handlers = [handlers]
+        if not isinstance(handlers, list):
+            continue
+        for h in handlers:
+            if not isinstance(h, dict):
+                continue
+            command = str(h.get("command", "") or "").strip()
+            if not command:
+                continue
+            try:
+                timeout = float(h.get("timeout", 30) or 30)
+            except (TypeError, ValueError):
+                timeout = 30.0
+            out.append(
+                {
+                    "event": str(event),
+                    "command": command,
+                    "timeout": min(max(timeout, 1.0), 120.0),
+                }
+            )
+    return tuple(out)
 
 
 def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
@@ -327,6 +366,7 @@ class Config:
     approved_commands: tuple[str, ...] = ()
     project_warnings: tuple[str, ...] = ()
     mcp_servers: tuple[dict, ...] = ()  # global config file only; never from projects
+    hooks: tuple[dict, ...] = ()  # global config file only; never from projects
 
     def effective_base_url(self) -> str:
         if self.base_url.strip():
@@ -407,6 +447,7 @@ class Config:
             approved_commands=tuple(vals.get("approved_commands", [])),  # type: ignore[arg-type]
             project_warnings=tuple(project_warnings),
             mcp_servers=_parse_mcp_servers(file_vals.get("mcp_servers", {})),
+            hooks=_parse_hooks(file_vals.get("hooks", {})),
         )
         cfg.normalize_model_alias()
         try:
