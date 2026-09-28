@@ -59,6 +59,14 @@ Thesis: own the users cloud agents structurally can't serve
 - **Quality tracking** — nightly model-quality scoreboard over a fixed eval set, tracked across releases.
 - **Egress-proof compliance report (#156)** — tamper-evident proof-of-no-egress from the audit ledger (turns local-vs-egress rows into a sales document for regulated shops; pairs with air-gapped install).
 - **Benchmark proof (#157)** — public fixed-task numbers: local 4GB vs cloud agents, with the $0 cost column. Makes "great on weak hardware" checkable instead of folklore.
+- **Image/screenshot input (#178)** — attach a screenshot and ask what's wrong; `read_file` analog for images via local vision models.
+- **Persistent shell sessions (#179)** — long-lived bash session (cwd/env/venv survive); opt-in beside one-shot `shell`.
+- **JS-capable page extraction (#182)** — renderer-or-fallback chain for JS-heavy pages; SSRF/content caps unchanged.
+- **Showcase gallery (#183)** — curated user transcripts (`sk export`) into `docs/showcase/`.
+- **Public changelog narrative (#186)** — human what's-new per minor since 0.14.0, linked from README + site.
+- **Benchmark leaderboard section (#188)** — empty table shell now, filled by #157 later.
+- **Config profiles (#189)** — named `~/.sidekick/profiles/` switchable via flag.
+- **Session search (#190)** — full-text search across past transcripts (FTS5 already in stack).
 
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
