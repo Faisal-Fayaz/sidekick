@@ -167,15 +167,18 @@ def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
 
 def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
     """v5: messages.namespace + messages_fts transcript search. Idempotent."""
-    cols = [row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()]
-    if "namespace" not in cols:
-        conn.execute("ALTER TABLE messages ADD COLUMN namespace TEXT NOT NULL DEFAULT ''")
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "messages" in tables:
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()]
+        if "namespace" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN namespace TEXT NOT NULL DEFAULT ''")
     try:
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content)")
-        conn.execute(
-            "INSERT INTO messages_fts(rowid, content) SELECT id, content FROM messages"
-            " WHERE id NOT IN (SELECT rowid FROM messages_fts)"
-        )
+        if "messages" in tables:
+            conn.execute(
+                "INSERT INTO messages_fts(rowid, content) SELECT id, content FROM messages"
+                " WHERE id NOT IN (SELECT rowid FROM messages_fts)"
+            )
         conn.commit()
     except Exception:
         pass
@@ -554,9 +557,7 @@ def search_sessions(
             f" WHERE m.content LIKE ? AND {scope} ORDER BY m.id DESC LIMIT ?",
             (like, *params, limit),
         )
-        return [
-            {"session": s, "role": r, "snippet": t, "ts": ts} for s, r, t, ts in cur.fetchall()
-        ]
+        return [{"session": s, "role": r, "snippet": t, "ts": ts} for s, r, t, ts in cur.fetchall()]
     except Exception:
         return []
     finally:
