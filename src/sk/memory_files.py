@@ -134,7 +134,7 @@ def scaffold_memory(cwd: str = "") -> str:
         d = Path(cwd or os.getcwd()).expanduser()
         for name in MEMORY_NAMES:
             if (d / name).is_file():
-                return f"_already have {(d / name).name} — edit it instead of scaffolding_"
+                return f"Blocked: already have {(d / name).name} — edit it instead of scaffolding"
         facts = detect_facts(str(d))
         stack = "\n".join(f"- {s}" for s in facts["stack"]) or "- (record the stack)"
         test = f"- test: `{facts['test']}`" if facts["test"] else "- test: (record the command)"
@@ -149,4 +149,4 @@ def scaffold_memory(cwd: str = "") -> str:
         (d / "SIDEKICK.md").write_text(body)
         return "_created SIDEKICK.md with detected facts — fill in Commands/Conventions_"
     except Exception as e:
-        return f"_could not scaffold SIDEKICK.md ({e})_"
+        return f"Error: could not scaffold SIDEKICK.md ({e})"
