@@ -220,8 +220,9 @@ def tool_read_url(url: str, max_chars: int = 6000) -> str:
         return blocked
     max_chars = max(500, min(int(max_chars or 6000), 15000))
     try:
-        import httpx
         from urllib.parse import urljoin
+
+        import httpx
 
         # Manual redirect chain: every hop is re-validated against the SSRF
         # guard (httpx auto-follow would fetch redirect targets unchecked).
