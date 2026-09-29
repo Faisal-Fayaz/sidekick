@@ -515,7 +515,7 @@ def test_agent_stream_error_surfaces_when_post_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(ab, "_stream", _boom)
     monkeypatch.setattr(ab, "_post", _post_boom)
     out = ab.run_anthropic_agent("hi", [], _cfg(), session="s")
-    assert out.startswith("Error talking to anthropic")
+    assert out.startswith("Turn failed partway") and "nothing yet" in out
 
 
 def test_readonly_prompt_line_on_native_path(tmp_path, monkeypatch):
@@ -565,3 +565,27 @@ def test_fetch_models_anthropic_requests_full_page(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
     assert auth.fetch_models("anthropic", "https://api.anthropic.com", "k") == []
     assert seen.get("params", {}).get("limit") == 1000
+
+
+def test_error_carries_progress_anthropic(tmp_path, monkeypatch):
+    """#235: mocked failure mid-turn after a tool turn reports progress."""
+    _iso(tmp_path, monkeypatch)
+    calls = {"n": 0}
+
+    def fake_stream(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return (
+                [{"type": "tool_use", "id": "t1", "name": "list_dir", "input": {"path": "/tmp"}}],
+                "tool_use",
+            )
+        raise RuntimeError("overloaded")
+
+    def fake_post(*a, **k):
+        raise RuntimeError("overloaded")
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    monkeypatch.setattr(ab, "_post", fake_post)
+    out = ab.run_anthropic_agent("do things", [], _cfg(), approve=lambda n, a: True, session="s")
+    assert out.startswith("Turn failed partway")
+    assert "list_dir" in out and "overloaded" in out and "Resume with" in out

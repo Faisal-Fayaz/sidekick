@@ -166,3 +166,52 @@ def test_exhaustion_synthesizes_anthropic(tmp_path, monkeypatch):
     out = ab.run_anthropic_agent("do things", [], cfg, approve=lambda n, a: True, session="s")
     assert out == "recap: listed tmp, nothing blocked"
     assert "tools" not in seen["payload"]  # recap is a no-tools call
+
+
+def test_error_carries_progress_openai(tmp_path, monkeypatch):
+    """#235: mocked 400 mid-turn after writes returns progress, cause, hint."""
+    import sk.agent as agent
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    calls = {"n": 0}
+
+    class _Msg:
+        def __init__(self, content="", tool_calls=None, reasoning="", finish="stop"):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.reasoning = reasoning
+            self.finish = finish
+
+    class _TC:
+        def __init__(self, name="list_dir", args='{"path": "."}'):
+            self.id = "t1"
+            self.function = type("F", (), {"name": name, "arguments": args})()
+
+    def fake_stream(client, model, messages, tools, *a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Msg(content="", tool_calls=[_TC()])
+        raise RuntimeError("Error code: 400 - tool_use_failed")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("do things", [], _cfg(), approve=lambda n, a: True, session="s")
+    assert out.startswith("Turn failed partway")
+    assert "list_dir" in out and "400" in out and "Resume with" in out
+
+
+def test_error_without_progress_still_raises(tmp_path, monkeypatch):
+    """Zero completed work preserves the old raise contract."""
+    import sk.agent as agent
+    import sk.store as store
+
+    import pytest
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+
+    def fake_stream(*a, **k):
+        raise RuntimeError("Error code: 500 - boom")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    with pytest.raises(RuntimeError, match="500"):
+        agent.run_agent("do things", [], _cfg(), session="s")

@@ -1321,6 +1321,42 @@ def _drop_stale_control(messages: list) -> None:
         pass
 
 
+def _record_completed(
+    completed: list[str], batch: list[tuple[str, dict]], outs: list[tuple[str, bool]]
+) -> None:
+    """Append successful tool targets to the turn's progress ledger (capped).
+    Never raises. Feeds _error_with_progress when a later call fails."""
+    try:
+        for (name, args), (result, _) in zip(batch, outs):
+            if isinstance(result, str) and (
+                result.startswith("Error") or "blocked" in result[:60].lower()
+            ):
+                continue
+            completed.append(_tool_target(name, args or {}))
+            if len(completed) >= 10:
+                return
+    except Exception:
+        pass
+
+
+def _error_with_progress(completed: list[str], exc: BaseException) -> str:
+    """Turn-failure report with accumulated progress, cause, and resume hint.
+    Same display contract as the exhaustion synthesis. Never raises."""
+    try:
+        cause = str(exc)[:300] or type(exc).__name__
+    except Exception:
+        cause = "unknown error"
+    try:
+        done = "; ".join(completed[:10]) if completed else "nothing yet"
+    except Exception:
+        done = "nothing yet"
+    return (
+        f"Turn failed partway: {cause}\n"
+        f"Completed this turn: {done}\n"
+        f"Resume with: retry the failed step alone, or restate the task in smaller steps."
+    )
+
+
 def delegate_research(task: str, cfg: Config, session: str = "", max_steps: int = 3) -> str:
     """Read-only research turn that returns a digest string. Never raises.
 
@@ -1462,6 +1498,7 @@ def run_agent(
     final_text = ""
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
+    completed: list[str] = []  # per-turn tool work done (for error reports)
 
     max_parallel = max_parallel_for(cfg.model)
     # Some providers/models reject native function calling (HTTP 400 "tool
@@ -1507,6 +1544,8 @@ def run_agent(
                         pass
                 messages.append({"role": "user", "content": note})
                 continue
+            if completed:
+                return _error_with_progress(completed, e)
             raise
 
         # Reasoning-only turn (reasoning models, empty content): the trace
@@ -1550,6 +1589,7 @@ def run_agent(
                 read_only=read_only,
                 plan_mode=plan_mode,
             )
+            _record_completed(completed, batch, outs)
             combined = [
                 f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
             ]
@@ -1621,6 +1661,7 @@ def run_agent(
         )
         for (tid, _tname, _targs), (result, _repeated) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
+        _record_completed(completed, batch, outs)
 
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis (failures fall
