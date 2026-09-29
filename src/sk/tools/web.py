@@ -89,6 +89,89 @@ def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
     return (title, text[:limit])
 
 
+def _harvest_strings(obj, out: list, min_len: int = 24, cap: int = 8000) -> None:
+    """Recursively collect long strings from decoded JSON. Noisy keys skipped;
+    semantic keys (title/headline/...) get a lower bar. No dedupe beyond exact."""
+    import re
+
+    BOOST_KEYS = ("title", "headline", "name", "description", "articlebody", "text")
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in ("url", "image", "logo", "sameas", "@id", "@type"):
+                if isinstance(v, str):
+                    continue
+            if isinstance(v, str) and str(k).lower() in BOOST_KEYS:
+                s = re.sub(r"\s+", " ", v).strip()
+                if len(s) >= 8 and s not in out:
+                    out.append(s[:cap])
+            else:
+                _harvest_strings(v, out, min_len, cap)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out, min_len, cap)
+    elif isinstance(obj, str):
+        s = re.sub(r"\s+", " ", obj).strip()
+        if len(s) >= min_len and s not in out:
+            out.append(s[:cap])
+
+
+def extract_embedded_text(html: str, budget: int = 8000) -> str:
+    """Content for JS-rendered pages: JSON-LD, __NEXT_DATA__, embedded JSON,
+    meta/OG descriptions — the data SPAs ship for crawlers. Stdlib only."""
+    import json
+    import re
+    from html import unescape
+
+    parts: list[str] = []
+    try:
+        for m in re.finditer(
+            r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+            html[:500_000],
+            re.IGNORECASE | re.DOTALL,
+        ):
+            try:
+                data = json.loads(m.group(1).strip())
+            except Exception:
+                continue
+            _harvest_strings(data, parts)
+        nxt = re.search(
+            r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+            html[:500_000],
+            re.IGNORECASE | re.DOTALL,
+        )
+        if nxt:
+            try:
+                _harvest_strings(json.loads(nxt.group(1).strip()), parts)
+            except Exception:
+                pass
+        for m in re.finditer(
+            r'<script[^>]+type="application/json"[^>]*>(.*?)</script>',
+            html[:500_000],
+            re.IGNORECASE | re.DOTALL,
+        ):
+            try:
+                _harvest_strings(json.loads(m.group(1).strip()), parts)
+            except Exception:
+                continue
+        for attr in (
+            'property="og:description"',
+            'property="og:description"',
+            'name="description"',
+            'name="description"',
+        ):
+            for m in re.finditer(
+                r"<meta[^>]*" + attr + r"[^>]*content=\"([^\"]+)\"",
+                html[:200_000],
+                re.IGNORECASE,
+            ):
+                text = unescape(m.group(1)).strip()
+                if text and text not in parts:
+                    parts.append(text[:500])
+    except Exception:
+        pass
+    return "\n\n".join(parts)[:budget]
+
+
 def tool_web_search(query: str, count: int = 5) -> str:
     """Keyless web search via DuckDuckGo html endpoint. Returns title/url/snippet lines."""
     import re
@@ -157,7 +240,11 @@ def tool_read_url(url: str, max_chars: int = 6000) -> str:
         return "Error: page too large (>1MB)."
     title, text = _html_to_text(raw)
     if len(text) < 50:
-        text = raw[:max_chars]
+        embedded = extract_embedded_text(raw, budget=max_chars)
+        if len(embedded) >= 50:
+            text = "[rendered from embedded page data]\n" + embedded
+        else:
+            text = raw[:max_chars]
     else:
         text = text[:max_chars]
     head = f"# {title}\n" if title else ""
