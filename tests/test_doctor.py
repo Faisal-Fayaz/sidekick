@@ -253,3 +253,88 @@ def test_doctor_fix_pull_cannot_verify_names_model_list(monkeypatch, tmp_path):
     assert res.exit_code == 0, res.output
     assert "pulled, but cannot verify" in res.output
     assert "ollama list" in res.output
+
+
+def test_doctor_fix_pull_failure_names_retry(monkeypatch, tmp_path):
+    """--fix pull itself fails -> raw error plus an exact retry command, not a bare red line."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.auth as auth
+    import sk.init_wizard as wizard
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(auth, "provider_status", lambda cfg: (True, "ok"))
+    monkeypatch.setattr(auth, "fetch_models", lambda *a, **k: ["other-model"])
+    monkeypatch.setattr(wizard, "pull_model", lambda name, **k: (False, "no space left on device"))
+    res = CliRunner().invoke(app, ["doctor", "--fix"])
+    assert res.exit_code == 0, res.output
+    assert "no space left on device" in res.output
+    flat = " ".join(res.output.split())
+    assert "ollama pull" in flat and "ollama list" in flat and "sk doctor" in flat
+
+
+def test_doctor_fix_backup_failure_names_mv(monkeypatch, tmp_path):
+    """Unreadable config + failed backup -> exact mv-aside command plus re-run step."""
+    from pathlib import Path
+
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    cfg_path = tmp_path / ".sidekick" / "config.toml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text('max_steps = "not-a-number"\n')  # valid TOML, crashes Config.load
+
+    def boom(self, target):
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(Path, "rename", boom)
+    res = CliRunner().invoke(app, ["doctor", "--fix"])
+    assert res.exit_code == 0, res.output
+    assert "backup failed" in res.output
+    flat = " ".join(res.output.split())
+    assert "mv " in flat and ".bak" in flat and "sk doctor --fix" in flat
+
+
+def test_doctor_fix_repair_failure_names_inspect(monkeypatch, tmp_path):
+    """Repair itself crashes -> points at the config file plus re-run step."""
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    import sk.config as config_mod
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    orig = config_mod.Config.ensure_created
+    calls = {"n": 0}
+
+    def flaky_ensure(self):
+        calls["n"] += 1
+        if calls["n"] == 1:  # fail the repair path only; later _cfg() must proceed
+            raise OSError("disk gone")
+        return orig(self)
+
+    monkeypatch.setattr(config_mod.Config, "ensure_created", flaky_ensure)
+    res = CliRunner().invoke(app, ["doctor", "--fix"])
+    assert res.exit_code == 0, res.output
+    assert "repair failed" in res.output
+    flat = " ".join(res.output.split())
+    assert "config.toml" in flat and "sk doctor --fix" in flat
+
+
+def test_config_numeric_warning_names_doctor_fix(monkeypatch, tmp_path, capsys):
+    """Garbage-numeric stderr warning names the exact reset command."""
+    import sk.config as config_mod
+
+    _patch_config_dir(monkeypatch, tmp_path)
+    cfg_path = tmp_path / ".sidekick" / "config.toml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text('max_steps = "junk"\n')
+    cfg = config_mod.Config.load()
+    assert cfg.max_steps == config_mod.DEFAULTS["max_steps"]
+    err = capsys.readouterr().err
+    assert "ignoring invalid max_steps" in err
+    assert "sk doctor --fix" in err
