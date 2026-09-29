@@ -165,8 +165,11 @@ def test_shell_dispatch_bad_timeout_falls_back():
 BYPASSES = [
     "rm --recursive --force /",
     "rm -rf ~/",
+    "rm -rf $HOME/",
+    "rm -r /..",
     "echo hi > /dev/nvme0n1",
     "echo hi > /dev/mmcblk0",
+    "echo hi > /dev/sda1",
     "chmod -Rf 777 /",
     "chmod --recursive 777 /",
     "chown -R nobody /",
@@ -174,9 +177,6 @@ BYPASSES = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-220 ({ISSUES}/220): blocklist bypass spellings are allowed"
-)
 @pytest.mark.parametrize("cmd", BYPASSES)
 def test_shell_blocklist_bypass_spellings_refused(cmd):
     from sk.tools import shell as sh
@@ -196,6 +196,19 @@ def test_shell_benign_passthrough():
     from sk.tools import shell as sh
 
     assert sh._check_shell("echo hi") is None
+    for cmd in [
+        "rm -rf ./build",
+        "rm --recursive --force ./dir",
+        "rm -rf ~/.cache/old",
+        "rm -rf /tmp/x",
+        "chmod -R 755 subdir",
+        "chmod 777 file",
+        "echo hi > /dev/null",
+        "greet() { echo hi; }",
+        "dd if=/dev/zero of=/tmp/x",
+        "chown -R user subdir",
+    ]:
+        assert sh._check_shell(cmd) is None, f"legit command blocked: {cmd!r}"
 
 
 # ---------------------------------------------------------------------------
