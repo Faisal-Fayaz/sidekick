@@ -856,13 +856,14 @@ class SidekickTUI(App):
     def _scroll_log(self, what: str) -> None:
         # mouse tracking stays off (native copy), so the log scrolls by key.
         # TextArea never sees these keys (unbound there) — they reach the app.
+        # Instant (no animation): deterministic positions for follow-lock.
         log = self.query_one("#chat-log", RichLog)
         try:
             {
-                "up": log.scroll_page_up,
-                "down": log.scroll_page_down,
-                "top": log.scroll_home,
-                "bottom": log.scroll_end,
+                "up": lambda: log.scroll_page_up(animate=False),
+                "down": lambda: log.scroll_page_down(animate=False),
+                "top": lambda: log.scroll_home(animate=False),
+                "bottom": lambda: log.scroll_end(animate=False),
             }[what]()
         except Exception:
             pass
@@ -870,8 +871,6 @@ class SidekickTUI(App):
             self._set_follow(True)
         else:
             self._set_follow(False)
-        except Exception:
-            pass
 
     def action_scroll_log_up(self) -> None:
         self._scroll_log("up")
