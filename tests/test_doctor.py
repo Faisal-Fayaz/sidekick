@@ -284,6 +284,7 @@ def test_doctor_fix_backup_failure_names_mv(monkeypatch, tmp_path):
     from sk.cli import app
 
     _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setenv("COLUMNS", "500")  # no Rich folding of the long mv paths
     cfg_path = tmp_path / ".sidekick" / "config.toml"
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text('max_steps = "not-a-number"\n')  # valid TOML, crashes Config.load
@@ -308,6 +309,7 @@ def test_doctor_fix_repair_failure_names_inspect(monkeypatch, tmp_path):
     import sk.config as config_mod
 
     _patch_config_dir(monkeypatch, tmp_path)
+    monkeypatch.setenv("COLUMNS", "500")  # no Rich folding of the long config path
     orig = config_mod.Config.ensure_created
     calls = {"n": 0}
 
