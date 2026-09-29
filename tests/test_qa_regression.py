@@ -216,7 +216,6 @@ def test_shell_benign_passthrough():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=f"GH-222 ({ISSUES}/222): forget(' ') deletes all memories")
 def test_forget_blank_deletes_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     store.save_memory("hello world foo")
@@ -226,7 +225,6 @@ def test_forget_blank_deletes_nothing(tmp_path, monkeypatch):
     assert len(store.recall_memories("x", limit=10)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=f"GH-222 ({ISSUES}/222): forget('') deletes all memories")
 def test_forget_empty_deletes_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     store.save_memory("hello world foo")
@@ -240,6 +238,29 @@ def test_forget_nomatch_deletes_zero(tmp_path, monkeypatch):
     store.save_memory("hello world foo")
     out = store.forget_memory("zzz-no-such-memory")
     assert "0" in out
+    assert len(store.recall_memories("hello", limit=10)) == 1
+
+
+def test_forget_blank_via_slash_and_cli(tmp_path, monkeypatch):
+    import sk.config as config_mod
+    import sk.slash as slash_mod
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
+    store.save_memory("hello world foo")
+    cfg = Config(
+        model="llama3.2:3b", base_url="http://x/v1", api_key="x", max_steps=1, temperature=0.0
+    )
+    out = slash_mod.handle("/forget   ", session="s", cfg=cfg, state={"yolo": False})
+    assert "usage" in out.text.lower()
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    res = CliRunner().invoke(app, ["forget", " "])
+    assert res.exit_code == 1 and "usage" in res.output.lower()
     assert len(store.recall_memories("hello", limit=10)) == 1
 
 

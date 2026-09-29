@@ -570,6 +570,8 @@ def search_sessions(
 
 def forget_memory(query: str, namespace: str | None = None) -> str:
     ns = _resolve_namespace(namespace)
+    if not (query or "").strip():
+        return "Forgot 0."
     scope, params = _ns_clause(ns)
     conn = _connect()
     try:

@@ -308,7 +308,8 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         from .store import forget_memory
 
         return SlashOut(
-            handled=True, text=forget_memory(arg) if arg else "usage: `/forget <words>`"
+            handled=True,
+            text=forget_memory(arg) if arg.strip() else "usage: `/forget <words>`",
         )
 
     if cmd == "todo":
