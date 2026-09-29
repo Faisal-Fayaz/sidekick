@@ -293,14 +293,15 @@ class _FakeResp:
             raise RuntimeError(f"http {self.status_code}")
 
 
-class _RedirectFollowingClient:
-    """Emulates httpx with follow_redirects=True: blindly follows Location hops."""
+class _RedirectChainClient:
+    """Emulates httpx with follow_redirects=False: each GET returns one hop
+    (302 with Location, or the final 200) so redirect handling is observable."""
 
     instances = []
 
     def __init__(self, *a, **k):
         self.hops = []
-        _RedirectFollowingClient.instances.append(self)
+        _RedirectChainClient.instances.append(self)
 
     def __enter__(self):
         return self
@@ -309,22 +310,20 @@ class _RedirectFollowingClient:
         return False
 
     def get(self, url, **kw):
-        current = url
-        for _ in range(4):
-            self.hops.append(current)
-            if "127.0.0.1" in current or "169.254" in current:
-                return _FakeResp(200)
-            current = "http://127.0.0.1:11434/private"
+        self.hops.append(url)
+        if url == "https://example.com/page":
+            return _FakeResp(302, location="http://127.0.0.1:11434/private")
+        if url == "https://example.com/ok":
+            return _FakeResp(302, location="https://example.com/final")
         return _FakeResp(200)
 
 
-@pytest.mark.xfail(strict=True, reason=f"GH-221 ({ISSUES}/221): redirect to private IP is fetched")
 def test_read_url_does_not_fetch_redirect_to_private(monkeypatch):
     import httpx
 
     from sk.tools import web as webmod
 
-    _RedirectFollowingClient.instances.clear()
+    _RedirectChainClient.instances.clear()
     real_blocked = webmod._url_blocked
 
     def _allow_decoy(url):
@@ -333,11 +332,32 @@ def test_read_url_does_not_fetch_redirect_to_private(monkeypatch):
         return real_blocked(url)
 
     monkeypatch.setattr(webmod, "_url_blocked", _allow_decoy)
-    monkeypatch.setattr(httpx, "Client", _RedirectFollowingClient)
+    monkeypatch.setattr(httpx, "Client", _RedirectChainClient)
     out = webmod.tool_read_url("https://example.com/page")
-    hops = _RedirectFollowingClient.instances[-1].hops
+    hops = _RedirectChainClient.instances[-1].hops
     assert not any("127.0.0.1" in h or "169.254" in h for h in hops), hops
     assert isinstance(out, str) and out.startswith("Error")
+
+
+def test_read_url_follows_redirect_to_public(monkeypatch):
+    import httpx
+
+    from sk.tools import web as webmod
+
+    _RedirectChainClient.instances.clear()
+    real_blocked = webmod._url_blocked
+
+    def _allow_decoy(url):
+        if "example.com" in url:
+            return None  # public decoy: skip real DNS so the test stays offline
+        return real_blocked(url)
+
+    monkeypatch.setattr(webmod, "_url_blocked", _allow_decoy)
+    monkeypatch.setattr(httpx, "Client", _RedirectChainClient)
+    out = webmod.tool_read_url("https://example.com/ok")
+    hops = _RedirectChainClient.instances[-1].hops
+    assert hops == ["https://example.com/ok", "https://example.com/final"]
+    assert isinstance(out, str) and not out.startswith("Error")
 
 
 def test_direct_private_url_stays_blocked():
