@@ -916,9 +916,10 @@ def _stream_chat(
             on_token=on_token,
         )
         m = resp.choices[0].message  # type: ignore[attr-defined]
+        native_calls = getattr(m, "tool_calls", None)
         return _Msg(
             m.content or "",
-            getattr(m, "tool_calls", None),
+            native_calls or None,  # [] means "no calls" exactly like None downstream
             getattr(m, "reasoning", "") or "",
             str(getattr(resp.choices[0], "finish_reason", "") or ""),  # type: ignore[attr-defined]
         )
@@ -1563,8 +1564,10 @@ def run_agent(
 
         # fallback: some Ollama models (qwen2.5-coder via OpenAI endpoint)
         # emit tool JSON as text instead of native tool_calls. Parse ALL of them.
+        # NOTE: falsy check (not `is None`) — some providers return [] instead
+        # of null, and [] must take the fallback path, never post as chat.
         text_tools = _parse_text_tools(msg_text)
-        if getattr(msg, "tool_calls", None) is None and text_tools:
+        if not getattr(msg, "tool_calls", None) and text_tools:
             batch = list(text_tools[:4])  # cap 4 per turn
             proceed, turn_approve = _maybe_review_plan(
                 batch,
