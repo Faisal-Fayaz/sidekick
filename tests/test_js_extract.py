@@ -46,6 +46,7 @@ def test_garbage_json_skipped():
 
 def _fake_client_factory(html, ctype="text/html"):
     class Resp:
+        status_code = 200
         headers = {"content-type": ctype}
         text = html
 
