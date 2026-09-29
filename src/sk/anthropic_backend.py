@@ -54,12 +54,31 @@ def _blocks(content) -> list[dict]:
                 if part:
                     blocks.append({"type": "text", "text": part})
             elif isinstance(part, dict):
-                if part.get("type") in ("text", "image"):
+                if part.get("type") == "image_url":
+                    blocks.append(_openai_image_to_anthropic(part))
+                elif part.get("type") in ("text", "image"):
                     blocks.append(part)
                 elif "text" in part:
                     blocks.append({"type": "text", "text": str(part["text"])})
         return blocks
     return [{"type": "text", "text": str(content)}]
+
+
+def _openai_image_to_anthropic(part: dict) -> dict:
+    """image_url part -> Anthropic image block (data URLs) or a text note."""
+    try:
+        url = str(((part.get("image_url", {}) or {}).get("url", "")) or "")
+        if url.startswith("data:"):
+            header, _, data = url[5:].partition(",")
+            media = (header.split(";")[0] or "").strip() or "image/png"
+            if data:
+                return {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media, "data": data},
+                }
+        return {"type": "text", "text": f"[image url not supported: {url[:120]}]"}
+    except Exception:
+        return {"type": "text", "text": "[image could not be converted]"}
 
 
 def openai_messages_to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]:
