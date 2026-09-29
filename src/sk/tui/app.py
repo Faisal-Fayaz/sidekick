@@ -49,6 +49,7 @@ class SidekickTUI(App):
         ("f3", "toggle_sessions", "sessions"),
         ("f4", "toggle_plan", "plan mode"),
         ("f5", "toggle_models", "models"),
+        Binding("f6", "mark_copy", "mark/copy", priority=True),
         ("escape", "close_help", "close"),
     ]
     CSS = """
@@ -92,6 +93,7 @@ class SidekickTUI(App):
         self._drawer_themes: list[str] = []
         self._last_view: list = []  # memory-only snapshot before log wipes (/unwipe)
         self._held_count: int = 0
+        self._mark_row: int | None = None
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -1289,6 +1291,58 @@ class SidekickTUI(App):
             _w(log, f"[{_now()}] (no answers to copy yet)")
             return
         self._copy_out(answers[-1], "last answer")
+
+    def _mark_index(self) -> int | None:
+        """Viewport top as a logical line index (fraction mapping; exact for
+        unwrapped content, approximate across wrapped lines)."""
+        try:
+            log = self.query_one("#chat-log", RichLog)
+            lines = list(log.lines)
+            if not lines:
+                return None
+            max_y = log.max_scroll_y
+            if max_y <= 0:
+                return 0
+            frac = min(1.0, max(0.0, log.scroll_y / max_y))
+            return min(len(lines) - 1, int(frac * len(lines)))
+        except Exception:
+            return None
+
+    def action_mark_copy(self) -> None:
+        """F6: mark/copy a log range, keyboard-only. First press anchors the
+        viewport top; move, second press copies anchor..here."""
+        try:
+            log = self.query_one("#chat-log", RichLog)
+            lines = list(log.lines)
+        except Exception:
+            return
+        if not lines:
+            try:
+                _role(log, "sys", "nothing to copy yet")
+            except Exception:
+                pass
+            return
+        idx = self._mark_index()
+        if idx is None:
+            return
+        if self._mark_row is None:
+            self._mark_row = idx
+            try:
+                _role(log, "sys", f"marked line {idx} — move, then F6 to copy")
+            except Exception:
+                pass
+            return
+        lo, hi = sorted((self._mark_row, idx))
+        hi = min(hi, len(lines) - 1)
+        if hi - lo > 500:
+            hi = lo + 500
+        self._mark_row = None
+        chunk = "\n".join(str(ln) for ln in lines[lo : hi + 1])
+        if self._copy_out(chunk, f"lines {lo}–{hi}"):
+            try:
+                _role(log, "sys", f"copied lines {lo}–{hi} ({hi - lo + 1} lines)")
+            except Exception:
+                pass
 
     def _answer_pending(self, text: str) -> str | None:
         """Consume a pending approval answer. Returns 'accepted' | 'too-late' | None.
