@@ -103,7 +103,9 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Skills & Daemon', cmd: 'sk plugins', what: 'User-defined tools via TOOLS.md.' },
   { group: 'Skills & Daemon', cmd: 'sk daemon [--once] · daemon-install [--schedule TXT]', what: 'Background watcher (systemd/launchd, calendar schedules).' },
   { group: 'Skills & Daemon', cmd: 'sk mcp [--allow-writes]', what: 'MCP server over stdio. 19 tools, safe defaults. Reads auto-run.' },
-  { group: 'Skills & Daemon', cmd: 'sk mcp-servers', what: 'List configured MCP client servers + live tool check.' },
+  { group: 'Skills & Daemon', cmd: 'sk mcp-servers', what: 'List configured MCP client servers (local stdio + remote Streamable HTTP) with a live tool check.' },
+  { group: 'Skills & Daemon', cmd: 'sk hooks [--check]', what: 'Event hooks: SessionStart/PreToolUse/PostToolUse shell handlers; a PreToolUse deny blocks the tool fail-closed.' },
+  { group: 'Skills & Daemon', cmd: '/your-command (custom)', what: 'Markdown files in ~/.sidekick/commands (or project .sidekick/commands) become /commands with {{args}} templates.' },
   { group: 'Skills & Daemon', cmd: 'sk hook-install [--write]', what: 'Bash/zsh shell logging hook.' },
   { group: 'Providers & Models', cmd: 'sk init  /  sk setup  /  sk connect', what: 'Guided first-run / full setup / provider key flow.' },
   { group: 'Providers & Models', cmd: 'sk model · sk auth add/list/status/remove', what: 'Live model list + default. Masked, validated keys.' },
@@ -233,6 +235,24 @@ export const WHATNEW = [
     body: 'Full-text FTS across sessions with match snippets, session filter and namespace scoping.',
     link: '/docs#memory',
   },
+  {
+    tag: 'sk hooks',
+    title: 'Event hooks that gate tools',
+    body: 'SessionStart/PreToolUse/PostToolUse shell handlers. A PreToolUse deny blocks the tool call fail-closed.',
+    link: '/commands',
+  },
+  {
+    tag: '/your-command',
+    title: 'Custom slash commands',
+    body: 'Markdown files in ~/.sidekick/commands (or project .sidekick/commands) with {{args}} templates become first-class /commands.',
+    link: '/docs#skills',
+  },
+  {
+    tag: 'remote MCP',
+    title: 'Remote MCP servers',
+    body: 'The MCP client speaks Streamable HTTP too: an [mcp_servers.name] section with url= joins stdio servers behind the same approval gate.',
+    link: '/docs#mcp',
+  },
 ];
 
 export const COMPARISON: { label: string; sidekick: string; typical: string }[] = [
@@ -241,7 +261,7 @@ export const COMPARISON: { label: string; sidekick: string; typical: string }[] 
   { label: 'Copy/paste that works in-terminal', sidekick: 'drag-select, ctrl+y, /copy', typical: 'varies' },
   { label: 'Answers grounded in your system', sidekick: 'deterministic grounding', typical: 'prompt-only' },
   { label: 'Readable skill packs (SKILL.md)', sidekick: 'yes', typical: 'varies' },
-  { label: '761-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
+  { label: '780-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
 ];
 
 export const TUI_KEYS = [
