@@ -155,3 +155,54 @@ def test_fork_errors(tmp_path, monkeypatch):
     assert out.switch_session == "" and "usage" in out.text.lower()
     out = slash.handle("/fork 9", session="chat-1", cfg=c["cfg"], state=c["state"])
     assert out.switch_session == "" and "only 1 messages" in out.text
+
+
+def test_research_delegates_readonly_capped(monkeypatch):
+    """#233: delegate runs read-only, capped, history untouched."""
+    import sk.agent as agent
+    import sk.slash as slash
+    from sk.config import Config
+
+    seen = {}
+
+    def fake_run(user_msg, history, cfg, **k):
+        seen["msg"] = user_msg
+        seen["history"] = history
+        seen["read_only"] = k.get("read_only")
+        seen["max_steps"] = cfg.max_steps
+        assert k.get("approve")("write_file", {"path": "x"}) is False
+        return "digest: three findings"
+
+    monkeypatch.setattr(agent, "run_agent", fake_run)
+    cfg = Config(
+        provider="ollama", model="m", base_url="", api_key="", max_steps=15, temperature=0.2
+    )
+    out = slash.handle("/research why is the sky blue", session="s", cfg=cfg, state={"yolo": False})
+    assert out.handled is True and out.text == "digest: three findings"
+    assert seen["read_only"] is True and seen["max_steps"] == 3
+    assert seen["history"] == [] and seen["msg"] == "why is the sky blue"
+
+
+def test_research_usage_and_never_raises():
+    import sk.slash as slash
+    from sk.config import Config
+
+    cfg = Config(
+        provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
+    )
+    out = slash.handle("/research   ", session="s", cfg=cfg, state={})
+    assert out.handled is True and "usage" in out.text
+
+
+def test_delegate_never_raises(monkeypatch):
+    import sk.agent as agent
+    from sk.config import Config
+
+    def _boom(*a, **k):
+        raise RuntimeError("llm down")
+
+    monkeypatch.setattr(agent, "run_agent", _boom)
+    cfg = Config(
+        provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
+    )
+    assert agent.delegate_research("q", cfg, "s").startswith("Error: research delegate failed")
