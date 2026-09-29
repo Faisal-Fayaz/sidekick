@@ -401,8 +401,10 @@ def test_cwd_missing_dir_clean_error():
     from sk.cli import app
 
     r = CliRunner().invoke(app, ["--cwd", "/no/such/dirXYZ-qa", "config", "--show"])
-    assert r.exception is None
-    assert r.exit_code != 0
+    assert r.exit_code == 1
+    assert isinstance(r.exception, SystemExit)  # clean exit, not FileNotFoundError
+    assert "no such directory" in r.output
+    assert "Traceback" not in r.output
 
 
 @pytest.mark.xfail(
