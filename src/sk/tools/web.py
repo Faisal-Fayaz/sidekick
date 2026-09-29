@@ -90,15 +90,22 @@ def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
 
 
 def _harvest_strings(obj, out: list, min_len: int = 24, cap: int = 8000) -> None:
-    """Recursively collect long strings from decoded JSON. Noisy keys skipped."""
+    """Recursively collect long strings from decoded JSON. Noisy keys skipped;
+    semantic keys (title/headline/...) get a lower bar. No dedupe beyond exact."""
     import re
 
+    BOOST_KEYS = ("title", "headline", "name", "description", "articlebody", "text")
     if isinstance(obj, dict):
         for k, v in obj.items():
             if str(k).lower() in ("url", "image", "logo", "sameas", "@id", "@type"):
                 if isinstance(v, str):
                     continue
-            _harvest_strings(v, out, min_len, cap)
+            if isinstance(v, str) and str(k).lower() in BOOST_KEYS:
+                s = re.sub(r"\s+", " ", v).strip()
+                if len(s) >= 8 and s not in out:
+                    out.append(s[:cap])
+            else:
+                _harvest_strings(v, out, min_len, cap)
     elif isinstance(obj, list):
         for v in obj:
             _harvest_strings(v, out, min_len, cap)
@@ -127,14 +134,14 @@ def extract_embedded_text(html: str, budget: int = 8000) -> str:
             except Exception:
                 continue
             _harvest_strings(data, parts)
-        m = re.search(
+        nxt = re.search(
             r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>',
             html[:500_000],
             re.IGNORECASE | re.DOTALL,
         )
-        if m:
+        if nxt:
             try:
-                _harvest_strings(json.loads(m.group(1).strip()), parts)
+                _harvest_strings(json.loads(nxt.group(1).strip()), parts)
             except Exception:
                 pass
         for m in re.finditer(
@@ -146,8 +153,12 @@ def extract_embedded_text(html: str, budget: int = 8000) -> str:
                 _harvest_strings(json.loads(m.group(1).strip()), parts)
             except Exception:
                 continue
-        for attr in ("property=\"og:description\"", 'property="og:description"',
-                     "name=\"description\"", 'name="description"'):
+        for attr in (
+            'property="og:description"',
+            'property="og:description"',
+            'name="description"',
+            'name="description"',
+        ):
             for m in re.finditer(
                 r"<meta[^>]*" + attr + r"[^>]*content=\"([^\"]+)\"",
                 html[:200_000],
