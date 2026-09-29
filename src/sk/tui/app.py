@@ -63,6 +63,7 @@ class SidekickTUI(App):
     #mic-status.recording { border: solid $error; color: $error; }
     #status-bar { height: 1; color: $text-muted; background: $surface; }
     #key-hints { height: 1; color: $text-muted; background: $surface; }
+    #follow-pill { height: 1; color: $warning; background: $surface; display: none; }
     #sessions-drawer { dock: left; width: 44; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     #model-picker { dock: right; width: 46; height: 1fr; border: solid $primary-muted; background: $surface; display: none; }
     #model-filter { height: 3; }
@@ -90,6 +91,7 @@ class SidekickTUI(App):
         self._drawer_models: list[tuple[str | None, str]] = []
         self._drawer_themes: list[str] = []
         self._last_view: list = []  # memory-only snapshot before log wipes (/unwipe)
+        self._held_count: int = 0
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -113,6 +115,7 @@ class SidekickTUI(App):
             yield ListView(id="model-list")
         with Vertical(id="theme-picker"):
             yield ListView(id="theme-list")
+        yield Static("", id="follow-pill")
         with Horizontal(id="input-row"):
             yield ChatArea(id="chat-input", show_line_numbers=False)
             yield Static("ctrl+g\nto talk", id="mic-status")
@@ -612,6 +615,7 @@ class SidekickTUI(App):
         self._sub()
         self._stash_view()
         log.clear()
+        self._set_follow(True)
         _role(log, "sys", f"now on `{self.session}`")
         all_msgs = _gh(self.session)
         truncated, tail = _tail_slice(all_msgs)
@@ -758,6 +762,7 @@ class SidekickTUI(App):
         area.focus()
         self._sub()
         log = self.query_one("#chat-log", RichLog)
+        self._set_follow(True)
         _w(
             log,
             "sidekick online. Enter sends · ctrl+j newline · ↑ history · ctrl+g to talk · pgup/pgdn scroll · drag to select (auto-copies on release), `ctrl+y` copies selection (else last answer).",
@@ -823,19 +828,49 @@ class SidekickTUI(App):
         except Exception:
             pass
 
+    def _set_follow(self, follow: bool) -> None:
+        """Set follow-lock state (single source: the ChatLog widget)."""
+        try:
+            log = self.query_one("#chat-log", RichLog)
+            log.follow = bool(follow)
+            log.on_held = self._note_held
+            if follow:
+                self._held_count = 0
+                try:
+                    self.query_one("#follow-pill", Static).styles.display = "none"
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _note_held(self) -> None:
+        """A write landed while held: bump the new-messages pill."""
+        try:
+            self._held_count = int(getattr(self, "_held_count", 0)) + 1
+            pill = self.query_one("#follow-pill", Static)
+            pill.update(f"↓ {self._held_count} new — pgdn · ctrl+end to follow")
+            pill.styles.display = "block"
+        except Exception:
+            pass
+
     def _scroll_log(self, what: str) -> None:
         # mouse tracking stays off (native copy), so the log scrolls by key.
         # TextArea never sees these keys (unbound there) — they reach the app.
+        # Instant (no animation): deterministic positions for follow-lock.
         log = self.query_one("#chat-log", RichLog)
         try:
             {
-                "up": log.scroll_page_up,
-                "down": log.scroll_page_down,
-                "top": log.scroll_home,
-                "bottom": log.scroll_end,
+                "up": lambda: log.scroll_page_up(animate=False),
+                "down": lambda: log.scroll_page_down(animate=False),
+                "top": lambda: log.scroll_home(animate=False),
+                "bottom": lambda: log.scroll_end(animate=False),
             }[what]()
         except Exception:
             pass
+        if what in ("down", "bottom"):
+            self._set_follow(True)
+        else:
+            self._set_follow(False)
 
     def action_scroll_log_up(self) -> None:
         self._scroll_log("up")
@@ -1413,6 +1448,7 @@ class SidekickTUI(App):
             if out.clear_view:
                 self._stash_view()
                 log.clear()
+                self._set_follow(True)
             if out.text:
                 _role(log, "", out.text)
             self._sub()

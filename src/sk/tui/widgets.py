@@ -31,6 +31,36 @@ class ChatLog(RichLog):
 
     ALLOW_SELECT = True
 
+    follow = True
+    on_held = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        try:
+            self.auto_scroll = False
+        except Exception:
+            pass
+
+    def write(self, *args, **kwargs):
+        """Append, following the tail only when follow is on (follow-lock).
+
+        RichLog yanks to the bottom on every write (asynchronously, so a
+        synchronous restore would lose the race); with auto_scroll off we
+        own scrolling: follow scrolls to the end, hold leaves the viewport
+        alone and notifies via on_held for the new-messages pill.
+        """
+        result = super().write(*args, **kwargs)
+        try:
+            if bool(getattr(self, "follow", True)):
+                self.scroll_end(animate=False)
+            else:
+                hook = getattr(self, "on_held", None)
+                if callable(hook):
+                    hook()
+        except Exception:
+            pass
+        return result
+
     def render_line(self, y: int) -> Strip:
         scroll_x, scroll_y = self.scroll_offset
         row = scroll_y + y
