@@ -24,7 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.25.0 (unplanned — propose by PR)
+## Next — v0.27.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -74,6 +74,8 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.26.0` — security + robustness fix batch (#220–#229), QA regression suite (#231), retry breaker (#230), tester skill (#236), session-deny + edit-first (#237, #238), research delegate (#239), partial-output errors (#240), empty-toollist fallback, folding removal.
+- `v0.25.0` — image input (#178), JS extraction (#182), profiles (#189), TUI forgiveness batch (#161, #163–#168), dispatch write-block (#208), reasoning/control hygiene (#206).
 - `v0.24.0` — agent reliability: adaptive budgets lean-local/frontier-on-API (#198), exhaustion synthesis, reasoning-effort control (#201), empty-args guard.
 - `v0.23.0` — image generation (#192), persistent shell sessions (#179), session search (#190).
 - `v0.22.0` — cross-provider picker (#139), theme pack (#138), README + website catch-up docs.
