@@ -21,6 +21,31 @@ except ImportError:
 
 CONFIG_DIR = Path.home() / ".sidekick"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
+PROFILE_ENV = "SIDEKICK_PROFILE"
+
+
+def profiles_dir() -> Path:
+    return CONFIG_DIR / "profiles"
+
+
+def profile_path(name: str) -> Path:
+    """Validated path for a profile name. Raises on bad names."""
+    import re as _re
+
+    if not _re.fullmatch(r"[A-Za-z0-9_-]+", (name or "").strip()):
+        raise RuntimeError(f"bad profile name {name!r} (use letters, digits, - _).")
+    return profiles_dir() / f"{name.strip()}.toml"
+
+
+def list_profiles() -> list[str]:
+    """Sorted profile names on disk. Never raises."""
+    try:
+        d = profiles_dir()
+        if not d.is_dir():
+            return []
+        return sorted(p.stem for p in d.glob("*.toml") if p.is_file())
+    except Exception:
+        return []
 
 PROJECT_FILENAME = ".sidekick.toml"
 # Keys a project file may never set: traffic diverters. A hostile repo could
@@ -413,6 +438,7 @@ class Config:
     memory_namespace: str = ""
     approved_commands: tuple[str, ...] = ()
     project_warnings: tuple[str, ...] = ()
+    profile: str = ""  # active profile name (SIDEKICK_PROFILE / --profile), else ""
     mcp_servers: tuple[dict, ...] = ()  # global config file only; never from projects
     hooks: tuple[dict, ...] = ()  # global config file only; never from projects
 
@@ -456,7 +482,19 @@ class Config:
         reasoning_effort = os.getenv("SIDEKICK_REASONING_EFFORT", "")
 
         file_vals: dict[str, object] = {}
-        if CONFIG_PATH.exists():
+        profile = (os.getenv(PROFILE_ENV, "") or "").strip()
+        if profile:
+            path = profile_path(profile)  # raises on bad names
+            if not path.exists():
+                raise RuntimeError(
+                    f"no such profile {profile!r} (sk config --profiles to list)."
+                )
+            try:
+                with open(path, "rb") as f:
+                    file_vals = tomllib.load(f)
+            except Exception as e:
+                raise RuntimeError(f"unreadable profile {profile!r}: {e}")
+        elif CONFIG_PATH.exists():
             try:
                 with open(CONFIG_PATH, "rb") as f:
                     file_vals = tomllib.load(f)
@@ -501,6 +539,7 @@ class Config:
             project_warnings=tuple(project_warnings),
             mcp_servers=_parse_mcp_servers(file_vals.get("mcp_servers", {})),
             hooks=_parse_hooks(file_vals.get("hooks", {})),
+            profile=profile,
         )
         cfg.normalize_model_alias()
         try:
@@ -540,11 +579,14 @@ class Config:
                 return True
         return False
 
-    def save(self) -> None:
+    def save(self, path=None) -> None:
+        """Persist settings. Writes to the active profile file when one is
+        active, else the global config file. `path` overrides both."""
         self.normalize_model_alias()
         import os as _os
 
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        target = Path(path) if path else (profile_path(self.profile) if self.profile else CONFIG_PATH)
+        target.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "provider": self.provider,
             "model": self.model,
@@ -558,7 +600,7 @@ class Config:
             "reasoning_effort": self.reasoning_effort,
         }
         if _HAS_TOMLI_W:
-            with open(CONFIG_PATH, "wb") as f:
+            with open(target, "wb") as f:
                 tomli_w.dump(data, f)
         else:
             # minimal manual writer, no dependency needed (bools lowercase: valid TOML)
@@ -570,10 +612,10 @@ class Config:
                 return f"{v}"
 
             lines = [f"{k} = {_toml(v)}" for k, v in data.items()]
-            CONFIG_PATH.write_text("\n".join(lines) + "\n")
+            target.write_text("\n".join(lines) + "\n")
         if self.api_key.strip():
             try:
-                _os.chmod(CONFIG_PATH, 0o600)
+                _os.chmod(target, 0o600)
             except Exception:
                 pass
 
