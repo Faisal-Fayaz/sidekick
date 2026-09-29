@@ -18,6 +18,8 @@ from .read import (
 )
 from .registry import (
     APPROVAL_TOOLS,
+    PLAN_DENIED_TOOLS,
+    READONLY_DENIED_TOOLS,
     TOOLS_SCHEMA,
     approval_tools,
     dispatch_tool,
@@ -41,6 +43,8 @@ __all__ = [
     "ALLOWED_GIT",
     "APPROVAL_TOOLS",
     "BLOCKED_CHARS",
+    "PLAN_DENIED_TOOLS",
+    "READONLY_DENIED_TOOLS",
     "SHELL_BLOCK_PATTERNS",
     "TOOLS_SCHEMA",
     "WRITE_BLOCKLIST",

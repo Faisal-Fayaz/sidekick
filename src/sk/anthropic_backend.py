@@ -486,7 +486,15 @@ def run_anthropic_agent(
         messages.append({"role": "assistant", "content": blocks})
         max_parallel = max_parallel_for(getattr(cfg, "model", ""))
         outs = _run_tools_batch(
-            batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
+            batch,
+            turn_approve,
+            on_tool,
+            seen,
+            session,
+            cfg,
+            max_workers=max_parallel,
+            read_only=read_only,
+            plan_mode=plan_mode,
         )
         for u, (result, _) in zip(uses, outs):
             messages.append(

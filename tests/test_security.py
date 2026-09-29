@@ -167,3 +167,76 @@ def test_plugin_shell_template_cannot_escape_allowlist(tmp_path, monkeypatch):
         assert ok is False and "Denied" in out
     finally:
         plugins.clear_plugin_cache()
+
+
+def test_plan_mode_denies_writes_without_prompting(tmp_path, monkeypatch):
+    """#207: plan mode is a dispatch-level guarantee, not prompt politeness."""
+    import sk.store as store
+    from sk.tools import PLAN_DENIED_TOOLS
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    assert {"write_file", "edit_file", "make_dir", "delete_file"} <= PLAN_DENIED_TOOLS
+    assert "shell" not in PLAN_DENIED_TOOLS  # shell exploration stays gated, not banned
+
+    def _boom(name, args):
+        raise AssertionError("doomed calls must never prompt")
+
+    for tool, args in [
+        ("write_file", {"path": "/tmp/x", "content": "hi"}),
+        ("edit_file", {"path": "/tmp/x", "old_string": "a", "new_string": "b"}),
+        ("make_dir", {"path": "/tmp/x"}),
+    ]:
+        out, ok = _gated_dispatch(tool, args, approve=_boom, session="t", plan_mode=True)
+        assert ok is False and "plan mode" in out, tool
+    rows = store.list_tool_runs("t")
+    assert any(r["tool"] == "write_file" and not r["approved"] for r in rows)
+
+
+def test_plan_mode_still_allows_reads_and_shell(tmp_path, monkeypatch):
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    out, ok = _gated_dispatch(
+        "exec", {"cmd": "pwd"}, approve=lambda n, a: True, session="t", plan_mode=True
+    )
+    assert ok is True and "exit 0" in out
+    out, ok = _gated_dispatch(
+        "shell", {"cmd": "echo hi"}, approve=lambda n, a: True, session="t", plan_mode=True
+    )
+    assert ok is True and "hi" in out
+
+
+def test_readonly_denies_all_gated_tools(tmp_path, monkeypatch):
+    import sk.store as store
+    from sk.tools import READONLY_DENIED_TOOLS, APPROVAL_TOOLS
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    assert READONLY_DENIED_TOOLS == set(APPROVAL_TOOLS)
+
+    def _boom(name, args):
+        raise AssertionError("doomed calls must never prompt")
+
+    for tool, args in [
+        ("write_file", {"path": "/tmp/x", "content": "hi"}),
+        ("shell", {"cmd": "echo hi"}),
+    ]:
+        out, ok = _gated_dispatch(tool, args, approve=_boom, session="t", read_only=True)
+        assert ok is False and "read-only" in out, tool
+    out, ok = _gated_dispatch(
+        "exec", {"cmd": "pwd"}, approve=lambda n, a: True, session="t", read_only=True
+    )
+    assert ok is True
+
+
+def test_normal_mode_unaffected_by_gates(tmp_path, monkeypatch):
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    f = tmp_path / "ok.txt"
+    out, ok = _gated_dispatch(
+        "write_file",
+        {"path": str(f), "content": "hi"},
+        approve=lambda n, a: True,
+        session="t",
+    )
+    assert ok is True and f.read_text() == "hi"

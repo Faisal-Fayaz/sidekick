@@ -17,6 +17,12 @@ from .write import (
 # everything requiring user approval (writes + general shell + delete)
 APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "shell_session", "delete_file"}
 
+# hard mode gates (prompt text alone does not stop disobedient models):
+# plan mode blocks file writes (shell exploration stays approval-gated);
+# read-only mode blocks every approval-gated tool.
+PLAN_DENIED_TOOLS = set(WRITE_TOOLS) | {"delete_file"}
+READONLY_DENIED_TOOLS = set(APPROVAL_TOOLS)
+
 TOOLS_SCHEMA = [
     {
         "type": "function",
