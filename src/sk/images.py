@@ -19,6 +19,46 @@ IMAGE_MODELS = {
 }
 MAX_IMAGE_BYTES = 25_000_000
 
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+MAX_INPUT_BYTES = 10_000_000
+
+# Substring hints for vision-capable models. Conservative default: unknown
+# models are treated as text-only (a clear message beats a hallucinated
+# description). Never raises.
+KNOWN_VISION_HINTS = (
+    "gpt-4o",
+    "gpt-4.1",
+    "o1",
+    "o3",
+    "claude",
+    "sonnet",
+    "haiku",
+    "opus",
+    "gemini",
+    "gemma-3",
+    "qwen-vl",
+    "qwen2-vl",
+    "qwen2.5-vl",
+    "llava",
+    "vision",
+    "pixtral",
+    "llama-3.2-vision",
+    "llama4",
+    "mimo-vl",
+    "internvl",
+    "minicpm-v",
+    "phi-4-multimodal",
+    "molmo",
+    "florence",
+)
+
 
 def default_image_dir() -> Path:
     from .config import CONFIG_DIR
@@ -109,3 +149,68 @@ def generate_image(cfg, prompt: str, size: str = "", model: str = "", out: str =
         return f"Saved image to {dest} ({len(blob)} bytes)"
     except Exception as e:
         return f"Error: image generation failed: {e}"
+
+
+def is_image_path(path: str) -> bool:
+    """True for supported image extensions. Never raises."""
+    try:
+        return Path(path).suffix.lower() in IMAGE_EXTS
+    except Exception:
+        return False
+
+
+def vision_capable(provider: str, model: str) -> bool:
+    """Heuristic: can this model take image parts? Conservative default False."""
+    try:
+        low = (model or "").strip().lower()
+        return bool(low) and any(h in low for h in KNOWN_VISION_HINTS)
+    except Exception:
+        return False
+
+
+def extract_image_refs(text: str) -> tuple[str, list[str]]:
+    """Pull @image.ext refs out of chat text. Returns (cleaned, paths).
+
+    Each @path with an image extension becomes `[attached image: name]` in
+    the text; the file paths are returned for image-part encoding. Missing
+    or oversize files stay inline as notes. Never raises.
+    """
+    import re
+
+    found: list[str] = []
+
+    def repl(m: re.Match) -> str:
+        raw = m.group(1)
+        if not is_image_path(raw):
+            return m.group(0)
+        try:
+            p = Path(raw).expanduser()
+            if not p.is_file():
+                return f"[image not found: {raw}]"
+            if p.stat().st_size > MAX_INPUT_BYTES:
+                return f"[image too large (>10MB): {raw}]"
+            found.append(str(p))
+            return f"\n[attached image: {p.name}]\n"
+        except Exception as e:
+            return f"[error reading image @{raw}: {e}]"
+
+    try:
+        cleaned = re.sub(r"@([\w\-.~/][\w\-./~]*)", repl, text or "")
+    except Exception:
+        return text or "", []
+    return cleaned, found
+
+
+def encode_image_data_url(path: str) -> str | None:
+    """File bytes as a data: URL, or None (missing/oversize/unreadable)."""
+    try:
+        p = Path(path).expanduser()
+        suffix = p.suffix.lower()
+        media = IMAGE_MEDIA_TYPES.get(suffix)
+        if media is None or not p.is_file() or p.stat().st_size > MAX_INPUT_BYTES:
+            return None
+        import base64
+
+        return f"data:{media};base64," + base64.b64encode(p.read_bytes()).decode()
+    except Exception:
+        return None
