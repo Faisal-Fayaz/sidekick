@@ -221,9 +221,28 @@ def tool_read_url(url: str, max_chars: int = 6000) -> str:
     max_chars = max(500, min(int(max_chars or 6000), 15000))
     try:
         import httpx
+        from urllib.parse import urljoin
 
-        with httpx.Client(timeout=20, follow_redirects=True, max_redirects=3) as c:
-            r = c.get(url.strip(), headers={"User-Agent": "sidekick/0.1"})
+        # Manual redirect chain: every hop is re-validated against the SSRF
+        # guard (httpx auto-follow would fetch redirect targets unchecked).
+        current = url.strip()
+        r = None
+        with httpx.Client(timeout=20, follow_redirects=False) as c:
+            for _ in range(4):  # initial fetch + up to 3 hops
+                r = c.get(current, headers={"User-Agent": "sidekick/0.1"})
+                if r.status_code not in (301, 302, 303, 307, 308):
+                    break
+                loc = (r.headers.get("location") or "").strip()
+                if not loc:
+                    break
+                current = urljoin(current, loc)
+                blocked = _url_blocked(current)
+                if blocked:
+                    return f"Error: redirect to blocked URL: {current}"
+            else:
+                return "Error: too many redirects (max 3)."
+            if r is None:
+                return "Error: fetch failed."
             r.raise_for_status()
             ctype = r.headers.get("content-type", "")
             if (
