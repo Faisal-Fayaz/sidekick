@@ -446,6 +446,7 @@ def run_anthropic_agent(
     max_tokens = max_tokens_for(cfg.model, cfg.provider)
     max_steps = effective_max_steps(cfg.model, cfg)
     seen: dict[str, str] = {}
+    completed: list[str] = []  # per-turn tool work done (for error reports)
 
     for _ in range(max(1, max_steps)):
         payload: dict = {
@@ -472,7 +473,9 @@ def run_anthropic_agent(
             try:
                 resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), payload)
             except Exception as e:
-                return f"Error talking to anthropic ({cfg.effective_base_url()} model={cfg.model}): {e}"
+                from .agent import _error_with_progress
+
+                return _error_with_progress(completed, e)
             blocks = resp.get("content", []) if isinstance(resp, dict) else []
         texts = [
             b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
@@ -528,6 +531,9 @@ def run_anthropic_agent(
                     ],
                 }
             )
+        from .agent import _record_completed
+
+        _record_completed(completed, batch, outs)
     # Loop exhausted without a final answer (every in-loop return is one):
     # one bounded no-tools recap call instead of the bare sentinel.
     try:
