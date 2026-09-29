@@ -1099,7 +1099,26 @@ def build_messages(
     Extracted for the eval harness: every quality regression (unguessed specs,
     ~/ hallucinations, link refusals) is assertable here without a model.
     """
+    from .images import encode_image_data_url, extract_image_refs, vision_capable
+
+    user_msg, image_paths = extract_image_refs(user_msg)
     user_msg = _expand_at_refs(user_msg)
+    image_parts: list[dict] = []
+    if image_paths:
+        if vision_capable(cfg.provider, cfg.model):
+            for path in image_paths:
+                data_url = encode_image_data_url(path)
+                if data_url is not None:
+                    image_parts.append({"type": "image_url", "image_url": {"url": data_url}})
+                else:
+                    user_msg += f"\n[image unreadable (>10MB?): {path}]\n"
+        else:
+            names = ", ".join(Path(p).name for p in image_paths)
+            user_msg += (
+                f"\n[images attached ({names}) but model {cfg.model} has no vision"
+                " support — describe them from filenames only, or switch to a"
+                " vision model (e.g. qwen2.5-vl, llava) to see them]\n"
+            )
     try:
         snapshot = tool_sysinfo()
     except Exception as e:
@@ -1185,7 +1204,12 @@ def build_messages(
             ),
         },
         *history[-20:],
-        {"role": "user", "content": user_msg},
+        {
+            "role": "user",
+            "content": (
+                [{"type": "text", "text": user_msg}, *image_parts] if image_parts else user_msg
+            ),
+        },
     ]
     return messages
 
