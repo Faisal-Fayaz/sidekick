@@ -1,4 +1,4 @@
-export const VERSION = '0.23.0';
+export const VERSION = '0.26.0';
 export const PACKAGE_NAME = 'sidekick-agent';
 export const REPO_URL = 'https://github.com/Faisal-Fayaz/sidekick';
 export const PYPI_URL = 'https://pypi.org/project/sidekick-agent/';
@@ -241,7 +241,7 @@ export const COMPARISON: { label: string; sidekick: string; typical: string }[] 
   { label: 'Copy/paste that works in-terminal', sidekick: 'drag-select, ctrl+y, /copy', typical: 'varies' },
   { label: 'Answers grounded in your system', sidekick: 'deterministic grounding', typical: 'prompt-only' },
   { label: 'Readable skill packs (SKILL.md)', sidekick: 'yes', typical: 'varies' },
-  { label: '639-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
+  { label: '761-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
 ];
 
 export const TUI_KEYS = [
