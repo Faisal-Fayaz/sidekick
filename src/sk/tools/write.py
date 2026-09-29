@@ -99,6 +99,23 @@ def tool_make_dir(path: str) -> str:
         return f"Error: {e}"
 
 
+def _verify_write(p: Path, content: str) -> str | None:
+    """Confirm the bytes on disk match what was requested. None when ok,
+    else an error string. Silent truncation (short writes, lost tails) must
+    never report success. Never raises."""
+    try:
+        actual = p.stat().st_size
+        expected = len(content.encode("utf-8", errors="replace"))
+        if actual != expected:
+            return (
+                f"Error: write verification failed for {p} "
+                f"({actual} bytes on disk, expected {expected}) — retry."
+            )
+        return None
+    except Exception as e:
+        return f"Error: could not verify write to {p}: {e}"
+
+
 def tool_write_file(path: str, content: str) -> str:
     checked = _check_write_path(path)
     if isinstance(checked, str):
@@ -109,6 +126,9 @@ def tool_write_file(path: str, content: str) -> str:
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
+        problem = _verify_write(p, content)
+        if problem is not None:
+            return problem
         return f"Wrote {len(content)} chars to {p}"
     except Exception as e:
         return f"Error: {e}"

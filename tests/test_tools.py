@@ -233,3 +233,29 @@ def test_circuit_breaker_resets_on_success_and_arg_change(tmp_path, monkeypatch)
     agent._record_tool_outcome("t", "write_file", "write_file|path=~/.ssh/evil", False)
     out, ok = agent._gated_dispatch("write_file", bad, approve=lambda n, a: True, session="t")
     assert "Stopped" not in out
+
+
+def test_write_verification_catches_short_writes(tmp_path):
+    from sk.tools.write import _verify_write
+
+    f = tmp_path / "full.txt"
+    f.write_text("hello world")
+    assert _verify_write(f, "hello world") is None
+    problem = _verify_write(f, "hello world plus much more content here")
+    assert problem is not None and "verification failed" in problem
+    assert _verify_write(tmp_path / "missing.txt", "x") is not None
+
+
+def test_write_file_reports_verified_bytes(tmp_path):
+    from sk.tools import tool_write_file
+
+    f = tmp_path / "sized.txt"
+    out = tool_write_file(str(f), "héllo wörld")
+    assert "Wrote" in out and f.stat().st_size == len("héllo wörld".encode())
+
+
+def test_system_prompt_has_edit_first_doctrine():
+    from sk.agent import SYSTEM_PROMPT
+
+    assert "EDIT FIRST" in SYSTEM_PROMPT
+    assert "skeleton" in SYSTEM_PROMPT
