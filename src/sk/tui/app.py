@@ -94,6 +94,7 @@ class SidekickTUI(App):
         self._think_timer = None
         self._rec_proc = None
         self._rec_wav: str = ""
+        self._quit_armed = False
         self._rec_timer = None
         self._rec_start: float = 0.0
         self._transcribing: bool = False
@@ -1310,6 +1311,29 @@ class SidekickTUI(App):
             pass
         return "accepted"
 
+    def _abandon_recording(self) -> None:
+        """Halt an in-flight take without transcribing (quit path only).
+        Prevents orphaned recorder processes on exit. Best effort."""
+        try:
+            proc, self._rec_proc = self._rec_proc, None
+            if proc is None:
+                return
+            try:
+                from sk import voice as _voice
+
+                _voice.stop_recording(proc, wav_path=getattr(self, "_rec_wav", ""))
+            except Exception:
+                pass
+            try:
+                if self._rec_timer is not None:
+                    self._rec_timer.stop()
+            except Exception:
+                pass
+            self._rec_timer = None
+            self._transcribing = False
+        except Exception:
+            pass
+
     @on(ChatArea.Send)
     def _send(self, ev: ChatArea.Send) -> None:
         from sk import slash
@@ -1322,7 +1346,24 @@ class SidekickTUI(App):
         area.hist_idx = -1
         log = self.query_one("#chat-log", RichLog)
         if text.lower() in ("exit", "quit", ":q", "/exit", "/quit", "/q"):
+            work = []
+            if self._rec_proc is not None:
+                work.append("recording in progress")
+            elif self._transcribing:
+                work.append("transcription running")
             pending = self._live_pending()
+            if pending is not None:
+                work.append("approval waiting for an answer")
+            if work and not self._quit_armed:
+                self._quit_armed = True
+                _role(
+                    log,
+                    "warn",
+                    f"quit with {' + '.join(work)}? Quit again to exit (work will be dropped).",
+                )
+                return
+            self._quit_armed = False
+            self._abandon_recording()
             if pending is not None:
                 try:
                     pending["event"].set()  # release worker; deny by default
@@ -1332,6 +1373,7 @@ class SidekickTUI(App):
             _role(log, "sys", "bye.")
             self.exit()
             return
+        self._quit_armed = False
         # pending write approval eats the next NON-SLASH line: y/yes approves
         if self._answer_pending(text) is not None:
             return
