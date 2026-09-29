@@ -49,9 +49,8 @@ class SidekickTUI(App):
         ("f3", "toggle_sessions", "sessions"),
         ("f4", "toggle_plan", "plan mode"),
         ("f5", "toggle_models", "models"),
-        ("f6", "mark_copy", "mark/copy"),
-        ("f7", "toggle_fold", "fold"),
         Binding("f6", "mark_copy", "mark/copy", priority=True),
+        Binding("f7", "toggle_fold", "fold", priority=True),
         ("escape", "close_help", "close"),
     ]
     CSS = """
@@ -686,11 +685,18 @@ class SidekickTUI(App):
             _role(log, "", notice)
 
     def close_help_if_open(self) -> bool:
-        """Hide the help panel if visible. Returns True when it did."""
+        """Hide the help/fold panel if visible. Returns True when it did."""
         try:
             panel = self.query_one("#help-panel", RichLog)
             if panel.display:
                 panel.styles.display = "none"
+                return True
+        except Exception:
+            pass
+        try:
+            fold = self.query_one("#fold-panel", RichLog)
+            if fold.display:
+                fold.styles.display = "none"
                 return True
         except Exception:
             pass
