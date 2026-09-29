@@ -44,7 +44,6 @@ def _seed_sessions():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=f"GH-223 ({ISSUES}/223): bare '/' crashes with IndexError")
 def test_bare_slash_returns_help_not_crash(tmp_path, monkeypatch):
     c = _ctx(tmp_path, monkeypatch)
     out = slash.handle("/", session=c["session"], cfg=c["cfg"], state=c["state"])
