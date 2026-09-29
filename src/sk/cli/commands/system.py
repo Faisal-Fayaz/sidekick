@@ -226,21 +226,46 @@ def repair_config() -> str | None:
     """
     from sk.config import CONFIG_PATH, Config
 
+    def _reset(reason: str) -> str:
+        bak = CONFIG_PATH.with_suffix(".bak")
+        try:
+            CONFIG_PATH.rename(bak)
+        except Exception as e:
+            return f"[red]config unreadable and backup failed: {e}[/red]"
+        Config().ensure_created()
+        return f"[green]fixed: {reason} backed up to {bak}, fresh defaults written.[/green]"
+
     try:
         if not CONFIG_PATH.exists():
             Config().ensure_created()
             return "[green]fixed: created default config.[/green]"
         try:
             Config.load()
-            return None
         except Exception:
-            bak = CONFIG_PATH.with_suffix(".bak")
-            try:
-                CONFIG_PATH.rename(bak)
-            except Exception as e:
-                return f"[red]config unreadable and backup failed: {e}[/red]"
-            Config().ensure_created()
-            return f"[green]fixed: unreadable config backed up to {bak}, fresh defaults written.[/green]"
+            return _reset("unreadable config")
+        # load() fails open on garbage numerics (warns + defaults), so
+        # repair validates the raw values itself to decide on a reset.
+        try:
+            import tomllib
+
+            with open(CONFIG_PATH, "rb") as f:
+                raw = tomllib.load(f)
+        except Exception:
+            raw = {}
+        bad = []
+        for key, typ in (
+            ("max_steps", int),
+            ("temperature", float),
+            ("history_budget_tokens", int),
+        ):
+            if key in raw:
+                try:
+                    typ(str(raw[key]))
+                except (TypeError, ValueError):
+                    bad.append(key)
+        if bad:
+            return _reset(f"invalid {', '.join(bad)} in config")
+        return None
     except Exception as e:
         return f"[red]config repair failed: {e}[/red]"
 

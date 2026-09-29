@@ -89,7 +89,6 @@ def _write_config_toml(text):
     config_mod.CONFIG_PATH.write_text(text)
 
 
-@pytest.mark.xfail(strict=True, reason=f"GH-224 ({ISSUES}/224): max_steps='oops' raises ValueError")
 def test_garbage_max_steps_falls_back_to_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
@@ -98,15 +97,22 @@ def test_garbage_max_steps_falls_back_to_default(tmp_path, monkeypatch):
     assert cfg.max_steps == 5  # DEFAULTS["max_steps"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-224 ({ISSUES}/224): temperature='hot' raises ValueError"
-)
 def test_garbage_temperature_falls_back_to_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
     monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
     _write_config_toml('temperature = "hot"\n')
     cfg = Config.load()
     assert cfg.temperature == pytest.approx(0.2)
+
+
+def test_garbage_numerics_warn_and_cover_history_budget(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / ".sidekick")
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / ".sidekick" / "config.toml")
+    _write_config_toml('max_steps = "oops"\nhistory_budget_tokens = "lots"\n')
+    cfg = Config.load()
+    assert cfg.max_steps == 5 and cfg.history_budget_tokens == 3000
+    err = capsys.readouterr().err
+    assert "max_steps" in err and "history_budget_tokens" in err
 
 
 def test_valid_numerics_load(tmp_path, monkeypatch):
