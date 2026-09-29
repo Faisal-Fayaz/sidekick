@@ -186,3 +186,102 @@ def test_slash_rewind(tmp_path, monkeypatch):
     assert out.handled and f.read_text() == "v1" and "#1" in out.text
     out = slash.handle("/help", session="s", cfg=c["cfg"], state=c["state"])
     assert "/rewind" in out.text
+
+
+def test_rewind_redo_roundtrip_edit(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    f = tmp_path / "f.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})
+    f.write_text("v2")
+    assert "rewound #1" in cp.rewind("s") and f.read_text() == "v1"
+    out = cp.redo("s")
+    assert "redid" in out and f.read_text() == "v2"
+    assert "nothing to redo" in cp.redo("s")  # stack popped
+
+
+def test_rewind_redo_roundtrip_create(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    f = tmp_path / "new.txt"
+    cp.snapshot_before("s", "write_file", {"path": str(f)})  # absent at snapshot
+    f.write_text("created")
+    assert "removed created file" in cp.rewind("s") and not f.exists()
+    assert "redid" in cp.redo("s") and f.read_text() == "created"  # v1 restored
+
+
+def test_rewind_redo_roundtrip_delete(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    f = tmp_path / "gone.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "delete_file", {"path": str(f)})
+    f.unlink()  # agent deletes
+    assert "restored original bytes" in cp.rewind("s") and f.read_text() == "v1"
+    out = cp.redo("s")
+    assert "removed again" in out and not f.exists()
+
+
+def test_redo_empty_stack(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    assert "nothing to redo" in cp.redo("nosuch")
+    f = tmp_path / "f.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})
+    assert "nothing to redo" in cp.redo("s")  # snapshot alone pushes nothing
+
+
+def test_redo_stack_capped(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    f = tmp_path / "f.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})
+    f.write_text("v2")
+    for _ in range(cp.MAX_CHECKPOINTS + 5):  # rewinds push; no snapshots between
+        cp.rewind("s")
+    assert len(cp._rload("s")) == cp.MAX_CHECKPOINTS  # oldest dropped
+    assert "redid" in cp.redo("s") and f.read_text() == "v1"
+
+
+def test_new_write_clears_redo(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    f = tmp_path / "f.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})
+    f.write_text("v2")
+    cp.rewind("s")  # pushes one redo entry
+    assert len(cp._rload("s")) == 1
+    f.write_text("v3")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})  # new write clears
+    assert cp._rload("s") == []
+    assert "nothing to redo" in cp.redo("s")
+
+
+def test_redo_failure_stays_retryable(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    _iso(tmp_path, monkeypatch)
+    f = tmp_path / "f.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})
+    f.write_text("v2")
+    cp.rewind("s")
+    monkeypatch.setattr(
+        Path, "write_bytes", lambda self, data: (_ for _ in ()).throw(OSError("disk gone"))
+    )
+    out = cp.redo("s")
+    assert out.startswith("Error: redo failed")
+    assert len(cp._rload("s")) == 1  # entry preserved for retry
+
+
+def test_slash_redo(tmp_path, monkeypatch):
+    c = _iso(tmp_path, monkeypatch)
+    out = slash.handle("/redo", session="s", cfg=c["cfg"], state=c["state"])
+    assert out.handled and "nothing to redo" in out.text
+    f = tmp_path / "f.txt"
+    f.write_text("v1")
+    cp.snapshot_before("s", "edit_file", {"path": str(f)})
+    f.write_text("v2")
+    slash.handle("/rewind", session="s", cfg=c["cfg"], state=c["state"])
+    out = slash.handle("/redo", session="s", cfg=c["cfg"], state=c["state"])
+    assert out.handled and "redid" in out.text and f.read_text() == "v2"
+    out = slash.handle("/help", session="s", cfg=c["cfg"], state=c["state"])
+    assert "/redo" in out.text

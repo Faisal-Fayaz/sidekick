@@ -123,6 +123,7 @@ HELP_GOLDEN = """**slash commands**
 - `/diff` — show working-tree git diff (stat + capped)
 - `/review [base]` — ask the agent to review the working-tree diff
 - `/rewind [n]` — undo an agent file edit (latest, or checkpoint n)
+- `/redo` — re-apply the last rewound change
 - `/research <question>` — read-only research turn; returns a digest
 - `/init` — scaffold SIDEKICK.md repo conventions in this directory
 - `/skills` — list skill packs
@@ -143,7 +144,7 @@ def test_golden_help_reply(tmp_path, monkeypatch):
 
     _iso(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)  # no project .sidekick/commands leak in
-    assert len(COMMANDS) == 34  # trip-wire: new command ⇒ update HELP_GOLDEN
+    assert len(COMMANDS) == 35  # trip-wire: new command ⇒ update HELP_GOLDEN
     for prompt in ("/help", "/h", "/", "  /help  ".strip()):
         out = handle(prompt, session="s", cfg=_cfg(), state={})
         assert out.handled is True and not out.agent_prompt, prompt
