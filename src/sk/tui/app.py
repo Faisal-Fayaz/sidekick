@@ -49,7 +49,7 @@ class SidekickTUI(App):
         ("f3", "toggle_sessions", "sessions"),
         ("f4", "toggle_plan", "plan mode"),
         ("f5", "toggle_models", "models"),
-        ("f6", "mark_copy", "mark/copy"),
+        Binding("f6", "mark_copy", "mark/copy", priority=True),
         ("escape", "close_help", "close"),
     ]
     CSS = """
