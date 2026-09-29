@@ -142,7 +142,7 @@ def test_init_refuses_when_memory_exists(tmp_path, monkeypatch):
     (proj / "AGENTS.md").write_text("mine")
     monkeypatch.chdir(proj)
     out = slash.handle("/init", session="s", cfg=_cfg(), state={"yolo": False})
-    assert "already have AGENTS.md" in out.text
+    assert out.text.startswith("Blocked: already have AGENTS.md")
     assert not (proj / "SIDEKICK.md").exists()
 
 
@@ -154,6 +154,15 @@ def test_init_never_clobbers(tmp_path, monkeypatch):
     monkeypatch.chdir(proj)
     slash.handle("/init", session="s", cfg=_cfg(), state={"yolo": False})
     assert (proj / "SIDEKICK.md").read_text() == "hand-written"
+
+
+def test_scaffold_unwritable_errors(tmp_path, monkeypatch):
+    """Scaffold target that cannot be written surfaces as Error:, never raises."""
+    _sctx(tmp_path, monkeypatch)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")  # a file, so SIDEKICK.md cannot be created under it
+    out = mf.scaffold_memory(str(blocker))
+    assert out.startswith("Error: could not scaffold SIDEKICK.md")
 
 
 def test_help_lists_init(tmp_path, monkeypatch):

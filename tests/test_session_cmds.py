@@ -76,12 +76,12 @@ def test_diff_clean_tree(repo):
 def test_diff_bad_base(repo):
     (repo / "a.txt").write_text("x\n")
     out = git_diff_text(str(repo), base="no-such-ref")
-    assert "could not diff vs no-such-ref" in out
+    assert out.startswith("Error: could not diff vs no-such-ref")
 
 
 def test_diff_not_a_repo(tmp_path):
     out = git_diff_text(str(tmp_path))
-    assert out.startswith("_(not a git repo:")
+    assert out.startswith("Error: not a git repo:")
 
 
 @needs_git

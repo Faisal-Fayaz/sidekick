@@ -19,7 +19,7 @@ def git_diff_text(cwd: str = "", base: str = "", cap: int = 8000) -> str:
     cwd = cwd or os.getcwd()
     ok, _ = _run(["git", "rev-parse", "--show-toplevel"], cwd)
     if not ok:
-        return f"_(not a git repo: {cwd})_"
+        return f"Error: not a git repo: {cwd}"
     ref = (base or "").strip()
     if not ref:
         ok, _ = _run(["git", "rev-parse", "--verify", "HEAD", "--quiet"], cwd)
@@ -27,7 +27,7 @@ def git_diff_text(cwd: str = "", base: str = "", cap: int = 8000) -> str:
     if ref:
         ok, stat = _run(["git", "diff", ref, "--stat"], cwd)
         if not ok:
-            return f"_(could not diff vs {ref}: {stat[:200]})_"
+            return f"Error: could not diff vs {ref}: {stat[:200]}"
         if not stat:
             return f"_(no changes vs {ref})_"
         ok, diff = _run(["git", "diff", ref], cwd)

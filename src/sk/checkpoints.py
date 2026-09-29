@@ -104,7 +104,7 @@ def rewind(session: str, n: int | None = None) -> str:
         hits = [r for r in recs if r.get("n") == n]
         if not hits:
             lo, hi = recs[0]["n"], recs[-1]["n"]
-            return f"_no checkpoint #{n} (have #{lo}..#{hi})_"
+            return f"Error: no checkpoint #{n} (have #{lo}..#{hi})"
         rec = hits[0]
     try:
         target = Path(str(rec["target"]))
@@ -119,4 +119,4 @@ def rewind(session: str, n: int | None = None) -> str:
         when = time.strftime("%H:%M", time.localtime(float(rec.get("ts", 0))))
         return f"_rewound #{rec['n']} ({rec['tool']} → {rec['target']}, {when}) — {action}_"
     except Exception as e:
-        return f"_rewind failed ({e})_"
+        return f"Error: rewind failed ({e})"
