@@ -395,9 +395,6 @@ def test_direct_private_url_stays_blocked():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-228 ({ISSUES}/228): --cwd missing dir raises FileNotFoundError"
-)
 def test_cwd_missing_dir_clean_error():
     from typer.testing import CliRunner
 

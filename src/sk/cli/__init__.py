@@ -48,8 +48,16 @@ def _default(
     """Launch the fullscreen TUI (same as `sk tui`)."""
     if cwd.strip():
         import os
+        from pathlib import Path
 
-        os.chdir(os.path.expanduser(cwd.strip()))
+        target = Path(os.path.expanduser(cwd.strip()))
+        if not target.exists():
+            console.print(f"[red]Error: --cwd {cwd.strip()}: no such directory.[/red]")
+            raise typer.Exit(1)
+        if not target.is_dir():
+            console.print(f"[red]Error: --cwd {cwd.strip()}: not a directory.[/red]")
+            raise typer.Exit(1)
+        os.chdir(target)
     if profile.strip():
         import os
 
