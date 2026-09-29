@@ -51,24 +51,29 @@ def test_bare_slash_returns_help_not_crash(tmp_path, monkeypatch):
     assert out.text  # help / unknown-command text, not an exception
 
 
-@pytest.mark.xfail(strict=True, reason=f"GH-227 ({ISSUES}/227): '/resume 0' resumes last session")
 def test_resume_zero_is_usage(tmp_path, monkeypatch):
     c = _ctx(tmp_path, monkeypatch)
     _seed_sessions()
     out = slash.handle("/resume 0", session="sess-B", cfg=c["cfg"], state=c["state"])
     assert "usage" in out.text.lower()
-    assert getattr(out, "switch_session", None) is None
+    assert not getattr(out, "switch_session", None)
+    out = slash.handle("/resume -1", session="sess-B", cfg=c["cfg"], state=c["state"])
+    assert "usage" in out.text.lower()
+    assert not getattr(out, "switch_session", None)
+    out = slash.handle("/resume 99", session="sess-B", cfg=c["cfg"], state=c["state"])
+    assert "usage" in out.text.lower()
+    assert not getattr(out, "switch_session", None)
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-227 ({ISSUES}/227): '/sessions delete 0' deletes last session"
-)
 def test_sessions_delete_zero_is_usage(tmp_path, monkeypatch):
     c = _ctx(tmp_path, monkeypatch)
     _seed_sessions()
     before = {r["session"] for r in store.list_sessions(limit=20)}
-    out = slash.handle("/sessions delete 0", session="sess-B", cfg=c["cfg"], state=c["state"])
-    assert "usage" in out.text.lower()
+    for bad in ("0", "-1", "99"):
+        out = slash.handle(
+            f"/sessions delete {bad}", session="sess-B", cfg=c["cfg"], state=c["state"]
+        )
+        assert "usage" in out.text.lower()
     after = {r["session"] for r in store.list_sessions(limit=20)}
     assert before == after
 

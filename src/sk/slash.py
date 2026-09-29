@@ -202,12 +202,16 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         if sub.strip().lower() == "delete":
             rows, _ = _session_lines()
             try:
-                idx = int(rest.strip().split()[0]) - 1
-                target = rows[idx]["session"]
+                n = int(rest.strip().split()[0])
             except (ValueError, IndexError):
                 return SlashOut(
                     handled=True, text="usage: `/sessions delete <n>` (see `/sessions`)"
                 )
+            if not 1 <= n <= len(rows):
+                return SlashOut(
+                    handled=True, text="usage: `/sessions delete <n>` (see `/sessions`)"
+                )
+            target = rows[n - 1]["session"]
             n = delete_session(target)
             return SlashOut(handled=True, text=f"_deleted `{target}` ({n} messages)_")
         rows, lines = _session_lines()
@@ -223,9 +227,12 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if cmd == "resume":
         rows, _ = _session_lines()
         try:
-            target = rows[int(arg.strip().split()[0]) - 1]["session"]
+            n = int(arg.strip().split()[0])
         except (ValueError, IndexError):
             return SlashOut(handled=True, text="usage: `/resume <n>` (see `/sessions`)")
+        if not 1 <= n <= len(rows):
+            return SlashOut(handled=True, text="usage: `/resume <n>` (see `/sessions`)")
+        target = rows[n - 1]["session"]
         if target == session:
             return SlashOut(handled=True, text=f"_already on `{target}`_")
         return SlashOut(
