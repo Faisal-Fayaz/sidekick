@@ -179,7 +179,8 @@ def _parse_int_default(raw: object, default: int, key: str) -> int:
         return int(str(raw if raw is not None else default).strip() or default)
     except (TypeError, ValueError):
         print(
-            f"warning: ignoring invalid {key}={raw!r} in config, using {default}.",
+            f"warning: ignoring invalid {key}={raw!r} in config, using {default}."
+            " Run `sk doctor --fix` to reset it.",
             file=sys.stderr,
         )
         return default
@@ -193,7 +194,8 @@ def _parse_float_default(raw: object, default: float, key: str) -> float:
         return float(str(raw if raw is not None else default).strip() or default)
     except (TypeError, ValueError):
         print(
-            f"warning: ignoring invalid {key}={raw!r} in config, using {default}.",
+            f"warning: ignoring invalid {key}={raw!r} in config, using {default}."
+            " Run `sk doctor --fix` to reset it.",
             file=sys.stderr,
         )
         return default
