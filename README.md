@@ -58,6 +58,8 @@ heard> what files are in the sidekick repo
 | 758-test suite incl. prompt-regression evals | ✅ | rare |
 | Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
 | Costs $0 by default, spend caps when you bring keys | ✅ | metered |
+| Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
+| Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
 ## Quickstart
 
