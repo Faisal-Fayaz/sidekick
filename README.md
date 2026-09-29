@@ -223,6 +223,8 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 **Project memory auto-discovery:** from the cwd upward, the first `SIDEKICK.md` / `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` found (root-down) is injected into the prompt automatically — no config needed for repos that already document themselves.
 
+**Config profiles:** named `~/.sidekick/profiles/<name>.toml` files (e.g. work, personal, low-VRAM) replace `config.toml` when selected via `sk --profile NAME …` or `SIDEKICK_PROFILE=NAME` (env still wins, project files still layer). Manage with `sk config --profiles` (list), `sk config --save-profile NAME` (snapshot current non-secret settings — keys stay in keyring/env). Migrating: `cp ~/.sidekick/config.toml ~/.sidekick/profiles/work.toml`, trim it, and switch with the flag. `sk config --show` prints the active profile.
+
 ## Roadmap
 
 See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, `v0.2.0` / `v0.3.0` milestones, done list). It changes by pull request only.

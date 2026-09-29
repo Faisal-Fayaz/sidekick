@@ -433,7 +433,9 @@ def config(
         names = list_profiles()
         active = os.getenv("SIDEKICK_PROFILE", "")
         if not names:
-            console.print("[dim](no profiles — snapshot one with `sk config --save-profile NAME`)[/dim]")
+            console.print(
+                "[dim](no profiles — snapshot one with `sk config --save-profile NAME`)[/dim]"
+            )
             return
         for n in names:
             mark = " ← active" if n == active else ""

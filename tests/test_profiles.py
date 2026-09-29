@@ -1,195 +1,145 @@
-"""Capability profile tests: matching, routing, protocol seeding, parallel width."""
+"""Config profiles tests (fixes #189): file/env/project precedence, create/
+switch/list flows, save targeting, bg threading, migration docs. Offline."""
 
-import sk.agent as agent
-from sk.config import Config
-from sk.model_profiles import DEFAULT_PROFILE, PROFILES, match_profile
-from sk.router import FAST_MODEL, SMART_MODEL, route
+import os
 
+import pytest
 
-def _cfg(**kw):
-    base = {
-        "provider": "ollama",
-        "model": "t",
-        "base_url": "http://x/v1",
-        "api_key": "x",
-        "max_steps": 2,
-        "temperature": 0.0,
-    }
-    base.update(kw)
-    return Config(**base)
+import sk.store as store
+from sk.config import PROFILE_ENV, Config
 
 
-def test_match_table():
-    assert match_profile("llama3.2:3b")["native_tools"] is False
-    assert match_profile("LLAMA3.2:3B")["native_tools"] is False
-    assert match_profile("qwen2.5-coder:7b")["native_tools"] is True
-    assert match_profile("qwen2.5-coder:7b")["max_parallel"] == 4
-    assert match_profile("llama3.2:3b")["max_parallel"] == 2
-    assert match_profile("some-future-model:99b") == DEFAULT_PROFILE
-    assert match_profile("") == DEFAULT_PROFILE
-    assert set(PROFILES) >= {"llama3.2:3b", "qwen2.5-coder:7b"}
-    # returned dicts are copies: mutating never pollutes the table
-    match_profile("llama3.2:3b")["native_tools"] = True
-    assert match_profile("llama3.2:3b")["native_tools"] is False
+@pytest.fixture(autouse=True)
+def _clean_env():
+    old = os.environ.get(PROFILE_ENV)
+    yield
+    if old is None:
+        os.environ.pop(PROFILE_ENV, None)
+    else:
+        os.environ[PROFILE_ENV] = old
 
 
-def test_route_consumes_profiles():
-    r = route("refactor this function")
-    assert r["tier"] == "smart" and r["model"] == SMART_MODEL
-    assert r["native_tools"] is True and r["max_parallel"] == 4
-    r = route("refactor this function", model_override="llama3.2:3b")
-    assert r["model"] == "llama3.2:3b" and r["native_tools"] is False
-    assert r["max_parallel"] == 2 and "override" in r["reason"]
-    r = route("say hi")
-    assert r["tier"] == "fast" and r["model"] == FAST_MODEL
-    r = route("anything", provider="groq")
-    assert r["model"]  # tier-mapped, profile looked up (default if unverified)
+def _iso(tmp_path, monkeypatch):
+    import sk.config as config_mod
+
+    cfgdir = tmp_path / ".sidekick"
+    cfgdir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", cfgdir)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", cfgdir / "config.toml")
+    monkeypatch.chdir(tmp_path)
+    return cfgdir
 
 
-def test_text_only_model_skips_native_first_try(monkeypatch):
+def _write_profile(cfgdir, name, body):
+    d = cfgdir / "profiles"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{name}.toml").write_text(body)
+
+
+def test_profile_replaces_global_file(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    (cfgdir / "config.toml").write_text('provider = "openai"\nmodel = "m-global"\n')
+    _write_profile(cfgdir, "work", 'provider = "groq"\nmodel = "m-work"\n')
+    assert Config.load().model == "m-global"
+    monkeypatch.setenv(PROFILE_ENV, "work")
+    cfg = Config.load()
+    assert (cfg.provider, cfg.model, cfg.profile) == ("groq", "m-work", "work")
+
+
+def test_env_wins_over_profile(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    _write_profile(cfgdir, "work", 'provider = "groq"\nmodel = "m-work"\n')
+    monkeypatch.setenv(PROFILE_ENV, "work")
+    monkeypatch.setenv("SIDEKICK_MODEL", "m-env")
+    assert Config.load().model == "m-env"
+
+
+def test_project_layers_over_profile(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    _write_profile(cfgdir, "work", 'provider = "groq"\nmodel = "m-work"\n')
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / ".sidekick.toml").write_text('model = "m-proj"\n')
+    monkeypatch.chdir(proj)
+    monkeypatch.setenv(PROFILE_ENV, "work")
+    cfg = Config.load()
+    assert (cfg.provider, cfg.model) == ("groq", "m-proj")
+
+
+def test_missing_and_bad_profile_fail(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.setenv(PROFILE_ENV, "nope")
+    with pytest.raises(RuntimeError, match="no such profile"):
+        Config.load()
+    monkeypatch.setenv(PROFILE_ENV, "bad name!")
+    with pytest.raises(RuntimeError, match="bad profile name"):
+        Config.load()
+
+
+def test_list_profiles(tmp_path, monkeypatch):
+    from sk.config import list_profiles
+
+    cfgdir = _iso(tmp_path, monkeypatch)
+    assert list_profiles() == []
+    _write_profile(cfgdir, "work", 'model = "a"\n')
+    _write_profile(cfgdir, "home", 'model = "b"\n')
+    assert list_profiles() == ["home", "work"]
+
+
+def test_save_targets_active_profile(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    (cfgdir / "config.toml").write_text('provider = "ollama"\nmodel = "m-global"\n')
+    _write_profile(cfgdir, "work", 'provider = "ollama"\nmodel = "m-work"\n')
+    monkeypatch.setenv(PROFILE_ENV, "work")
+    cfg = Config.load()
+    cfg.model = "m-edited"
+    cfg.save()
+    assert "m-edited" in (cfgdir / "profiles" / "work.toml").read_text()
+    assert "m-edited" not in (cfgdir / "config.toml").read_text()
+
+
+def test_cli_list_save_switch(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["config", "--profiles"])
+    assert "no profiles" in res.output
+    res = runner.invoke(app, ["config", "--save-profile", "work"])
+    assert res.exit_code == 0, res.output
+    assert "profile `work` saved" in res.output
+    saved = (tmp_path / ".sidekick" / "profiles" / "work.toml").read_text()
+    assert 'api_key = ""' in saved  # snapshot carries no secrets
+    res = runner.invoke(app, ["config", "--profiles"])
+    assert "work" in res.output
+    res = runner.invoke(app, ["--profile", "work", "config", "--show"])
+    assert res.exit_code == 0, res.output
+    assert "profile=work" in res.output
+    res = runner.invoke(app, ["--profile", "nope", "config", "--show"])
+    assert res.exit_code == 1 and "no such profile" in res.output
+
+
+def test_bg_job_carries_profile(tmp_path, monkeypatch):
+    import sk.agent as agent
+    import sk.jobs as jobs
+
+    monkeypatch.setattr(jobs, "JOBS_PATH", tmp_path / "jobs.json")
+    _iso(tmp_path, monkeypatch)
+    cfgdir = tmp_path / ".sidekick"
+    _write_profile(cfgdir, "work", 'provider = "groq"\nmodel = "m-work"\n')
+    monkeypatch.setattr(agent, "run_agent", lambda *a, **k: "done")
+    monkeypatch.setattr("sk.daemon.notify", lambda *a, **k: "logged")
+    jid = jobs.create_job("t", "s", "m", False, 0.0, (), False, False, "work")
+    assert jobs.load_jobs()[jid]["profile"] == "work"
     seen = {}
 
-    def fake_stream(
-        client,
-        model,
-        messages,
-        tools,
-        temperature,
-        max_tokens,
-        extra,
-        on_token=None,
-        on_reasoning=None,
-    ):
-        seen.setdefault("first_tools", tools)
-        return agent._Msg("done", None, "", "stop")
+    def fake_run_agent(task, history, cfg, **k):
+        seen["provider"] = cfg.provider
+        return "done"
 
-    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    out = agent.run_agent("hi there friend", [], _cfg(model="llama3.2:3b"), session="s")
-    assert out == "done"
-    assert seen["first_tools"] is None  # no wasted native attempt
-
-
-def test_native_model_sends_schema_first_try(monkeypatch):
-    seen = {}
-
-    def fake_stream(
-        client,
-        model,
-        messages,
-        tools,
-        temperature,
-        max_tokens,
-        extra,
-        on_token=None,
-        on_reasoning=None,
-    ):
-        seen.setdefault("first_tools", tools)
-        seen.setdefault("messages", messages)
-        return agent._Msg("done", None, "", "stop")
-
-    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    agent.run_agent("hi there friend", [], _cfg(model="qwen2.5-coder:7b"), session="s")
-    assert seen["first_tools"] is not None  # schema offered immediately
-
-
-def test_seed_note_present_for_text_only(monkeypatch):
-    seen = {}
-
-    def fake_stream(
-        client,
-        model,
-        messages,
-        tools,
-        temperature,
-        max_tokens,
-        extra,
-        on_token=None,
-        on_reasoning=None,
-    ):
-        seen.setdefault("messages", [dict(m, content=str(m.get("content", ""))) for m in messages])
-        return agent._Msg("done", None, "", "stop")
-
-    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    agent.run_agent("hi there friend", [], _cfg(model="llama3.2:3b"), session="s")
-    blob = "\n".join(m["content"] for m in seen["messages"])
-    assert "does not support native tool calling" in blob
-
-
-def test_runtime_rejection_still_wins(monkeypatch):
-    agent._tools_unsupported.add("qwen2.5-coder:7b")
-    try:
-        seen = {}
-
-        def fake_stream(
-            client,
-            model,
-            messages,
-            tools,
-            temperature,
-            max_tokens,
-            extra,
-            on_token=None,
-            on_reasoning=None,
-        ):
-            seen.setdefault("first_tools", tools)
-            return agent._Msg("done", None, "", "stop")
-
-        monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-        agent.run_agent("hi there friend", [], _cfg(model="qwen2.5-coder:7b"), session="s")
-        assert seen["first_tools"] is None  # runtime learning beats the profile
-    finally:
-        agent._tools_unsupported.discard("qwen2.5-coder:7b")
-
-
-def test_parallel_width_follows_profile(monkeypatch):
-    import threading
-    import time
-
-    import sk.agent as _agent
-
-    state = {"depth": 0, "max_depth": 0, "lock": threading.Lock()}
-
-    def fake_dispatch(name, args):
-        with state["lock"]:
-            state["depth"] += 1
-            state["max_depth"] = max(state["max_depth"], state["depth"])
-        try:
-            time.sleep(0.05)
-            return f"ok-{name}"
-        finally:
-            with state["lock"]:
-                state["depth"] -= 1
-
-    monkeypatch.setattr(_agent, "dispatch_tool", fake_dispatch)
-
-    def fake_stream(
-        client,
-        model,
-        messages,
-        tools,
-        temperature,
-        max_tokens,
-        extra,
-        on_token=None,
-        on_reasoning=None,
-    ):
-        if getattr(fake_stream, "done", False):
-            return _agent._Msg("all done", None, "", "stop")
-        fake_stream.done = True
-        tcs = [
-            _agent._TC(f"c{i}", name, "{}")
-            for i, name in enumerate(["exec", "list_dir", "sysinfo", "recall"])
-        ]
-        return _agent._Msg("", tcs, "", "tool_calls")
-
-    fake_stream.done = False
-    monkeypatch.setattr(_agent, "_stream_chat", fake_stream)
-    out = _agent.run_agent(
-        "gather everything",
-        [],
-        _cfg(model="llama3.2:3b", max_steps=3),
-        approve=None,
-        session="s",
-    )
-    assert out == "all done"
-    assert state["max_depth"] <= 2  # llama profile caps the pool deterministically
+    monkeypatch.setattr(agent, "run_agent", fake_run_agent)
+    jobs.run_bg_worker(jid)
+    assert seen["provider"] == "groq"

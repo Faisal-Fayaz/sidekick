@@ -47,6 +47,7 @@ def list_profiles() -> list[str]:
     except Exception:
         return []
 
+
 PROJECT_FILENAME = ".sidekick.toml"
 # Keys a project file may never set: traffic diverters. A hostile repo could
 # otherwise point your prompts (incl. memories) at its own server.
@@ -486,9 +487,7 @@ class Config:
         if profile:
             path = profile_path(profile)  # raises on bad names
             if not path.exists():
-                raise RuntimeError(
-                    f"no such profile {profile!r} (sk config --profiles to list)."
-                )
+                raise RuntimeError(f"no such profile {profile!r} (sk config --profiles to list).")
             try:
                 with open(path, "rb") as f:
                     file_vals = tomllib.load(f)
@@ -585,7 +584,9 @@ class Config:
         self.normalize_model_alias()
         import os as _os
 
-        target = Path(path) if path else (profile_path(self.profile) if self.profile else CONFIG_PATH)
+        target = (
+            Path(path) if path else (profile_path(self.profile) if self.profile else CONFIG_PATH)
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "provider": self.provider,
