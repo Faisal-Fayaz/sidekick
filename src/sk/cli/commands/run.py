@@ -50,8 +50,20 @@ def run(
     cfg.model = _resolve_model(cfg, model, task, quiet=as_json)
     allowed = parse_allow_list(allow)
     if bg:
+        import os
+
+        from sk.config import PROFILE_ENV
+
         job_id = create_job(
-            task, session, cfg.model, yes, cfg.spend_cap_usd, allowed, read_only, plan
+            task,
+            session,
+            cfg.model,
+            yes,
+            cfg.spend_cap_usd,
+            allowed,
+            read_only,
+            plan,
+            os.getenv(PROFILE_ENV, ""),
         )
         if not job_id or not spawn_worker(job_id):
             msg = "Error: could not start background worker."

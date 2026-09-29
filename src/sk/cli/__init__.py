@@ -43,12 +43,29 @@ if __name__ == "__main__":
 def _default(
     ctx: typer.Context,
     cwd: str = typer.Option("", "--cwd", help="Run as if in this directory"),
+    profile: str = typer.Option("", "--profile", help="Use this config profile"),
 ) -> None:
     """Launch the fullscreen TUI (same as `sk tui`)."""
     if cwd.strip():
         import os
 
         os.chdir(os.path.expanduser(cwd.strip()))
+    if profile.strip():
+        import os
+
+        from sk.config import PROFILE_ENV, profile_path
+
+        try:
+            path = profile_path(profile.strip())
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        if not path.exists():
+            console.print(
+                f"[red]no such profile '{profile.strip()}' (sk config --profiles to list).[/red]"
+            )
+            raise typer.Exit(1)
+        os.environ[PROFILE_ENV] = profile.strip()
     if ctx.invoked_subcommand is None:
         from sk.tui import launch
 

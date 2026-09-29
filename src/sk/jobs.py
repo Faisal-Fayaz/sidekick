@@ -42,6 +42,7 @@ def create_job(
     allow: tuple[str, ...] | list[str] = (),
     readonly: bool = False,
     plan: bool = False,
+    profile: str = "",
 ) -> str:
     """Persist a running job. Returns the job id. Never raises ('' on failure)."""
     try:
@@ -56,6 +57,7 @@ def create_job(
             "yes": bool(yes),
             "readonly": bool(readonly),
             "plan": bool(plan),
+            "profile": str(profile or ""),
             "spend_cap": float(spend_cap or 0.0),
             "allow": [str(e) for e in (allow or [])],
             "status": "running",
@@ -124,6 +126,12 @@ def run_bg_worker(job_id: str) -> str:
 
         from .cli.approvers import _make_approver
 
+        if str(job.get("profile", "") or "").strip():
+            import os
+
+            from .config import PROFILE_ENV
+
+            os.environ[PROFILE_ENV] = str(job["profile"]).strip()
         cfg = Config.load()
         cfg.model = str(job.get("model", "")) or cfg.model
         cfg.spend_cap_usd = cap

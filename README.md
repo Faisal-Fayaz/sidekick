@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-680%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-681%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml/badge.svg)](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sidekick-agent.svg)](https://pypi.org/project/sidekick-agent/)
 
@@ -55,7 +55,7 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 680-test suite incl. prompt-regression evals | ✅ | rare |
+| 681-test suite incl. prompt-regression evals | ✅ | rare |
 | Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
 | Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
@@ -208,7 +208,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 680 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # 681 passed: unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
@@ -222,6 +222,8 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 **Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may set `provider`, `model`, `max_steps`, `temperature`, plus a `[project]` table (`docs` files injected into the prompt, `memory_namespace`, `approved_commands` for `shell`). `api_key`/`base_url` are *never* read from project files (global/env only) — `sk config --show` prints the active project and any ignored keys. `sk --cwd PATH` runs any command as if in that directory.
 
 **Project memory auto-discovery:** from the cwd upward, the first `SIDEKICK.md` / `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` found (root-down) is injected into the prompt automatically — no config needed for repos that already document themselves.
+
+**Config profiles:** named `~/.sidekick/profiles/<name>.toml` files (e.g. work, personal, low-VRAM) replace `config.toml` when selected via `sk --profile NAME …` or `SIDEKICK_PROFILE=NAME` (env still wins, project files still layer). Manage with `sk config --profiles` (list), `sk config --save-profile NAME` (snapshot current non-secret settings — keys stay in keyring/env). Migrating: `cp ~/.sidekick/config.toml ~/.sidekick/profiles/work.toml`, trim it, and switch with the flag. `sk config --show` prints the active profile.
 
 ## Roadmap
 

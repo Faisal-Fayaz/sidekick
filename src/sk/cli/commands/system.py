@@ -419,9 +419,52 @@ def config(
         "", help="Reasoning effort for OpenRouter models: off|minimal|low|medium|high|max"
     ),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
+    profiles: bool = typer.Option(False, "--profiles", help="List config profiles"),
+    save_profile: str = typer.Option(
+        "", "--save-profile", help="Snapshot current settings as a profile NAME"
+    ),
 ):
     """View and set config. Keys are chmod-600’d; env vars always win."""
-    from sk.config import PRESETS
+    import os
+
+    from sk.config import PRESETS, list_profiles, profile_path
+
+    if profiles:
+        names = list_profiles()
+        active = os.getenv("SIDEKICK_PROFILE", "")
+        if not names:
+            console.print(
+                "[dim](no profiles — snapshot one with `sk config --save-profile NAME`)[/dim]"
+            )
+            return
+        for n in names:
+            mark = " ← active" if n == active else ""
+            console.print(f"• [cyan]{n}[/cyan]{mark}")
+        return
+    if save_profile.strip():
+        try:
+            path = profile_path(save_profile.strip())
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        cfg = _cfg()
+        snap = Config(
+            provider=cfg.provider,
+            model=cfg.model,
+            base_url=cfg.base_url,
+            api_key="",
+            max_steps=cfg.max_steps,
+            temperature=cfg.temperature,
+            theme=cfg.theme,
+            history_budget_tokens=cfg.history_budget_tokens,
+            spend_cap_usd=cfg.spend_cap_usd,
+            reasoning_effort=cfg.reasoning_effort,
+        )
+        snap.save(path)
+        console.print(
+            f"[green]profile `{save_profile.strip()}` saved (keys stay in keyring/env — switch with `sk --profile {save_profile.strip()} …` or SIDEKICK_PROFILE).[/green]"
+        )
+        return
 
     cfg = _cfg()
     changed = False
@@ -485,8 +528,10 @@ def config(
     if changed:
         cfg.save()
     if show or not changed:
+        profile = os.getenv("SIDEKICK_PROFILE", "")
         console.print(
             f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}\nreasoning_effort={cfg.reasoning_effort}"
+            + (f"\nprofile={profile}" if profile else "")
         )
         if cfg.project_note():
             console.print(f"[dim]{cfg.project_note()}[/dim]")
