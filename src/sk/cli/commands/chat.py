@@ -32,6 +32,9 @@ def chat(
     allow: str = typer.Option(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
     ),
+    deny: str = typer.Option(
+        "", "--deny", help="Never-approve list, e.g. --deny shell,write_file (beats --allow)"
+    ),
 ):
     """Run an interactive REPL: sk chat — try /help"""
     from sk.config import parse_allow_list
@@ -51,7 +54,9 @@ def chat(
         )
     )
     stream = {"n": 0, "cleared": False, "clear_line": True}
-    approve = _make_approver_state(state, cfg.approved_commands, parse_allow_list(allow))
+    approve = _make_approver_state(
+        state, cfg.approved_commands, parse_allow_list(allow), parse_allow_list(deny)
+    )
     on_tool = _make_on_tool(stream)
     on_token = None if no_stream else _make_on_token(stream)
     on_reasoning = None if no_stream else _make_on_reasoning()
@@ -286,10 +291,18 @@ def tui(
     allow: str = typer.Option(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
     ),
+    deny: str = typer.Option(
+        "", "--deny", help="Never-approve list, e.g. --deny shell,write_file (beats --allow)"
+    ),
 ):
     """Open the fullscreen chat (fresh session each launch unless --continue)."""
     from sk.config import parse_allow_list
     from sk.tui import launch
 
     cfg = _cfg()
-    launch(_resolve_model(cfg, model), cont=cont, allow=parse_allow_list(allow))
+    launch(
+        _resolve_model(cfg, model),
+        cont=cont,
+        allow=parse_allow_list(allow),
+        deny=parse_allow_list(deny),
+    )

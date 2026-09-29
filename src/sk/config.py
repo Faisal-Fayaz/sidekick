@@ -371,20 +371,8 @@ def parse_allow_list(raw: str | list[str] | tuple[str, ...]) -> tuple[str, ...]:
         return ()
 
 
-def is_session_allowed(name: str, args: dict, allow: tuple[str, ...] | list[str]) -> bool:
-    """True if a session --allow entry covers this approval-gated tool call.
-
-    'write_file' allows the whole tool; 'shell:pytest' allows shell
-    commands starting at a word boundary ('pytest -q' yes, 'pytest-x' no);
-    bare 'shell' allows all shell. Non-gated tools need no entry.
-    Pure function, safe to unit test.
-    """
-    try:
-        entries = [str(e).strip() for e in (allow or []) if str(e).strip()]
-    except Exception:
-        return False
-    if not entries:
-        return False
+def _entry_matches(name: str, args: dict, entries: list[str]) -> bool:
+    """Shared tool-name / shell-scope matcher for allow and deny lists."""
     for e in entries:
         if ":" in e:
             tool, scope = e.split(":", 1)
@@ -400,6 +388,43 @@ def is_session_allowed(name: str, args: dict, allow: tuple[str, ...] | list[str]
         elif e == name:
             return True
     return False
+
+
+def is_session_allowed(name: str, args: dict, allow: tuple[str, ...] | list[str]) -> bool:
+    """True if a session --allow entry covers this approval-gated tool call.
+
+    'write_file' allows the whole tool; 'shell:pytest' allows shell
+    commands starting at a word boundary ('pytest -q' yes, 'pytest-x' no);
+    bare 'shell' allows all shell. Non-gated tools need no entry.
+    Pure function, safe to unit test.
+    """
+    try:
+        entries = [str(e).strip() for e in (allow or []) if str(e).strip()]
+    except Exception:
+        return False
+    if not entries:
+        return False
+    try:
+        return _entry_matches(name, args, entries)
+    except Exception:
+        return False
+
+
+def is_session_denied(name: str, args: dict, deny: tuple[str, ...] | list[str]) -> bool:
+    """True if a session --deny entry blocks this tool call. Same matching
+    semantics as --allow; where both match, deny wins (checked first by all
+    approvers). Pure function, safe to unit test.
+    """
+    try:
+        entries = [str(e).strip() for e in (deny or []) if str(e).strip()]
+    except Exception:
+        return False
+    if not entries:
+        return False
+    try:
+        return _entry_matches(name, args, entries)
+    except Exception:
+        return False
 
 
 DEFAULTS: dict[str, str | int | float] = {

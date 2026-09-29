@@ -23,19 +23,29 @@ def _deny_plan(name: str) -> bool:
     return False
 
 
+def _deny_listed(name: str, args: dict) -> bool:
+    """Deny + explain for --deny session lists. Deny beats every allow path."""
+    target = args.get("cmd", args.get("path", "?"))
+    console.print(f"[dim]deny-listed {name} -> {target} (--deny wins over --allow)[/dim]")
+    return False
+
+
 def _make_approver(
     auto_yes: bool,
     preapproved: tuple[str, ...] = (),
     allow: tuple[str, ...] = (),
     readonly: bool = False,
     plan_mode: bool = False,
+    deny: tuple[str, ...] = (),
 ):
-    from sk.config import is_project_approved, is_session_allowed
+    from sk.config import is_project_approved, is_session_allowed, is_session_denied
     from sk.tools import approval_tools
 
     def approve(name: str, args: dict) -> bool:
         if name not in approval_tools():
             return True
+        if is_session_denied(name, args, deny):
+            return _deny_listed(name, args)
         if readonly:
             return _deny_readonly(name)
         if plan_mode and name in PLAN_DENIED_TOOLS:
@@ -83,16 +93,20 @@ def _make_approver_state(
     state: dict,
     preapproved: tuple[str, ...] = (),
     allow: tuple[str, ...] = (),
+    deny: tuple[str, ...] = (),
 ):
     """Like _make_approver but reads live state['yolo']/state['readonly']/
     state['plan'] (for slash toggling)."""
 
     def approve(name: str, args: dict) -> bool:
-        from sk.config import is_project_approved, is_session_allowed
+        from sk.config import is_project_approved, is_session_allowed, is_session_denied
         from sk.tools import approval_tools
 
         if name not in approval_tools():
             return True
+        live_deny = tuple(deny) + tuple(state.get("deny", ()) or ())
+        if is_session_denied(name, args, live_deny):
+            return _deny_listed(name, args)
         if state.get("readonly"):
             return _deny_readonly(name)
         if state.get("plan") and name in PLAN_DENIED_TOOLS:
