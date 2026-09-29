@@ -59,6 +59,10 @@ def main() -> int:
             {"role": "system", "content": INSTRUCTION},
             {"role": "user", "content": "Go. Follow instructions literally."},
         ],
+        "developer-role": [
+            {"role": "developer", "content": INSTRUCTION},
+            {"role": "user", "content": "Go."},
+        ],
     }
     print(f"{'variant':<22} verdict")
     ok = True
