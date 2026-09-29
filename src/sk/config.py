@@ -572,7 +572,9 @@ class Config:
             base_url=str(base_url or vals.get("base_url", "")),
             api_key=str(api_key or vals.get("api_key", "")),
             max_steps=_parse_int_default(
-                vals.get("max_steps", DEFAULTS["max_steps"]), int(DEFAULTS["max_steps"]), "max_steps"
+                vals.get("max_steps", DEFAULTS["max_steps"]),
+                int(DEFAULTS["max_steps"]),
+                "max_steps",
             ),
             max_steps_custom=_is_custom_max_steps(file_vals, project_vals),
             temperature=_parse_float_default(
