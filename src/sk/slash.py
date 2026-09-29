@@ -115,7 +115,9 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if not text.startswith("/"):
         return SlashOut(handled=False)
     parts = text[1:].split(None, 1)
-    cmd = (parts[0] or "").lower()
+    if not parts or not parts[0]:
+        return SlashOut(handled=True, text=help_text())
+    cmd = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
 
     if cmd in ("help", "h", "?"):
