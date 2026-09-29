@@ -1099,19 +1099,17 @@ def build_messages(
     Extracted for the eval harness: every quality regression (unguessed specs,
     ~/ hallucinations, link refusals) is assertable here without a model.
     """
-    user_msg = _expand_at_refs(user_msg)
     from .images import encode_image_data_url, extract_image_refs, vision_capable
 
     user_msg, image_paths = extract_image_refs(user_msg)
+    user_msg = _expand_at_refs(user_msg)
     image_parts: list[dict] = []
     if image_paths:
         if vision_capable(cfg.provider, cfg.model):
             for path in image_paths:
                 data_url = encode_image_data_url(path)
                 if data_url is not None:
-                    image_parts.append(
-                        {"type": "image_url", "image_url": {"url": data_url}}
-                    )
+                    image_parts.append({"type": "image_url", "image_url": {"url": data_url}})
                 else:
                     user_msg += f"\n[image unreadable (>10MB?): {path}]\n"
         else:
