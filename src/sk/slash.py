@@ -22,6 +22,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("model [fast|smart|name]", "show or switch model (`sk model` for guided picker)"),
     ("provider [name]", "show or switch provider (keys via `sk auth add`, never pasted here)"),
     ("models", "list models on the current provider"),
+    ("theme [name]", "list or switch themes (same 5 as the F2 picker)"),
     ("clear", "start a fresh session (old one kept, see `/sessions`)"),
     ("sessions [delete <n>]", "list past sessions, or delete one"),
     ("resume <n>", "switch to a past session"),
@@ -141,6 +142,28 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         except Exception:
             pass
         return SlashOut(handled=True, text=f"model → `{cfg.model}`")
+
+    if cmd == "theme":
+        from .tui.theme import THEME_NAMES, normalize_theme_name, set_theme
+
+        raw = arg.strip().lower()
+        if not raw:
+            current = normalize_theme_name(getattr(cfg, "theme", ""))
+            lines = [f"- {n}{' ← current' if n == current else ''}" for n in THEME_NAMES]
+            return SlashOut(handled=True, text="themes:\n" + "\n".join(lines))
+        if raw not in THEME_NAMES and raw not in ("dark", "light"):
+            return SlashOut(handled=True, text=f"unknown theme — pick: {', '.join(THEME_NAMES)}")
+        name = normalize_theme_name(raw)
+        cfg.theme = name
+        try:
+            cfg.save()
+        except Exception:
+            pass
+        try:
+            set_theme(None, name)  # live roles for this process; REPL has no app
+        except Exception:
+            pass
+        return SlashOut(handled=True, text=f"theme → `{name}`")
 
     if cmd == "models":
         from .auth import fetch_models
