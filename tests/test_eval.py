@@ -236,12 +236,16 @@ def test_repeat_tool_uses_cache():
             "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
         )
         r2, rep2 = _run_tool_cached(
+            "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
+        )
+        r3, rep3 = _run_tool_cached(
             "read_url", {"url": "https://x", "max_chars": 2000}, None, None, seen
         )
     finally:
         agent.dispatch_tool = orig
     assert (r1, rep1) == ("RESULT", False)
-    assert rep2 is True and "already ran" in r2 and calls == ["read_url"]  # fetched once
+    assert rep2 is True and "already ran" in r2  # identical call: cached
+    assert rep3 is False and calls == ["read_url", "read_url"]  # new args: re-runs
 
 
 def test_build_messages_auto_search(monkeypatch, tmp_path):
