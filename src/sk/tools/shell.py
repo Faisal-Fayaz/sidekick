@@ -40,15 +40,22 @@ def tool_shell(cmd: str, timeout: int = 30) -> str:
 
 
 SHELL_BLOCK_PATTERNS = [
-    r"\brm\s+(-[a-z]*r[a-z]*\s+)+/(?:\s|$)",  # rm -rf /
-    r"\brm\s+(-[a-z]*r[a-z]*\s+)+/\*",  # rm -rf /*
-    r"\brm\s+(-[a-z]*r[a-z]*\s+)+(~|\$HOME)(?:\s|$)",  # rm -rf ~ / $HOME
+    # rm with any recursive spelling at / | /* | /.. | ~ | $HOME (short or
+    # long flags, any order). Legit subpaths (~/x, /tmp/y, /.cache) never
+    # match: targets must be bare. Non-recursive rm passes (no flag).
+    r"\brm\b(?=[^;&|]*?(?:\s-[a-zA-Z]*[rR][a-zA-Z]*|--recursive\b))[^;&|]*?(?:(?<![\w/])/(?=[\s;$&|]|$)|(?<![\w/])/\*(?=[\s;$&|]|$)|/\.\.(?=[\s/;$&|]|$)|(?<![\w/])~(?=[\s;$&|]|$)|(?<![\w/])~/(?=[\s;$&|]|$)|\$HOME(?=[\s;$&|]|$)|\$HOME/(?=[\s;$&|]|$))",
     r"\bmkfs(\s|$|\.)",  # mkfs
     r"\bdd\b.*\bof=/dev/",  # dd to devices
-    r":\(\)\s*\{",  # fork bomb
-    r">\s*/dev/sd[a-z]",  # redirect onto disks
+    # fork bomb: self-piping backgrounded self-call (any name, any spacing).
+    # Ordinary functions (different/no pipe/background) never match.
+    r"([A-Za-z_:][\w:]*)\(\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}",
+    # redirect onto disk devices (null/zero/stdout/... stay allowed).
+    r">\s*/dev/(?:sd\w+|nvme\w+|mmcblk\w+|vd\w+|hd\w+|loop\d+|dm-\d+|md\d+)(?![\w])",
     r"\bshred\b.*\/dev\/",
-    r"\bchmod\s+-R\s+777\s+/",  # chmod -R 777 /
+    # chmod <recursive> 777 / in any flag/mode order.
+    r"\bchmod\b(?=[^;&|]*?(?:\s-[a-zA-Z]*[rR][a-zA-Z]*|--recursive\b))[^;&|]*?\b777\b[^;&|]*?(?<![\w/])/(?![\w/*])",
+    # chown <recursive> / — same shape as chmod (ownership wipe).
+    r"\bchown\b(?=[^;&|]*?(?:\s-[a-zA-Z]*[rR][a-zA-Z]*|--recursive\b))[^;&|]*?(?<![\w/])/(?![\w/*])",
 ]
 
 
