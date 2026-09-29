@@ -504,6 +504,8 @@ def _run_tools_batch(
     session: str = "",
     cfg=None,
     max_workers: int = 4,
+    read_only: bool = False,
+    plan_mode: bool = False,
 ) -> list[tuple[str, bool]]:
     """Run one turn's tool calls, returning [(result, repeated)] in input order.
 
@@ -538,7 +540,14 @@ def _run_tools_batch(
         name, args = calls[i]
         try:
             result, _ = _gated_dispatch(
-                name, args, approve, session=session, provider=provider, host=host
+                name,
+                args,
+                approve,
+                session=session,
+                provider=provider,
+                host=host,
+                read_only=read_only,
+                plan_mode=plan_mode,
             )
             return result
         except Exception as e:
@@ -563,7 +572,15 @@ def _run_tools_batch(
 
 
 def _run_tool_cached(
-    name: str, args: dict, approve, on_tool, seen: dict[str, str], session: str = "", cfg=None
+    name: str,
+    args: dict,
+    approve,
+    on_tool,
+    seen: dict[str, str],
+    session: str = "",
+    cfg=None,
+    read_only: bool = False,
+    plan_mode: bool = False,
 ) -> tuple[str, bool]:
     """Execute unless this exact target already ran this turn. Returns (result, repeated)."""
     key = _tool_target(name, args)
@@ -574,7 +591,16 @@ def _run_tool_cached(
         )
     provider = getattr(cfg, "provider", "") if cfg is not None else ""
     host = _provider_host(cfg) if cfg is not None else ""
-    result, _ = _gated_dispatch(name, args, approve, session=session, provider=provider, host=host)
+    result, _ = _gated_dispatch(
+        name,
+        args,
+        approve,
+        session=session,
+        provider=provider,
+        host=host,
+        read_only=read_only,
+        plan_mode=plan_mode,
+    )
     seen[key] = result
     if on_tool is not None:
         try:
@@ -591,6 +617,8 @@ def _gated_dispatch(
     session: str = "",
     provider: str = "",
     host: str = "",
+    read_only: bool = False,
+    plan_mode: bool = False,
 ) -> tuple[str, bool]:
     """Run dispatch_tool with approval gate. Returns (result, approved)."""
     from .store import log_tool_run
@@ -602,6 +630,22 @@ def _gated_dispatch(
     if not allowed:
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (reason, False)
+    from .tools import PLAN_DENIED_TOOLS, READONLY_DENIED_TOOLS
+
+    if read_only and name in READONLY_DENIED_TOOLS:
+        msg = (
+            f"Denied: '{name}' is disabled in read-only mode "
+            f"(research and explain only — no writes). Switch modes to proceed."
+        )
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (msg, False)
+    if plan_mode and name in PLAN_DENIED_TOOLS:
+        msg = (
+            f"Denied: '{name}' is disabled in plan mode "
+            f"(propose the plan first — file writes need /build). Switch modes to proceed."
+        )
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (msg, False)
     missing = missing_required(name, args)
     if missing:
         msg = (
@@ -1403,7 +1447,15 @@ def run_agent(
                 return "Denied: plan denied by user — nothing was executed."
             messages.append({"role": "assistant", "content": msg_text})
             outs = _run_tools_batch(
-                batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
+                batch,
+                turn_approve,
+                on_tool,
+                seen,
+                session,
+                cfg,
+                max_workers=max_parallel,
+                read_only=read_only,
+                plan_mode=plan_mode,
             )
             combined = [
                 f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
@@ -1464,7 +1516,15 @@ def run_agent(
             }
         )
         outs = _run_tools_batch(
-            batch, turn_approve, on_tool, seen, session, cfg, max_workers=max_parallel
+            batch,
+            turn_approve,
+            on_tool,
+            seen,
+            session,
+            cfg,
+            max_workers=max_parallel,
+            read_only=read_only,
+            plan_mode=plan_mode,
         )
         for (tid, _tname, _targs), (result, _repeated) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
