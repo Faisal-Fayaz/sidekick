@@ -50,7 +50,6 @@ class SidekickTUI(App):
         ("f4", "toggle_plan", "plan mode"),
         ("f5", "toggle_models", "models"),
         Binding("f6", "mark_copy", "mark/copy", priority=True),
-        Binding("f7", "toggle_fold", "fold", priority=True),
         ("escape", "close_help", "close"),
     ]
     CSS = """
@@ -58,7 +57,6 @@ class SidekickTUI(App):
     #live { height: auto; max-height: 10; border: solid $primary-muted; display: none; }
     #slash-list { height: auto; max-height: 8; border: solid $primary-muted; display: none; }
     #help-panel { height: auto; max-height: 14; border: solid $secondary; display: none; }
-    #fold-panel { height: auto; max-height: 14; border: solid $secondary; display: none; }
     #input-row { height: 5; }
     ChatArea { width: 1fr; height: 5; border: solid $primary-muted; }
     ChatArea:focus { border: solid $primary; }
@@ -108,8 +106,6 @@ class SidekickTUI(App):
         self._last_view: list = []  # memory-only snapshot before log wipes (/unwipe)
         self._held_count: int = 0
         self._mark_row: int | None = None
-        self._folded: list[tuple[int, str]] = []  # (seq, full answer text), cap 20
-        self._fold_seq: int = 0
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -128,7 +124,6 @@ class SidekickTUI(App):
         yield RichLog(id="live", wrap=True, highlight=False)
         yield ListView(id="slash-list")
         yield RichLog(id="help-panel", wrap=True, highlight=False)
-        yield RichLog(id="fold-panel", wrap=True, highlight=False)
         with Vertical(id="model-picker"):
             yield Input(placeholder="filter models…", id="model-filter")
             yield ListView(id="model-list")
@@ -331,47 +326,12 @@ class SidekickTUI(App):
         except Exception:
             pass
 
-    FOLD_LINES = 12
-
-    def action_toggle_fold(self) -> None:
-        """F7: show/hide folded long answers. Esc dismisses."""
-        try:
-            panel = self.query_one("#fold-panel", RichLog)
-        except Exception:
-            return
-        if panel.display:
-            try:
-                panel.styles.display = "none"
-            except Exception:
-                pass
-            return
-        try:
-            panel.clear()
-            if not self._folded:
-                _role(panel, "sys", "no folded answers — long turns fold here automatically")
-            for seq, text in self._folded:
-                _role(panel, "", f"— answer #{seq} —")
-                try:
-                    panel.write(Markdown(text))
-                except Exception:
-                    _role(panel, "sidekick", text)
-            panel.styles.display = "block"
-        except Exception:
-            pass
-
-    def _hide_fold_panel(self) -> None:
-        try:
-            self.query_one("#fold-panel", RichLog).styles.display = "none"
-        except Exception:
-            pass
-
     def action_close_help(self) -> None:
         if self.close_help_if_open():
             return
         self._hide_sessions_drawer()
         self._hide_model_picker()
         self._hide_theme_picker()
-        self._hide_fold_panel()
 
     def _sessions_visible(self) -> bool:
         try:
@@ -670,8 +630,6 @@ class SidekickTUI(App):
         self._stash_view()
         log.clear()
         self._set_follow(True)
-        self._folded = []
-        self._hide_fold_panel()
         _role(log, "sys", f"now on `{self.session}`")
         all_msgs = _gh(self.session)
         truncated, tail = _tail_slice(all_msgs)
@@ -697,18 +655,11 @@ class SidekickTUI(App):
             _role(log, "", notice)
 
     def close_help_if_open(self) -> bool:
-        """Hide the help/fold panel if visible. Returns True when it did."""
+        """Hide the help panel if visible. Returns True when it did."""
         try:
             panel = self.query_one("#help-panel", RichLog)
             if panel.display:
                 panel.styles.display = "none"
-                return True
-        except Exception:
-            pass
-        try:
-            fold = self.query_one("#fold-panel", RichLog)
-            if fold.display:
-                fold.styles.display = "none"
                 return True
         except Exception:
             pass
@@ -1569,8 +1520,6 @@ class SidekickTUI(App):
                 self._stash_view()
                 log.clear()
                 self._set_follow(True)
-                self._folded = []
-                self._hide_fold_panel()
             if out.text:
                 _role(log, "", out.text)
             self._sub()
@@ -1743,19 +1692,8 @@ class SidekickTUI(App):
         self._sub()
         log = self.query_one("#chat-log", RichLog)
         _role(log, "sidekick", "")
-        lines = (answer or "").splitlines()
-        if len(lines) > self.FOLD_LINES:
-            self._fold_seq += 1
-            self._folded.append((self._fold_seq, answer or "(empty)"))
-            self._folded = self._folded[-20:]
-            _role(
-                log,
-                "sys",
-                f"▸ answer #{self._fold_seq} ({len(lines)} lines) — F7 unfolds",
-            )
-        else:
-            try:
-                log.write(Markdown(answer))
-            except Exception:
-                _role(log, "sidekick", answer)
+        try:
+            log.write(Markdown(answer or "(empty)"))
+        except Exception:
+            _role(log, "sidekick", answer or "(empty)")
         _rule(log)

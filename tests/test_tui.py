@@ -1502,3 +1502,49 @@ def test_help_text_covers_all_slash_commands():
     text = SidekickTUI()._help_text()
     for command, _description in COMMANDS:
         assert f"/{command}" in text, f"slash command {command!r} missing from help"
+
+
+async def _pilot_long_answer_renders_inline(monkeypatch):
+    """Fold removal: a 27-line answer renders whole in the log, no F7 needed."""
+    import sk.agent as agent
+
+    body = "\n".join(f"line {i} content here" for i in range(1, 28))
+
+    def fake(
+        text,
+        hist,
+        cfg,
+        on_tool=None,
+        on_token=None,
+        approve=None,
+        on_reasoning=None,
+        auto_approve=False,
+        review_plan=None,
+        read_only=False,
+        plan_mode=False,
+    ):
+        return body
+
+    monkeypatch.setattr(agent, "run_agent", fake)
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        area = app.query_one("#chat-input", ChatArea)
+        area.focus()
+        area.text = "give me a long answer"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            try:
+                if "line 27 content here" in _blob(app):
+                    break
+            except Exception:
+                pass
+        blob = _blob(app)
+        assert "line 1 content here" in blob
+        assert "line 27 content here" in blob
+        assert "unfolds" not in blob and "F7" not in blob
+
+
+def test_long_answer_renders_inline(monkeypatch):
+    _run(_pilot_long_answer_renders_inline(monkeypatch))
