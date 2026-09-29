@@ -92,6 +92,64 @@ def test_history_trimmed_to_20(tmp_path, monkeypatch):
     assert len(msgs) == 22  # system + 20 + user
 
 
+# --- golden prompt-to-reply lock (top-traffic /help turn) ---
+
+HELP_GOLDEN = """**slash commands**
+- `/help` — this list
+- `/model [fast|smart|name]` — show or switch model (`sk model` for guided picker)
+- `/provider [name]` — show or switch provider (keys via `sk auth add`, never pasted here)
+- `/models` — list models on the current provider
+- `/clear` — start a fresh session (old one kept, see `/sessions`)
+- `/sessions [delete <n>]` — list past sessions, or delete one
+- `/resume <n>` — switch to a past session
+- `/fork [n]` — branch current session at n messages into a new one
+- `/yolo` — auto-approve file writes (`/confirm` or `/readonly` to revert)
+- `/confirm` — ask before file writes (default in TUI)
+- `/readonly` — block all file writes — research mode (`/confirm` to revert)
+- `/plan` — propose without writing — file writes blocked (`/build` to revert)
+- `/build` — back to build mode (ask before writes)
+- `/remember <fact>` — save a memory
+- `/recall [words]` — search memories
+- `/memories` — list all memories
+- `/forget <words>` — delete matching memories
+- `/todo add <text>` — add a todo
+- `/todo list` — open todos
+- `/todo done <id>` — complete a todo
+- `/todo clear` — clear done todos
+- `/brief` — morning digest (system + git + todos + memories)
+- `/history [n]` — recent shell commands
+- `/oops` — explain last failed shell command
+- `/compact [focus]` — fold older turns into the saved summary now
+- `/diff` — show working-tree git diff (stat + capped)
+- `/review [base]` — ask the agent to review the working-tree diff
+- `/rewind [n]` — undo an agent file edit (latest, or checkpoint n)
+- `/research <question>` — read-only research turn; returns a digest
+- `/init` — scaffold SIDEKICK.md repo conventions in this directory
+- `/skills` — list skill packs
+- `/copy [n]` — copy nth-last answer (default: last)
+- `/copy lines <n>` — copy last n lines of the last answer (for code blocks)
+- `/exit` — leave (also `/quit`)
+Anything else is sent to the agent.
+Tip: paste with Ctrl+Shift+V (terminal). Mouse drag-select is terminal-dependent; `/copy lines` always works."""
+
+
+def test_golden_help_reply(tmp_path, monkeypatch):
+    """Locked /help reply for the top-traffic help turn.
+
+    Any COMMANDS change must update this golden in the same commit —
+    that coupling is the regression lock. Fully offline, deterministic.
+    """
+    from sk.slash import COMMANDS, handle
+
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)  # no project .sidekick/commands leak in
+    assert len(COMMANDS) == 34  # trip-wire: new command ⇒ update HELP_GOLDEN
+    for prompt in ("/help", "/h", "/", "  /help  ".strip()):
+        out = handle(prompt, session="s", cfg=_cfg(), state={})
+        assert out.handled is True and not out.agent_prompt, prompt
+        assert out.text == HELP_GOLDEN, prompt
+
+
 # --- gates and schemas ---
 
 
