@@ -89,6 +89,7 @@ class SidekickTUI(App):
         self._drawer_sessions: list[str] = []
         self._drawer_models: list[tuple[str | None, str]] = []
         self._drawer_themes: list[str] = []
+        self._last_view: list = []  # memory-only snapshot before log wipes (/unwipe)
         self._slash_names: list[str] = []
         self._think_timer = None
         self._rec_proc = None
@@ -579,6 +580,28 @@ class SidekickTUI(App):
         self._hide_sessions_drawer()
         self._show_session(session_id, "")
 
+    def _stash_view(self) -> None:
+        """Snapshot visible log lines before a wipe. Never raises."""
+        try:
+            log = self.query_one("#chat-log", RichLog)
+            self._last_view = list(log.lines)[-200:]
+        except Exception:
+            pass
+
+    def _restore_view(self) -> None:
+        """Restore the last wiped log view (`/unwipe`). Never raises."""
+        try:
+            log = self.query_one("#chat-log", RichLog)
+            if not self._last_view:
+                _role(log, "sys", "nothing to restore — no wiped view yet")
+                return
+            log.clear()
+            for ln in self._last_view:
+                log.write(ln)
+            _role(log, "sys", "_view restored (snapshot — scrollback only)_")
+        except Exception:
+            pass
+
     def _show_session(self, session_id: str, notice: str = "") -> None:
         """Adopt a session + render its tail. Shared by /resume and the drawer."""
         from sk.store import get_history as _gh
@@ -586,6 +609,7 @@ class SidekickTUI(App):
         log = self.query_one("#chat-log", RichLog)
         self.session = session_id
         self._sub()
+        self._stash_view()
         log.clear()
         _role(log, "sys", f"now on `{self.session}`")
         all_msgs = _gh(self.session)
@@ -1314,6 +1338,9 @@ class SidekickTUI(App):
         _role(log, "you", text)
         _rule(log)
         if text.startswith("/"):
+            if text.strip().lower() == "/unwipe":
+                self._restore_view()
+                return
             if text.startswith("/model ") and text[7:].strip():
                 from sk.config import Config
                 from sk.slash import _resolve_model_name
@@ -1342,6 +1369,7 @@ class SidekickTUI(App):
                 self._show_session(out.switch_session, out.text)
                 return
             if out.clear_view:
+                self._stash_view()
                 log.clear()
             if out.text:
                 _role(log, "", out.text)
