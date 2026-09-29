@@ -111,7 +111,27 @@ def test_rewind_empty_and_bad_n(tmp_path, monkeypatch):
     f = tmp_path / "f.txt"
     f.write_text("a")
     cp.snapshot_before("s", "edit_file", {"path": str(f)})
-    assert "no checkpoint #9" in cp.rewind("s", 9)
+    out = cp.rewind("s", 9)
+    assert out.startswith("Error: no checkpoint #9")
+
+
+def test_rewind_corrupt_bytes_errors(tmp_path, monkeypatch):
+    """Undecodable snapshot bytes surface as Error:, never raise."""
+    _iso(tmp_path, monkeypatch)
+    p = _cpfile(tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    recs = [
+        {
+            "n": 1,
+            "ts": 1.0,
+            "tool": "write_file",
+            "target": str(tmp_path / "f.txt"),
+            "original_b64": "a",  # invalid padding: b64decode raises
+        }
+    ]
+    p.write_text(json.dumps(recs))
+    out = cp.rewind("s")
+    assert out.startswith("Error: rewind failed")
 
 
 def test_corrupt_file_treated_empty(tmp_path, monkeypatch):
