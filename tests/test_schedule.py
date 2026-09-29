@@ -7,6 +7,17 @@ def _iso_state(tmp_path, monkeypatch):
     monkeypatch.setattr(daemon, "STATE_PATH", tmp_path / "daemon.json")
 
 
+def _flat(output: str) -> str:
+    """Collapse all whitespace so assertions survive console line-wrapping.
+
+    Rich wraps CLI output at the terminal width; long tmp paths (notably
+    macOS /private/var/folders/...) push phrases like 'daily at 08:00'
+    across a wrap boundary. Normalizing whitespace makes these checks
+    width-proof (GH-176).
+    """
+    return " ".join(output.split())
+
+
 def test_parse_named_slots():
     assert daemon.parse_schedule("brief me every morning") == {
         "kind": "daily",
@@ -167,9 +178,9 @@ def test_schedule_cli(tmp_path, monkeypatch):
     res = CliRunner().invoke(app, ["daemon-schedule"])
     assert res.exit_code == 0 and "(none)" in res.output
     res = CliRunner().invoke(app, ["daemon-schedule", "--set", "every morning"])
-    assert res.exit_code == 0 and "daily at 08:00" in res.output
+    assert res.exit_code == 0 and "daily at 08:00" in _flat(res.output)
     res = CliRunner().invoke(app, ["daemon-schedule"])
-    assert "daily at 08:00" in res.output
+    assert "daily at 08:00" in _flat(res.output)
     res = CliRunner().invoke(app, ["daemon-schedule", "--set", "whenever"])
     assert res.exit_code == 0 and "Could not parse" in res.output
     res = CliRunner().invoke(app, ["daemon-schedule", "--clear"])
@@ -194,4 +205,4 @@ def test_install_cli_schedule_flag(tmp_path, monkeypatch):
     )
     res = CliRunner().invoke(app, ["daemon-install", "--schedule", "every morning"])
     assert res.exit_code == 0, res.output
-    assert "daily at 08:00" in res.output and tdest.exists()
+    assert "daily at 08:00" in _flat(res.output) and tdest.exists()
