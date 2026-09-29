@@ -392,11 +392,23 @@ def _extra_body(cfg: Config, plan_mode: bool = False) -> dict:
 
 
 def _tool_target(name: str, args: dict) -> str:
-    """Canonical repeat-key: same tool + same target, ignoring cosmetic params."""
+    """Canonical repeat-key: tool + primary target + full-args digest.
+
+    Same call → same key; ANY argument change (e.g. different write content)
+    → different key, so distinct writes never collide and plan approvals
+    cannot leak across contents.
+    """
+    import hashlib
+
+    try:
+        blob = json.dumps(args, sort_keys=True, default=str)
+    except Exception:
+        blob = str(args)
+    digest = hashlib.sha1(blob.encode()).hexdigest()[:12]
     for key in ("url", "path", "cmd", "query", "content", "text", "id"):
         if key in args and args[key] not in ("", None):
-            return f"{name}|{key}={str(args[key])[:300]}"
-    return f"{name}|{json.dumps(args, sort_keys=True)[:300]}"
+            return f"{name}|{key}={str(args[key])[:300]}#{digest}"
+    return f"{name}|{blob[:300]}#{digest}"
 
 
 def format_plan(calls: list[tuple[str, dict]]) -> str:

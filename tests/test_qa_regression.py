@@ -268,9 +268,6 @@ def test_forget_blank_via_slash_and_cli(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-226 ({ISSUES}/226): same path + different content collide"
-)
 def test_tool_target_distinguishes_content():
     from sk.agent import _tool_target
 
