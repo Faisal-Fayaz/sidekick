@@ -70,6 +70,9 @@ def forget(query: str = typer.Argument(..., help="Delete memories matching this 
     """Delete matching memories: sk forget \"qwen\""""
     from sk.store import forget_memory
 
+    if not (query or "").strip():
+        console.print("[red]usage: sk forget <words> (blank query deletes nothing)[/red]")
+        raise typer.Exit(1)
     _cfg()  # establish project namespace default
     console.print(f"[yellow]{forget_memory(query)}[/yellow]")
 
