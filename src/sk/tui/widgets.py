@@ -31,6 +31,36 @@ class ChatLog(RichLog):
 
     ALLOW_SELECT = True
 
+    follow = True
+    on_held = None
+
+    def write(self, *args, **kwargs):
+        """Append, holding the viewport when follow is off (follow-lock).
+
+        RichLog always yanks to the bottom on write; when the user scrolled
+        up we restore the pre-write position and notify via on_held.
+        """
+        hold = not bool(getattr(self, "follow", True))
+        y = None
+        if hold:
+            try:
+                y = self.scroll_y
+            except Exception:
+                y = None
+        result = super().write(*args, **kwargs)
+        if hold and y is not None:
+            try:
+                self.scroll_to(y=y, animate=False)
+            except Exception:
+                pass
+            hook = getattr(self, "on_held", None)
+            if callable(hook):
+                try:
+                    hook()
+                except Exception:
+                    pass
+        return result
+
     def render_line(self, y: int) -> Strip:
         scroll_x, scroll_y = self.scroll_offset
         row = scroll_y + y
