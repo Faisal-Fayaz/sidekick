@@ -46,6 +46,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("diff", "show working-tree git diff (stat + capped)"),
     ("review [base]", "ask the agent to review the working-tree diff"),
     ("rewind [n]", "undo an agent file edit (latest, or checkpoint n)"),
+    ("research <question>", "read-only research turn; returns a digest"),
     ("init", "scaffold SIDEKICK.md repo conventions in this directory"),
     ("skills", "list skill packs"),
     ("copy [n]", "copy nth-last answer (default: last)"),
@@ -401,6 +402,13 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         except ValueError:
             return SlashOut(handled=True, text="usage: `/rewind [n]`")
         return SlashOut(handled=True, text=_rewind(session, num))
+
+    if cmd == "research":
+        from .agent import delegate_research
+
+        if not arg.strip():
+            return SlashOut(handled=True, text="usage: `/research <question>`")
+        return SlashOut(handled=True, text=delegate_research(arg.strip(), cfg, session))
 
     if cmd == "init":
         from .memory_files import scaffold_memory

@@ -1321,6 +1321,34 @@ def _drop_stale_control(messages: list) -> None:
         pass
 
 
+def delegate_research(task: str, cfg: Config, session: str = "", max_steps: int = 3) -> str:
+    """Read-only research turn that returns a digest string. Never raises.
+
+    Runs run_agent with read_only enforced at dispatch (writes denied even
+    if the model disobeys the prompt) and a deny-all approver, on a copy of
+    the config capped to a small step budget so scouting cannot burn the
+    main turn's budget. Main-turn history is untouched; failures return an
+    explanatory string instead of raising.
+    """
+    import dataclasses
+
+    try:
+        scoped = dataclasses.replace(cfg, max_steps=max(1, int(max_steps)), max_steps_custom=True)
+        return run_agent(
+            task,
+            [],
+            scoped,
+            on_tool=None,
+            on_token=None,
+            approve=lambda name, args: False,
+            auto_approve=False,
+            session=session,
+            read_only=True,
+        )
+    except Exception as e:
+        return f"Error: research delegate failed: {e}"
+
+
 def run_agent(
     user_msg: str,
     history: list[dict],
