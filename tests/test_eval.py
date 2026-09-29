@@ -464,6 +464,33 @@ def test_tool_unsupported_falls_back_to_text_tools(monkeypatch, tmp_path):
     assert "no-tools-model" in agent._tools_unsupported
 
 
+def test_empty_list_tool_calls_takes_text_fallback(monkeypatch, tmp_path):
+    """Providers returning tool_calls=[] (not null) alongside fenced tool JSON
+    must execute the tool — never post the JSON block as chat (live #79 case:
+    ```json {"name":"skill",...}``` rendered to the user)."""
+    import sk.agent as agent
+    import sk.store as store
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    cfg = Config(model="m", base_url="http://x/v1", api_key="x", max_steps=5, temperature=0.0)
+    calls = {"n": 0}
+
+    def fake_stream(client, model, messages, tools, *a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            blob = '```json {"name":"exec","arguments":{"cmd":"pwd"}} ```'
+            return agent._Msg(blob, [], "", "stop")  # [] from provider, not None
+        return agent._Msg("done", [], "", "stop")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("run pwd", [], cfg, approve=lambda n, a: True, session="t")
+    assert out == "done"
+    assert "```json" not in out  # never posted as chat
+    rows = store.list_tool_runs("t")
+    assert any(r["tool"] == "exec" for r in rows)  # it executed instead
+
+
 def test_tool_unsupported_cached_between_turns(monkeypatch, tmp_path):
     """Once a model is flagged tool-unsupported, later turns skip the failing
     call entirely (first stream attempt already uses tools=None)."""
