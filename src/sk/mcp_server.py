@@ -6,6 +6,9 @@ hard-refusals apply unchanged. Stdout carries protocol only (logs go stderr).
 
 Policy: read-only tools run; approval-gated tools (shell, writes, delete)
 need --allow-writes, else a clean denied error (no user to prompt headless).
+Every call also passes PreToolUse hooks (session "mcp"); a hook denial
+refuses with isError before the approval check. PostToolUse is not fired
+on this path (keep the serve loop small and synchronous).
 """
 
 from __future__ import annotations
@@ -66,6 +69,11 @@ def _call_tool(name: str, args: dict, allow_writes: bool) -> dict:
             "content": [{"type": "text", "text": f"Error: unknown tool '{name}'."}],
             "isError": True,
         }
+    from .hooks import pre_tool_use as _pre_hook
+
+    allowed, reason = _pre_hook("mcp", name, args)
+    if not allowed:
+        return {"content": [{"type": "text", "text": reason}], "isError": True}
     if name in approval_tools() and not allow_writes:
         return {
             "content": [
