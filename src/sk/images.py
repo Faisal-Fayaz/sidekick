@@ -189,7 +189,7 @@ def extract_image_refs(text: str) -> tuple[str, list[str]]:
                 return f"[image not found: {raw}]"
             if p.stat().st_size > MAX_INPUT_BYTES:
                 return f"[image too large (>10MB): {raw}]"
-            found.append(str(p))
+            found.append(str(p.resolve()))
             return f"\n[attached image: {p.name}]\n"
         except Exception as e:
             return f"[error reading image @{raw}: {e}]"
