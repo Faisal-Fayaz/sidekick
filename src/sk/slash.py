@@ -46,6 +46,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("diff", "show working-tree git diff (stat + capped)"),
     ("review [base]", "ask the agent to review the working-tree diff"),
     ("rewind [n]", "undo an agent file edit (latest, or checkpoint n)"),
+    ("redo", "re-apply the last rewound change"),
     ("research <question>", "read-only research turn; returns a digest"),
     ("init", "scaffold SIDEKICK.md repo conventions in this directory"),
     ("skills", "list skill packs"),
@@ -412,6 +413,11 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         except ValueError:
             return SlashOut(handled=True, text="usage: `/rewind [n]`")
         return SlashOut(handled=True, text=_rewind(session, num))
+
+    if cmd == "redo":
+        from .checkpoints import redo as _redo
+
+        return SlashOut(handled=True, text=_redo(session))
 
     if cmd == "research":
         from .agent import delegate_research
