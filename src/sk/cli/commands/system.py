@@ -231,7 +231,11 @@ def repair_config() -> str | None:
         try:
             CONFIG_PATH.rename(bak)
         except Exception as e:
-            return f"[red]config unreadable and backup failed: {e}[/red]"
+            return (
+                f"[red]config unreadable and backup failed: {e}[/red]\n"
+                f"[dim]Next: move it aside (`mv {CONFIG_PATH} {bak}`)"
+                " and re-run `sk doctor --fix`.[/dim]"
+            )
         Config().ensure_created()
         return f"[green]fixed: {reason} backed up to {bak}, fresh defaults written.[/green]"
 
@@ -267,7 +271,11 @@ def repair_config() -> str | None:
             return _reset(f"invalid {', '.join(bad)} in config")
         return None
     except Exception as e:
-        return f"[red]config repair failed: {e}[/red]"
+        return (
+            f"[red]config repair failed: {e}[/red]\n"
+            f"[dim]Next: check `{CONFIG_PATH}` is valid TOML (or delete it)"
+            " and re-run `sk doctor --fix`.[/dim]"
+        )
 
 
 @app.command()
@@ -302,6 +310,11 @@ def doctor(
                 console.print(f"[dim]--fix: pulling {cfg.model}...[/dim]")
                 ok2, msg2 = pull_model(cfg.model)
                 console.print(f"[green]{msg2}[/green]" if ok2 else f"[red]{msg2}[/red]")
+                if not ok2:
+                    console.print(
+                        f"[dim]Next: retry with `ollama pull {cfg.model}`, verify with `ollama list`, "
+                        "then re-run `sk doctor`.[/dim]"
+                    )
                 if ok2:
                     try:
                         names = fetch_models(
