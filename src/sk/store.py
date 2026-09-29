@@ -527,6 +527,11 @@ def search_sessions(
         keys = _keywords(query or "")
         if not keys:
             return []
+        try:
+            limit = int(limit or 10)
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(limit, 50))
         scope, params = _ns_clause(ns, alias="m")
         if (session or "").strip():
             scope += " AND m.session = ?"
@@ -677,6 +682,11 @@ def log_shell(cmd: str, cwd: str = "", exit: int = 0) -> bool:
 
 
 def list_shell(limit: int = 20) -> list[tuple[int, str, str, int]]:
+    try:
+        limit = int(limit or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 50))  # SQLite treats negative LIMIT as unlimited
     conn = _connect()
     try:
         cur = conn.execute(

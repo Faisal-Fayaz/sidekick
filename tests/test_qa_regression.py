@@ -407,9 +407,6 @@ def test_cwd_missing_dir_clean_error():
     assert "Traceback" not in r.output
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-229 ({ISSUES}/229): list_shell(-5) returns the whole table"
-)
 def test_negative_shell_limit_clamped(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     for i in range(60):
