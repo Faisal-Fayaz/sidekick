@@ -901,7 +901,15 @@ async def _pilot_quit_releases_pending(monkeypatch):
         await pilot.press("enter")
         await pilot.pause()
         await pilot.pause()
-        assert app._pending_approval is None  # released, not left dangling
+        assert app._quit_armed is True
+        assert app._pending_approval is not None  # first quit arms, keeps the slot
+        area.focus()
+        area.text = "/quit"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert app._pending_approval is None  # second quit releases, not left dangling
 
 
 async def _pilot_slash_bypasses_pending(monkeypatch):
