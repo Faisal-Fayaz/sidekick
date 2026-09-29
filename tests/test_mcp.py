@@ -116,3 +116,81 @@ def test_batch_mixed():
     assert isinstance(out, list) and len(out) == 2  # notification answered with silence
     assert out[0]["id"] == 1 and len(out[0]["result"]["tools"]) == 19
     assert out[1]["result"]["isError"] is False
+
+
+def _iso_hooks(tmp_path, monkeypatch):
+    import sk.config as config_mod
+    import sk.hooks as hooks_mod
+
+    cfgdir = tmp_path / ".sidekick"
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", cfgdir)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", cfgdir / "config.toml")
+    monkeypatch.chdir(tmp_path)
+    hooks_mod._started_sessions.clear()
+    return cfgdir
+
+
+def _toml_str(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _hook_cmd(tmp_path, body):
+    import shlex
+    import sys
+
+    p = tmp_path / f"hook_{len(list(tmp_path.glob('hook_*.py')))}.py"
+    p.write_text(body)
+    return shlex.join([sys.executable, str(p)])
+
+
+ALLOW_SRC = "import json,sys; json.load(sys.stdin); print(json.dumps({'decision': 'allow'}))"
+
+
+def test_call_denied_by_prehook(tmp_path, monkeypatch):
+    """Denying PreToolUse hook refuses the served call with isError + hook reason."""
+    import json as _json
+
+    cfgdir = _iso_hooks(tmp_path, monkeypatch)
+    dump = tmp_path / "payload.json"
+    deny_src = (
+        "import json,sys; p=json.load(sys.stdin); "
+        f"open({str(dump)!r},'w').write(json.dumps(p)); "
+        "print(json.dumps({'decision': 'deny', 'reason': 'served traffic blocked'}))"
+    )
+    cfgdir.mkdir(parents=True, exist_ok=True)
+    (cfgdir / "config.toml").write_text(
+        f"[[hooks.PreToolUse]]\ncommand = {_toml_str(_hook_cmd(tmp_path, deny_src))}\n"
+    )
+    out = _req("tools/call", {"name": "list_dir", "arguments": {"path": "/tmp"}})
+    assert out["result"]["isError"] is True
+    text = out["result"]["content"][0]["text"]
+    assert text.startswith("Denied by hook") and "served traffic blocked" in text
+    payload = _json.loads(dump.read_text())
+    assert payload["session"] == "mcp" and payload["tool"] == "list_dir"
+    assert payload["args"] == {"path": "/tmp"}
+
+
+def test_call_allowed_by_prehook(tmp_path, monkeypatch):
+    """Allowing hook leaves served calls untouched."""
+    cfgdir = _iso_hooks(tmp_path, monkeypatch)
+    cfgdir.mkdir(parents=True, exist_ok=True)
+    (cfgdir / "config.toml").write_text(
+        f"[[hooks.PreToolUse]]\ncommand = {_toml_str(_hook_cmd(tmp_path, ALLOW_SRC))}\n"
+    )
+    out = _req("tools/call", {"name": "list_dir", "arguments": {"path": "/tmp"}})
+    assert out["result"]["isError"] is False
+    assert "/tmp" in out["result"]["content"][0]["text"]
+
+
+def test_call_no_hooks_behaves_as_before(tmp_path, monkeypatch):
+    """Empty hooks table: approval semantics unchanged (read ok, write refused)."""
+    cfgdir = _iso_hooks(tmp_path, monkeypatch)
+    cfgdir.mkdir(parents=True, exist_ok=True)
+    (cfgdir / "config.toml").write_text("")
+    out = _req("tools/call", {"name": "list_dir", "arguments": {"path": "/tmp"}})
+    assert out["result"]["isError"] is False
+    out = _req(
+        "tools/call", {"name": "write_file", "arguments": {"path": "/tmp/x", "content": "hi"}}
+    )
+    assert out["result"]["isError"] is True
+    assert "allow-writes" in out["result"]["content"][0]["text"]
