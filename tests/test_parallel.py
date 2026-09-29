@@ -110,15 +110,34 @@ def test_timing_beats_serial_floor(monkeypatch):
 
 
 def test_cache_hits_skip_execution(monkeypatch):
-    from sk.agent import _run_tools_batch
+    from sk.agent import _run_tools_batch, _tool_target
 
     state, fake = _tracker()
     monkeypatch.setattr(agent, "dispatch_tool", fake)
-    seen = {"list_dir|path=x": "cached-result"}
+    seen = {_tool_target("list_dir", {"path": "x"}): "cached-result"}
     outs = _run_tools_batch([("list_dir", {"path": "x"})], None, None, seen, session="s")
     assert len(outs) == 1 and outs[0][1] is True
     assert "cached-result" in outs[0][0] and "already ran" in outs[0][0]
     assert state["calls"] == []
+
+
+def test_batch_same_path_different_content_both_execute(tmp_path):
+    from sk.agent import _run_tools_batch
+
+    f = tmp_path / "x"
+    f.write_text("orig")
+    outs = _run_tools_batch(
+        [
+            ("write_file", {"path": str(f), "content": "A"}),
+            ("write_file", {"path": str(f), "content": "B"}),
+        ],
+        lambda n, a: True,
+        None,
+        {},
+        session="s",
+    )
+    assert all(rep is False for _, rep in outs)
+    assert f.read_text() == "B"
 
 
 def test_on_tool_replays_in_order(monkeypatch):

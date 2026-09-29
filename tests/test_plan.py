@@ -195,12 +195,13 @@ def test_cli_reviewer_yolo_and_prompt(monkeypatch, capsys):
 
 
 def test_tui_review_plan_sets_turn_scope(monkeypatch):
+    from sk.agent import _tool_target
     from sk.tui.app import SidekickTUI
 
     app = SidekickTUI()
     monkeypatch.setattr(app, "_wait_slot", lambda *a, **k: True)
     assert app._review_plan("1. shell -> x", [("shell", {"cmd": "x"})]) is True
-    assert app._plan_approved == {"shell|cmd=x"}
+    assert app._plan_approved == {_tool_target("shell", {"cmd": "x"})}
     monkeypatch.setattr(app, "_wait_slot", lambda *a, **k: False)
     assert app._review_plan("1. shell -> x", [("shell", {"cmd": "x"})]) is False
     assert app._plan_approved is None
