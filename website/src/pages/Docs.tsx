@@ -156,7 +156,9 @@ export default function Docs() {
             The reverse direction works too: {inline('sk mcp-servers')} consumes external stdio MCP servers
             (configured under {inline('[mcp_servers.*]')} in the global config file) as approval-gated{' '}
             {inline('mcp__*')} agent tools — asked by default, denied in read-only mode, audit-logged like
-            builtins. See {inline('docs/mcp-client.md')}.
+            builtins. Remote servers join the same way: an {inline('[mcp_servers.name]')} section with{' '}
+            {inline('url=')} (Streamable HTTP, optional {inline('headers=')}) instead of {inline('command=')}.
+            See {inline('docs/mcp-client.md')}.
           </p>
 
           <h2 id="memory">Memory · todos · sessions</h2>
@@ -174,6 +176,13 @@ export default function Docs() {
           <CodeBlock
             code={`sk skills                    # list installed packs\nsk skills-search "pdf"       # search registry\nsk skills-install NAME       # install a pack\nsk plugins                   # user-defined tools (TOOLS.md, see docs/plugins.md)`}
           />
+          <p>
+            Custom slash commands turn Markdown files into first-class {inline('/commands')}: drop a file in{' '}
+            {inline('~/.sidekick/commands/')} (global) or {inline('.sidekick/commands/')} (project, overrides
+            global) with an optional description frontmatter and a {inline('{{args}}')} (or{' '}
+            {inline('$ARGUMENTS')}) template — shared, reviewable, no code. Builtins win name collisions;{' '}
+            {inline('/help')} lists yours separately.
+          </p>
 
           <h2 id="daemon">Daemon & jobs</h2>
           <CodeBlock
@@ -222,6 +231,13 @@ export default function Docs() {
             {inline('read_url')}/{inline('web_search')} block localhost/private IPs. API keys chmod 600, masked
             in output.
           </p>
+          <p>
+            <b>Event hooks:</b> {inline('[[hooks.PreToolUse]]')} entries in the config run your own command with
+            the pending tool call as JSON — non-zero exit or timeout denies the call fail-closed (secret-blockers,
+            policy checks). {inline('SessionStart')}/{inline('PostToolUse')} observe without blocking.{' '}
+            {inline('sk hooks')} lists handlers, {inline('sk hooks --check')} dry-runs them. See{' '}
+            {inline('docs/hooks.md')}.
+          </p>
 
           <h2 id="architecture">Architecture</h2>
           <CodeBlock
@@ -236,7 +252,7 @@ export default function Docs() {
 
           <h2 id="tests">Tests & contributing</h2>
           <CodeBlock
-            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 761 passed, no Ollama needed`}
+            code={`uv run --python 3.12 --with ".[test]" pytest tests -q   # 780 passed, no Ollama needed`}
           />
           <p>
             The eval harness ({inline('tests/test_eval.py')}) locks in every past quality bug as an offline
