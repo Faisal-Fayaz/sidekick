@@ -39,8 +39,11 @@ def run(
     allow: str = typer.Option(
         "", "--allow", help="Auto-approve list, e.g. --allow shell:pytest,write_file"
     ),
+    deny: str = typer.Option(
+        "", "--deny", help="Never-approve list, e.g. --deny shell,write_file (beats --allow)"
+    ),
 ):
-    """Run a one-shot task: sk run \"summarize disk usage in ~/\""""
+    """Run a one-shot task: sk run "summarize disk usage in ~/" """
     import json as _json
 
     from sk.config import parse_allow_list
@@ -49,6 +52,7 @@ def run(
     cfg = _cfg()
     cfg.model = _resolve_model(cfg, model, task, quiet=as_json)
     allowed = parse_allow_list(allow)
+    denied = parse_allow_list(deny)
     if bg:
         import os
 
@@ -64,6 +68,7 @@ def run(
             read_only,
             plan,
             os.getenv(PROFILE_ENV, ""),
+            denied,
         )
         if not job_id or not spawn_worker(job_id):
             msg = "Error: could not start background worker."
@@ -116,7 +121,7 @@ def run(
     save_message(session, "user", task)
 
     approve = _make_approver(
-        yes, cfg.approved_commands, allowed, readonly=read_only, plan_mode=plan
+        yes, cfg.approved_commands, allowed, readonly=read_only, plan_mode=plan, deny=denied
     )
     used_tools: list[str] = []
 

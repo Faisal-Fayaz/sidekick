@@ -43,6 +43,7 @@ def create_job(
     readonly: bool = False,
     plan: bool = False,
     profile: str = "",
+    deny: tuple[str, ...] | list[str] = (),
 ) -> str:
     """Persist a running job. Returns the job id. Never raises ('' on failure)."""
     try:
@@ -60,6 +61,7 @@ def create_job(
             "profile": str(profile or ""),
             "spend_cap": float(spend_cap or 0.0),
             "allow": [str(e) for e in (allow or [])],
+            "deny": [str(e) for e in (deny or [])],
             "status": "running",
             "answer": "",
             "error": "",
@@ -145,6 +147,7 @@ def run_bg_worker(job_id: str) -> str:
             allow,
             readonly=readonly,
             plan_mode=plan,
+            deny=tuple(str(e) for e in (job.get("deny", []) or [])),
         )
         try:
             answer = run_agent(

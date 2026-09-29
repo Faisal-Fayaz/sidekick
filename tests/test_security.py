@@ -240,3 +240,26 @@ def test_normal_mode_unaffected_by_gates(tmp_path, monkeypatch):
         session="t",
     )
     assert ok is True and f.read_text() == "hi"
+
+
+def test_deny_list_beats_allow_at_approver():
+    """#234: contradictory --allow + --deny resolves to deny, no prompt."""
+    from sk.cli.approvers import _make_approver
+
+    calls: list = []
+
+    def _boom(name, args):
+        calls.append((name, args))
+        raise AssertionError("deny must short-circuit before any prompt")
+
+    import sk.cli.approvers as approvers
+
+    real_confirm = approvers.typer.confirm
+    approvers.typer.confirm = _boom
+    try:
+        approve = _make_approver(False, (), ("shell",), deny=("shell:rm",))
+        assert approve("shell", {"cmd": "rm -rf /"}) is False
+        assert approve("shell", {"cmd": "ls"}) is True
+    finally:
+        approvers.typer.confirm = real_confirm
+    assert calls == []

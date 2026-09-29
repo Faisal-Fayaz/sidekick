@@ -75,14 +75,26 @@ class SidekickTUI(App):
     #theme-list { height: auto; }
     """
 
-    def __init__(self, model: str = "", session: str = "", allow: tuple[str, ...] = ()):
+    def __init__(
+        self,
+        model: str = "",
+        session: str = "",
+        allow: tuple[str, ...] = (),
+        deny: tuple[str, ...] = (),
+    ):
         super().__init__()
         self.model_override = model
         from sk.store import new_session_id
 
         self.session = session or new_session_id("tui")
         self._continued = bool(session)
-        self.state: dict = {"yolo": False, "readonly": False, "plan": False, "allow": tuple(allow)}
+        self.state: dict = {
+            "yolo": False,
+            "readonly": False,
+            "plan": False,
+            "allow": tuple(allow),
+            "deny": tuple(deny),
+        }
         self._live_parts: list[str] = []
         self._live_reason: list[str] = []
         self._live_n: int = 0
@@ -1089,6 +1101,11 @@ class SidekickTUI(App):
 
         if name not in approval_tools():
             return True
+        from sk.config import is_session_denied
+
+        if is_session_denied(name, args, tuple(self.state.get("deny", ()) or ())):
+            self._deny_notice(f"deny-listed {name} (--deny wins over --allow)")
+            return False
         if bool(self.state.get("readonly")):
             self._deny_notice(f"read-only mode: denied {name} (`/confirm` to revert)")
             return False

@@ -67,8 +67,9 @@ def test_bg_job_carries_allow(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     seen: dict = {}
 
-    def fake_approver(auto_yes, preapproved=(), allow=(), readonly=False, plan_mode=False):
+    def fake_approver(auto_yes, preapproved=(), allow=(), readonly=False, plan_mode=False, deny=()):
         seen["allow"] = tuple(allow)
+        seen["deny"] = tuple(deny)
         return lambda *a, **k: True
 
     monkeypatch.setattr("sk.cli.approvers._make_approver", fake_approver)

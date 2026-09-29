@@ -10,6 +10,7 @@ def launch(
     session: str = "",
     cont: bool = False,
     allow: tuple[str, ...] = (),
+    deny: tuple[str, ...] = (),
 ) -> None:
     # Mouse tracking on: drag-select in the log auto-copies on release,
     # clicks and wheel work like every other TUI. Hold Shift to select
@@ -18,4 +19,4 @@ def launch(
         from sk.store import latest_session
 
         session = latest_session("tui")
-    SidekickTUI(model=model, session=session, allow=allow).run(mouse=True)
+    SidekickTUI(model=model, session=session, allow=allow, deny=deny).run(mouse=True)
