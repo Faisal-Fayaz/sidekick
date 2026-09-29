@@ -171,6 +171,34 @@ def _parse_spend_cap(raw: object) -> float:
         return 0.0
 
 
+def _parse_int_default(raw: object, default: int, key: str) -> int:
+    """int() that never bricks the CLI: garbage warns on stderr, default wins."""
+    import sys
+
+    try:
+        return int(str(raw if raw is not None else default).strip() or default)
+    except (TypeError, ValueError):
+        print(
+            f"warning: ignoring invalid {key}={raw!r} in config, using {default}.",
+            file=sys.stderr,
+        )
+        return default
+
+
+def _parse_float_default(raw: object, default: float, key: str) -> float:
+    """float() that never bricks the CLI: garbage warns on stderr, default wins."""
+    import sys
+
+    try:
+        return float(str(raw if raw is not None else default).strip() or default)
+    except (TypeError, ValueError):
+        print(
+            f"warning: ignoring invalid {key}={raw!r} in config, using {default}.",
+            file=sys.stderr,
+        )
+        return default
+
+
 REASONING_EFFORTS = ("off", "minimal", "low", "medium", "high", "max")
 
 
@@ -543,11 +571,19 @@ class Config:
             ),
             base_url=str(base_url or vals.get("base_url", "")),
             api_key=str(api_key or vals.get("api_key", "")),
-            max_steps=int(str(vals.get("max_steps", DEFAULTS["max_steps"]))),
+            max_steps=_parse_int_default(
+                vals.get("max_steps", DEFAULTS["max_steps"]), int(DEFAULTS["max_steps"]), "max_steps"
+            ),
             max_steps_custom=_is_custom_max_steps(file_vals, project_vals),
-            temperature=float(str(vals.get("temperature", DEFAULTS["temperature"]))),
-            history_budget_tokens=int(
-                str(vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]))
+            temperature=_parse_float_default(
+                vals.get("temperature", DEFAULTS["temperature"]),
+                float(DEFAULTS["temperature"]),
+                "temperature",
+            ),
+            history_budget_tokens=_parse_int_default(
+                vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]),
+                int(DEFAULTS["history_budget_tokens"]),
+                "history_budget_tokens",
             ),
             spend_cap_usd=_parse_spend_cap(
                 spend_cap or vals.get("spend_cap_usd", DEFAULTS["spend_cap_usd"])
