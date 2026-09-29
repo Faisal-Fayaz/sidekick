@@ -99,6 +99,7 @@ HELP_GOLDEN = """**slash commands**
 - `/model [fast|smart|name]` — show or switch model (`sk model` for guided picker)
 - `/provider [name]` — show or switch provider (keys via `sk auth add`, never pasted here)
 - `/models` — list models on the current provider
+- `/theme [name]` — list or switch themes (same 5 as the F2 picker)
 - `/clear` — start a fresh session (old one kept, see `/sessions`)
 - `/sessions [delete <n>]` — list past sessions, or delete one
 - `/resume <n>` — switch to a past session
@@ -144,7 +145,7 @@ def test_golden_help_reply(tmp_path, monkeypatch):
 
     _iso(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)  # no project .sidekick/commands leak in
-    assert len(COMMANDS) == 35  # trip-wire: new command ⇒ update HELP_GOLDEN
+    assert len(COMMANDS) == 36  # trip-wire: new command ⇒ update HELP_GOLDEN
     for prompt in ("/help", "/h", "/", "  /help  ".strip()):
         out = handle(prompt, session="s", cfg=_cfg(), state={})
         assert out.handled is True and not out.agent_prompt, prompt
