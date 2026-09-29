@@ -389,9 +389,17 @@ def dispatch_tool(name: str, args: dict) -> str:
             return "Error: id must be int."
         return complete_todo(tid)
     if name == "read_url":
-        return tool_read_url(str(args.get("url", "")), int(args.get("max_chars", 6000) or 6000))
+        try:
+            max_chars = int(args.get("max_chars", 6000) or 6000)
+        except Exception:
+            return "Error: max_chars must be int."
+        return tool_read_url(str(args.get("url", "")), max_chars)
     if name == "web_search":
-        return tool_web_search(str(args.get("query", "")), int(args.get("count", 5) or 5))
+        try:
+            count = int(args.get("count", 5) or 5)
+        except Exception:
+            return "Error: count must be int."
+        return tool_web_search(str(args.get("query", "")), count)
     if name == "skill":
         from sk.skills import show_skill
 

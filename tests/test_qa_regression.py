@@ -129,9 +129,6 @@ def test_valid_numerics_load(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-225 ({ISSUES}/225): read_url max_chars='bad' raises ValueError"
-)
 def test_read_url_bad_max_chars_returns_error():
     from sk.tools import registry as reg
 
@@ -139,9 +136,6 @@ def test_read_url_bad_max_chars_returns_error():
     assert isinstance(out, str) and out.startswith("Error")
 
 
-@pytest.mark.xfail(
-    strict=True, reason=f"GH-225 ({ISSUES}/225): web_search count='bad' raises ValueError"
-)
 def test_web_search_bad_count_returns_error():
     from sk.tools import registry as reg
 
