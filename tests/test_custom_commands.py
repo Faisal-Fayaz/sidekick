@@ -136,3 +136,84 @@ def test_unknown_still_unknown(tmp_path, monkeypatch):
     c = _ctx(tmp_path, monkeypatch)
     out = slash.handle("/definitelynotarealcommand", session="s", cfg=c["cfg"], state=c["state"])
     assert out.handled is True and "unknown command" in out.text
+
+
+def test_shell_brace_and_backtick(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    _write(cfgdir / "commands", "d.md", "A !{echo hi} B !`echo yo` C\n")
+    out = cc.render_custom_command("d", "")
+    assert out is not None and "hi" in out and "yo" in out
+    assert "!{" not in out and "!`" not in out  # fully expanded
+
+
+def test_shell_failure_inlines_error(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    _write(cfgdir / "commands", "f.md", "X !{exit 3} Y !{no-such-cmd-xyz-123} Z\n")
+    out = cc.render_custom_command("f", "")
+    assert out is not None
+    assert "exit 3" in out  # non-zero exit inlined, no raise
+    assert "no-such-cmd-xyz-123" in out
+
+
+def test_shell_timeout_is_bounded(tmp_path, monkeypatch):
+    import time
+
+    cfgdir = _iso(tmp_path, monkeypatch)
+    monkeypatch.setattr(cc, "SHELL_TIMEOUT", 0.2)
+    _write(cfgdir / "commands", "s.md", "wait !{sleep 5} done\n")
+    start = time.monotonic()
+    out = cc.render_custom_command("s", "")
+    assert time.monotonic() - start < 4  # nowhere near the 5s sleep
+    assert out is not None and "timed out" in out
+
+
+def test_shell_empty_and_unclosed_stay_literal(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    body = "a !{} b !`` c !{unclosed d @\n"
+    _write(cfgdir / "commands", "e.md", body)
+    assert cc.render_custom_command("e", "") == body
+
+
+def test_file_hit_miss_dir_cap(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)  # chdir == tmp_path
+    (tmp_path / "notes.md").write_text("hello-file")
+    (tmp_path / "big.txt").write_text("z" * (cc.MAX_EXPANSION_BYTES + 100))
+    _write(
+        cfgdir / "commands",
+        "r.md",
+        "H @notes.md M @missing-nope.txt B @{big.txt} D @./ T @~\n",
+    )
+    out = cc.render_custom_command("r", "")
+    assert out is not None
+    assert "hello-file" in out
+    assert "file not found: missing-nope.txt" in out
+    assert "truncated at" in out and len(out) < cc.MAX_EXPANSION_BYTES + 2000
+    assert "not a file" in out  # @./ and @~ are directories
+
+
+def test_mixed_template_and_args_first_order(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    (tmp_path / "data.txt").write_text("D")
+    _write(cfgdir / "commands", "m.md", "Args={{args}} S=!{echo S} F=@data.txt\n")
+    out = cc.render_custom_command("m", "A1")
+    assert out is not None
+    assert "Args=A1" in out and "S=S" in out.replace("\n", "") and "F=D" in out
+    # args are substituted before expansion, so injected forms expand too
+    _write(cfgdir / "commands", "o.md", "got: {{args}}\n")
+    assert "PWNED" in cc.render_custom_command("o", "!{echo PWNED}")
+
+
+def test_file_content_never_reexpanded(tmp_path, monkeypatch):
+    cfgdir = _iso(tmp_path, monkeypatch)
+    (tmp_path / "payload.txt").write_text("!{echo FROMFILE}")
+    _write(cfgdir / "commands", "n.md", "F=@payload.txt\n")
+    out = cc.render_custom_command("n", "")
+    assert out is not None and "!{echo FROMFILE}" in out  # inlined literally
+
+
+def test_slash_dispatch_expands(tmp_path, monkeypatch):
+    c = _ctx(tmp_path, monkeypatch)
+    cfgdir = tmp_path / ".sidekick"
+    _write(cfgdir / "commands", "st.md", "says !{echo dispatched}\n")
+    out = slash.handle("/st", session="s", cfg=c["cfg"], state=c["state"])
+    assert out.handled and out.agent_prompt and "dispatched" in out.agent_prompt
