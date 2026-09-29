@@ -185,3 +185,51 @@ def test_gated_dispatch_refuses_empty_before_approval(tmp_path, monkeypatch):
     assert prompted == []  # doomed calls never prompt
     rows = store.list_tool_runs("t")
     assert any(r["tool"] == "write_file" and not r["approved"] for r in rows)
+
+
+def test_missing_message_steers_chunking():
+    from sk.tools.registry import missing_message
+
+    plain = missing_message("shell", ["cmd"])
+    assert "missing required params" in plain and "skeleton" not in plain
+    guided = missing_message("write_file", ["path", "content"])
+    assert "missing required params" in guided
+    assert "skeleton" in guided and "edit_file" in guided
+
+
+def test_circuit_breaker_trips_on_repeats(tmp_path, monkeypatch):
+    import sk.agent as agent
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr(agent, "_fail_counts", {})
+    args = {"path": "~/.ssh/evil", "content": "hi"}
+    for _ in range(3):
+        # approved (ok True) but failed execution: blocklisted path
+        out, ok = agent._gated_dispatch("write_file", args, approve=lambda n, a: True, session="t")
+        assert ok is True and "blocked" in out
+    out, ok = agent._gated_dispatch("write_file", args, approve=lambda n, a: True, session="t")
+    assert ok is False and "Stopped" in out and "3 times" in out
+
+
+def test_circuit_breaker_resets_on_success_and_arg_change(tmp_path, monkeypatch):
+    import sk.agent as agent
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr(agent, "_fail_counts", {})
+    bad = {"path": "~/.ssh/evil", "content": "hi"}
+    for _ in range(3):
+        agent._gated_dispatch("write_file", bad, approve=lambda n, a: True, session="t")
+    # different args = different key: no trip (fails on its own merits)
+    out, ok = agent._gated_dispatch(
+        "write_file",
+        {"path": "~/.gnupg/evil", "content": "hi"},
+        approve=lambda n, a: True,
+        session="t",
+    )
+    assert "Stopped" not in out and "blocked" in out
+    # a success anywhere resets the session counters
+    agent._record_tool_outcome("t", "write_file", "write_file|path=~/.ssh/evil", False)
+    out, ok = agent._gated_dispatch("write_file", bad, approve=lambda n, a: True, session="t")
+    assert "Stopped" not in out

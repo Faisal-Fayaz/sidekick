@@ -295,13 +295,32 @@ TOOLS_SCHEMA = [
 ]
 
 
-def dispatch_tool(name: str, args: dict) -> str:
-    missing = missing_required(name, args)
-    if missing:
-        return (
+def missing_message(name: str, missing: list[str]) -> str:
+    """Refusal text for calls missing required params. Pure function.
+
+    Content-bearing tools (write_file, edit_file) get a decomposition steer:
+    truncated generations must split (skeleton first, edit_file appends)
+    instead of retrying an identical oversized call. Never raises.
+    """
+    try:
+        base = (
             f"Error: '{name}' missing required params ({', '.join(missing)}). "
             f"Re-emit the call with them filled in."
         )
+        if name in ("write_file", "edit_file"):
+            base += (
+                " If the content is large, split it: write a small skeleton "
+                "file first, then append sections with edit_file calls."
+            )
+        return base
+    except Exception:
+        return f"Error: '{name}' missing required params."
+
+
+def dispatch_tool(name: str, args: dict) -> str:
+    missing = missing_required(name, args)
+    if missing:
+        return missing_message(name, missing)
     if name == "sysinfo":
         return tool_sysinfo()
     if name == "list_dir":

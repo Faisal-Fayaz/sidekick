@@ -648,9 +648,17 @@ def _gated_dispatch(
         return (msg, False)
     missing = missing_required(name, args)
     if missing:
+        from .tools.registry import missing_message
+
+        msg = missing_message(name, missing)
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (msg, False)
+    if _breaker_tripped(session, name, target) >= BREAKER_TRIPS_AT:
         msg = (
-            f"Error: '{name}' missing required params ({', '.join(missing)}). "
-            f"Re-emit the call with them filled in."
+            f"Stopped: '{name}' with these exact arguments has already failed "
+            f"{BREAKER_TRIPS_AT} times in a row. It will keep failing: change the "
+            f"arguments (smaller content, different path/command) or fix the "
+            f"underlying cause instead of retrying."
         )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
@@ -675,8 +683,40 @@ def _gated_dispatch(
 
     _post_hook(session, name, args, result)
     failed = result.startswith("Error") or "blocked" in result[:60].lower()
+    _record_tool_outcome(session, name, target, failed)
     log_tool_run(session, name, target, approved=True, provider=provider, host=host, ok=not failed)
     return (result, True)
+
+
+# Consecutive per-target failure counts, keyed (session, tool, target).
+# Powers the retry circuit breaker: the same call failing repeatedly stops
+# being dispatched and becomes a diagnosis instead. In-memory per process;
+# a restart resets all counters (fail-closed toward retrying, never toward
+# skipping work). Never raises by construction (all access guarded).
+_fail_counts: dict[tuple[str, str, str], int] = {}
+
+BREAKER_TRIPS_AT = 3
+
+
+def _record_tool_outcome(session: str, name: str, target: str, failed: bool) -> None:
+    """Update breaker counters. Any success resets the session's counters."""
+    try:
+        if not failed:
+            for key in [k for k in _fail_counts if k[0] == (session or "")]:
+                _fail_counts.pop(key, None)
+            return
+        key = (session or "", name, target)
+        _fail_counts[key] = _fail_counts.get(key, 0) + 1
+    except Exception:
+        pass
+
+
+def _breaker_tripped(session: str, name: str, target: str) -> int:
+    """Consecutive failure count for this exact call (0 when unknown)."""
+    try:
+        return int(_fail_counts.get((session or "", name, target), 0))
+    except Exception:
+        return 0
 
 
 class _TC:
