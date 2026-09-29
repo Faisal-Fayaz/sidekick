@@ -456,6 +456,10 @@ def config(
     reasoning_effort: str = typer.Option(
         "", help="Reasoning effort for OpenRouter models: off|minimal|low|medium|high|max"
     ),
+    theme: str = typer.Option(
+        "",
+        help="Set theme: sidekick|sidekick-light|opencode|dracula|tokyonight (dark|light work too)",
+    ),
     show: bool = typer.Option(False, "--show", help="Show current config (key masked)"),
     profiles: bool = typer.Option(False, "--profiles", help="List config profiles"),
     save_profile: str = typer.Option(
@@ -548,6 +552,16 @@ def config(
         console.print(
             f"[green]reasoning effort {cfg.reasoning_effort} ({'/'.join(REASONING_EFFORTS)}).[/green]"
         )
+    if theme.strip():
+        from sk.tui.theme import THEME_NAMES, normalize_theme_name
+
+        raw = theme.strip().lower()
+        if raw not in THEME_NAMES and raw not in ("dark", "light"):
+            console.print(f"[red]unknown theme. Pick: {', '.join(THEME_NAMES)}[/red]")
+            raise typer.Exit(1)
+        cfg.theme = normalize_theme_name(raw)
+        changed = True
+        console.print(f"[green]theme → {cfg.theme}[/green]")
     if model:
         m = model.strip()
         low = m.lower()
@@ -568,7 +582,7 @@ def config(
     if show or not changed:
         profile = os.getenv("SIDEKICK_PROFILE", "")
         console.print(
-            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}\nreasoning_effort={cfg.reasoning_effort}"
+            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}\nreasoning_effort={cfg.reasoning_effort}\ntheme={cfg.theme}"
             + (f"\nprofile={profile}" if profile else "")
         )
         if cfg.project_note():
