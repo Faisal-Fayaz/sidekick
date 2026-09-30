@@ -151,8 +151,10 @@ def openai_messages_to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]
 def _cache_breakpoints(system: str, tools: list[dict]) -> tuple[str | list[dict], list[dict]]:
     """Attach prompt-caching breakpoints: system block + end of tools definition.
 
-    System + tools are static within a session, so Anthropic serves repeats
-    from cache (up to 10x cheaper). Returns "" for blank system (omit it).
+    System + tools assemble in a fixed canonical order within a session
+    (refs #276), so repeats serve from cache (up to 10x cheaper). Dynamic
+    context blocks still vary per turn, so only the static prefix and the
+    stable schema serve as cache hits. Returns "" for blank system (omit it).
     Minimum cacheable length (~1k tokens) means tiny prompts simply never
     form a cache entry — harmless. OpenAI-compatible providers cache matching
     prefixes automatically server-side, so this backend is the only place
