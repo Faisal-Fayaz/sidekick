@@ -457,7 +457,7 @@ def test_destructive_refused_even_with_approval(cmd):
         "rm -rf ./build",
         "rm -f /tmp/x",
         "npm run build",
-        'grep -r foo src/',
+        "grep -r foo src/",
         "rm -rf ~/project/build",
         "find . -name '*.py'",
         "echo r\\m -rf /",

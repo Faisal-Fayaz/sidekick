@@ -143,7 +143,9 @@ SHELL_BLOCK_PATTERNS += [
 # reference implementation's command-position scoping.
 
 _SEGMENT_RE = re.compile(r"&&|\|\||[;\n]|\||&(?!&)")
-_ASSIGN_RE = re.compile(r"^\s*(?:export\s+|local\s+|declare\s+|readonly\s+)?([A-Za-z_]\w*)=(.*)$", re.S)
+_ASSIGN_RE = re.compile(
+    r"^\s*(?:export\s+|local\s+|declare\s+|readonly\s+)?([A-Za-z_]\w*)=(.*)$", re.S
+)
 _ANSI_C_RE = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
 _HOME_VARS = ("$HOME", "$USER")
 
