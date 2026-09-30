@@ -26,12 +26,17 @@ from .registry import (
     missing_required,
     tools_schema,
 )
-from .shell import SHELL_BLOCK_PATTERNS, _check_shell, tool_shell
+from .shell import (
+    SHELL_BLOCK_PATTERNS,
+    _check_shell,
+    irreversible_refusal,
+    tool_shell,
+)
 from .web import _html_to_text, _url_blocked, tool_read_url, tool_web_search
 from .write import (
-    WRITE_BLOCKLIST,
     WRITE_TOOLS,
     _check_write_path,
+    _protected_paths,
     tool_delete_file,
     tool_edit_file,
     tool_make_dir,
@@ -47,12 +52,13 @@ __all__ = [
     "READONLY_DENIED_TOOLS",
     "SHELL_BLOCK_PATTERNS",
     "TOOLS_SCHEMA",
-    "WRITE_BLOCKLIST",
+    "_protected_paths",
     "WRITE_TOOLS",
     "_check_cmd",
     "_check_shell",
     "_check_write_path",
     "_html_to_text",
+    "irreversible_refusal",
     "_url_blocked",
     "approval_tools",
     "dispatch_tool",

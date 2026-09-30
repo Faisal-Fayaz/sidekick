@@ -10,10 +10,14 @@ substituted, two expansions run (single pass, innermost-first for nesting):
   inlines up to 8KB; missing files, directories, and errors inline a note.
   Bare @token always expands, so literal @-mentions (emails) become notes —
   reword them or pin the path with @{...}.
-Templates are local user files: expansions run with your own shell trust
-(the agent cannot invoke slash commands). Builtin slash commands always
-win; colliding files are skipped (reported by custom_warnings, shown in /help).
-Never raises.
+Project templates are NOT trusted by default: a cloned repo ships its own
+.sidekick/commands/, and a !`cmd` expansion there reaches sh -c with no
+approval prompt. Set SIDEKICK_TRUST_REPO=1 in your own shell environment to
+opt in; the flag is read from the environment, never from repo config, so a
+repo cannot self-authorize (closes #287). Global templates are always loaded:
+they live in your own home directory.
+Builtin slash commands always win; colliding files are skipped (reported by
+custom_warnings, shown in /help). Never raises.
 """
 
 from __future__ import annotations
@@ -28,20 +32,29 @@ MAX_BODY = 8000
 SHELL_TIMEOUT = 10.0
 MAX_EXPANSION_BYTES = 8192
 
+# Opt in to repo-supplied commands from the OUTER shell environment.
+TRUST_REPO_ENV = "SIDEKICK_TRUST_REPO"
+
 _SHELL_RE = re.compile(r"!`([^`\n]+)`|!{([^{}]+)}")
 _FILE_RE = re.compile(r"@\{([^{}]+)\}|@([A-Za-z0-9_./~+-]+)")
+
+
+def _repo_trusted() -> bool:
+    """True when the user opted into loading .sidekick/commands/ from the cwd."""
+    return os.environ.get(TRUST_REPO_ENV, "").strip() == "1"
 
 
 def _dirs() -> list[Path]:
     from .config import CONFIG_DIR
 
     dirs = [CONFIG_DIR / "commands"]
-    try:
-        proj = Path(os.getcwd()) / ".sidekick" / "commands"
-        if proj.is_dir():
-            dirs.append(proj)
-    except Exception:
-        pass
+    if _repo_trusted():
+        try:
+            proj = Path(os.getcwd()) / ".sidekick" / "commands"
+            if proj.is_dir():
+                dirs.append(proj)
+        except Exception:
+            pass
     return dirs
 
 

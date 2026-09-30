@@ -1,6 +1,7 @@
 """TUI tests: pilot mount + chat behaviors (no LLM needed)."""
 
 import re
+import time
 
 from sk.tui import ChatArea, SidekickTUI
 
@@ -1548,3 +1549,51 @@ async def _pilot_long_answer_renders_inline(monkeypatch):
 
 def test_long_answer_renders_inline(monkeypatch):
     _run(_pilot_long_answer_renders_inline(monkeypatch))
+
+
+async def _pilot_turn_sends_message_once(monkeypatch):
+    """A TUI turn must contain the user's message exactly once (#299).
+
+    `_answer` used to `save_message` and then read history back, so the live
+    turn appeared in the history it passed to run_agent AND was appended again by
+    build_messages. run.py and chat.py ordered these correctly; the TUI did not.
+    Asserted on the messages that actually reach the model, not on the stub.
+    """
+    import sk.agent as _a
+    import sk.store as _s
+    from sk.tui import SidekickTUI as _T
+
+    captured = {}
+
+    def fake_stream(
+        client,
+        model,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        extra,
+        on_token=None,
+        on_reasoning=None,
+    ):
+        captured["messages"] = [dict(m) for m in messages]
+        return _a._Msg("ok", None, "", "stop")
+
+    monkeypatch.setattr(_a, "_stream_chat", fake_stream)
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.session = "dup-check"
+        app._turn_start = time.monotonic()
+        await app._answer("what is the disk usage")
+        await pilot.pause()
+        await pilot.pause()
+
+    msgs = captured.get("messages") or []
+    texts = [str(m.get("content", "")) for m in msgs]
+    dupes = [t for t in texts if texts.count(t) > 1 and "disk usage" in t]
+    assert not dupes, f"user message duplicated in the prompt: {dupes}"
+
+
+def test_turn_sends_message_once(monkeypatch):
+    _run(_pilot_turn_sends_message_once(monkeypatch))

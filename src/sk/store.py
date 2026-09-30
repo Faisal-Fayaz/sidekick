@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -387,6 +388,29 @@ def save_summary(session: str, summary: str, up_to_id: int) -> None:
         pass
 
 
+def log_compact_note(note: str) -> None:
+    """Record a compaction outcome as a session-scoped tool_runs row.
+
+    Exists so "compaction did not run" and "compaction failed" are
+    distinguishable in `sk audit`. The caller used to report the latter for
+    the former, which sent debugging after a summarizer that was never called
+    (#306). Best-effort: never raises.
+    """
+    try:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts)"
+                " VALUES (?, 'compact', ?, 1, '', '', ?, ?)",
+                ("_system", redact(str(note or "")[:500]), 0, time.time()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def save_memory(content: str, namespace: str | None = None) -> str:
     content = content.strip()
     if not content:
@@ -649,12 +673,77 @@ def clear_todos() -> str:
 
 SKIP_PREFIXES = ("sk hook-log", "sk hook_log")
 
+REDACTED = "[redacted]"
+
+# Credential shapes to scrub before anything is persisted or shown. Ordered from
+# most specific to least: a specific prefix wins over a generic key= rule so
+# `Authorization: Bearer sk-abc` redacts cleanly rather than leaving the tail.
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Authorization / Proxy-Authorization headers
+    (
+        re.compile(r"(?i)\b(authorization|proxy-authorization)\b(\s*[:=]\s*)(\S+\s+)?[^\s\"']+"),
+        r"\1\2" + REDACTED,
+    ),
+    # vendor-prefixed keys, matched whole-token so surrounding words survive
+    (re.compile(r"\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}"), REDACTED),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}"), REDACTED),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), REDACTED),
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}"), REDACTED),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}"), REDACTED),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), REDACTED),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+"), REDACTED),
+    # JWTs of any shape (header.payload.signature with base64url chars)
+    (re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), REDACTED),
+    # generic assignments to a credential-sounding name
+    (
+        re.compile(
+            r"(?i)\b([\w.-]*(?:api[_-]?key|secret|token|password|passwd|credential|auth)[\w.-]*)"
+            r"(\s*[:=]\s*)"
+            r"(\"[^\"\n]{3,}\"|'[^'\n]{3,}'|\S{3,})"
+        ),
+        r"\1\2" + REDACTED,
+    ),
+    # env-assignment form: export FOO_TOKEN=...
+    (
+        re.compile(r"(?i)\b([\w.-]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[\w.-]*)=(\S{3,})"),
+        r"\1=" + REDACTED,
+    ),
+    # mysql/postgres inline password flags
+    (re.compile(r"(?i)(\s-[pP])(\S{3,})"), r"\1" + REDACTED),
+    (re.compile(r"(?i)(--password[= ])(\S{3,})"), r"\1" + REDACTED),
+    # private key blocks
+    (
+        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
+        REDACTED,
+    ),
+)
+
+
+def redact(text: str) -> str:
+    """Scrub credential-shaped substrings. Never raises; returns '' for None.
+
+    Applied at every persistence and display boundary: the audit ledger, the
+    shell history, desktop notifications, and exported transcripts. The audit
+    trail is meant to be handable to an auditor or pasted into a bug report,
+    so it cannot hold live secrets (#300, and #156's acceptance criterion
+    "keys never appear in either artifact").
+    """
+    if not text:
+        return ""
+    out = str(text)
+    for pat, repl in _SECRET_PATTERNS:
+        try:
+            out = pat.sub(repl, out)
+        except Exception:
+            continue
+    return out
+
 
 def log_shell(cmd: str, cwd: str = "", exit: int = 0) -> bool:
-    cmd = (cmd or "").strip()[:2000]
+    cmd = redact((cmd or "").strip()[:2000])
     if not cmd:
         return False
-    # skip our own hook noise + secrets
+    # skip our own hook noise. Secrets are handled by redact() above.
     if cmd.startswith(SKIP_PREFIXES):
         return False
     if "sk " in cmd and "hook-log" in cmd:
@@ -728,7 +817,7 @@ def log_tool_run(
                 (
                     session or "",
                     tool,
-                    (target or "")[:500],
+                    redact((target or "")[:500]),
                     1 if approved else 0,
                     provider or "",
                     host or "",

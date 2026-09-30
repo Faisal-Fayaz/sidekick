@@ -5,9 +5,55 @@ from __future__ import annotations
 from typing import Any
 
 
-def _url_blocked(url: str) -> str | None:
-    """SSRF guard. Returns error or None if OK."""
+def _blocked_ip(ip: str) -> bool:
+    """True for an IP literal that must not be reachable from a fetch.
+
+    Raises ValueError when `ip` is not an address at all (a hostname), so the
+    caller can distinguish "not an IP" from "a blocked IP" and fall through to
+    DNS resolution.
+
+    Uses `not is_global` as the primary rule rather than enumerating
+    is_private/is_loopback/is_link_local/is_reserved. The enumeration had holes:
+    100.64.0.0/10 (CGNAT, which is where the Alibaba/Tencent instance metadata
+    endpoint 100.100.100.200 lives) is neither private nor reserved on CPython,
+    and 0.0.0.0 is not flagged at all. `is_global` is False for every one of
+    those, and the explicit set is kept as defence against a future stdlib
+    change (#294).
+    """
     import ipaddress
+
+    addr = ipaddress.ip_address(str(ip))  # raises ValueError on a hostname
+    if not getattr(addr, "is_global", True):
+        return True
+    return bool(
+        getattr(addr, "is_private", False)
+        or getattr(addr, "is_loopback", False)
+        or getattr(addr, "is_link_local", False)
+        or getattr(addr, "is_reserved", False)
+        or getattr(addr, "is_multicast", False)
+        or getattr(addr, "is_unspecified", False)
+    )
+
+
+def _url_blocked(url: str, allow_loopback: bool = False) -> str | None:
+    """SSRF guard. Returns error or None if OK.
+
+    `allow_loopback` is for operator-configured targets only. MCP endpoints live
+    in the global config (project files may not set them), and a local MCP server
+    on 127.0.0.1 is a legitimate, intended use — so that path opts in. Model-
+    driven fetches (read_url, image URLs) never do.
+
+
+    Applied to every outbound fetch the agent makes: read_url, MCP remote
+    endpoints, and the image-download URL, which is provider-supplied and was
+    previously fetched with no guard at all (#294).
+
+    Known ceiling: this resolves DNS and then httpx resolves again when it
+    connects, so a short-TTL rebinding record can pass here and connect
+    elsewhere. Closing it needs connection-time IP pinning, which is #328
+    territory; the guard remains deny-by-default on every literal and
+    currently-resolved address.
+    """
     import socket
     from urllib.parse import urlparse
 
@@ -20,12 +66,12 @@ def _url_blocked(url: str) -> str | None:
     host = (u.hostname or "").lower()
     if not host or len(url) > 2000:
         return "Error: bad URL."
-    if host in ("localhost",) or host.endswith(".local") or host.endswith(".internal"):
+    if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
         return f"Error: blocked host '{host}'."
     try:
-        ip = ipaddress.ip_address(host)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-            return f"Error: blocked IP '{host}'."
+        if _blocked_ip(host):
+            if not (allow_loopback and _is_loopback(host)):
+                return f"Error: blocked IP '{host}'."
     except ValueError:
         pass  # hostname, resolve below
     try:
@@ -36,22 +82,37 @@ def _url_blocked(url: str) -> str | None:
         finally:
             socket.setdefaulttimeout(old_timeout)
         ips = {r[4][0] for r in resolved}
-        for rip in ips:
-            try:
-                ip = ipaddress.ip_address(rip)
-                if (
-                    ip.is_private
-                    or ip.is_loopback
-                    or ip.is_link_local
-                    or ip.is_reserved
-                    or ip.is_multicast
-                ):
-                    return f"Error: host resolves to private IP ({rip})."
-            except ValueError:
-                pass
+        if not ips:
+            return "Error: DNS returned no addresses."
+        for raw_ip in ips:
+            rip = str(raw_ip)
+            if _blocked_ip(rip):
+                if allow_loopback and _is_loopback(rip):
+                    continue
+                return f"Error: host resolves to a non-public IP ({rip})."
     except Exception:
         return "Error: DNS failed."
     return None
+
+
+def _is_loopback(ip: str) -> bool:
+    import ipaddress
+
+    try:
+        return ipaddress.ip_address(str(ip)).is_loopback
+    except Exception:
+        return False
+
+
+def _check_image_url(url: str) -> str | None:
+    """Guard for provider-supplied image URLs.
+
+    A compromised or hostile provider returning a metadata-service URL is an
+    SSRF primitive; the fetched bytes were written to disk and the model could
+    then read them back. Same guard, called explicitly so there is one chokepoint
+    rather than three call sites to remember.
+    """
+    return _url_blocked(url)
 
 
 def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:

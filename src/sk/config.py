@@ -49,11 +49,37 @@ def list_profiles() -> list[str]:
 
 
 PROJECT_FILENAME = ".sidekick.toml"
-# Keys a project file may never set: traffic diverters. A hostile repo could
-# otherwise point your prompts (incl. memories) at its own server.
-PROJECT_BLOCKED_KEYS = ("api_key", "base_url", "mcp_servers", "hooks")
+# Keys a project file may never set: traffic diverters and self-granting authority.
+# A hostile repo could otherwise point your prompts (incl. memories) at its own
+# server, or pre-approve its own shell commands with no prompt shown to the user.
+# `provider`/`model` are traffic selectors -- blocking `base_url` alone is not
+# enough, since choosing a provider picks a base_url (closes #295).
+PROJECT_BLOCKED_KEYS = (
+    "api_key",
+    "base_url",
+    "mcp_servers",
+    "hooks",
+    "provider",
+    "model",
+    "max_steps",
+    "temperature",
+    "history_budget_tokens",
+)
 # Policy keys a project file may not set either (warned, not security-critical).
 PROJECT_POLICY_KEYS = ("spend_cap_usd",)
+# Nested under `[project]`, so the top-level loop above cannot catch them.
+# `approved_commands` self-grants shell approval with no user interaction
+# beyond entering the directory (closes #296). It now lives as a top-level
+# key in the global config only.
+PROJECT_BLOCKED_SUBKEYS = (("project", "approved_commands"),)
+# Top-level keys a project file may set. Empty by design: everything a project
+# file could previously set is either a trust-entering key or has moved under
+# `[project]` as `docs` / `memory_namespace`. Adding a non-trust-entering key
+# here is fine; adding one that grants authority is not.
+PROJECT_ALLOWED_KEYS: tuple[str, ...] = ()
+assert not set(PROJECT_ALLOWED_KEYS) & set(PROJECT_BLOCKED_KEYS), (
+    "PROJECT_ALLOWED_KEYS and PROJECT_BLOCKED_KEYS overlap"
+)
 
 
 def _is_custom_max_steps(file_vals: dict, project_vals: dict) -> bool:
@@ -112,6 +138,67 @@ def _parse_hooks(raw: object) -> tuple[dict, ...]:
     return tuple(out)
 
 
+# MCP trust tiers. An untrusted server has every tool without a literal
+# `readOnlyHint: true` treated as write-capable, which means approval before
+# the call fires and no transparent retry after a transport failure. The default
+# is `untrusted` (fail closed): a server nobody has classified must not be able
+# to mutate external state silently. See #303.
+MCP_TRUST_LEVELS = ("full", "untrusted")
+
+
+def _normalize_trust(raw: object) -> str:
+    """'full' | 'untrusted'. Unknown or missing -> 'untrusted'."""
+    val = str(raw or "").strip().lower()
+    return val if val in MCP_TRUST_LEVELS else "untrusted"
+
+
+def _parse_inherit_env(raw: object) -> tuple[str, ...]:
+    """Glob patterns of extra env vars to pass to a stdio MCP server (#302)."""
+    if not isinstance(raw, list):
+        return ()
+    return tuple(str(p).strip() for p in raw if str(p).strip())
+
+
+def _validate_mcp_url(url: str) -> bool:
+    """True if `url` is a safe remote MCP endpoint.
+
+    Stricter than a scheme prefix test (#303):
+    - absolute http(s) only, so file:// and gopher:// cannot be reached
+    - no userinfo: `https://evil.example@mcp.internal` resolves to
+      mcp.internal while a human skimming the config sees evil.example and
+      believes the credential goes there. Rejecting beats stripping.
+    - no fragment: fragments never reach the server, so a fragment can carry a
+      different value to a log reader than the request actually uses.
+    - plain HTTP only for loopback, where traffic never leaves the host.
+    Never raises.
+    """
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    try:
+        parsed = urlsplit(url)
+    except Exception:
+        return False
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    if parsed.fragment:
+        return False
+    host = parsed.hostname or ""
+    if not host:
+        return False
+    if scheme == "http":
+        if host == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+    return True
+
+
 def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
     """Normalize [mcp_servers.<name>] tables from the global config file.
 
@@ -134,7 +221,7 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
         url = str(spec.get("url", "") or "").strip()
         if command and url:
             continue  # ambiguous transport: refuse, don't guess
-        if url and not _re.match(r"https?://", url):
+        if url and not _validate_mcp_url(url):
             continue
         if not command and not url:
             continue
@@ -157,6 +244,8 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
                 "url": url,
                 "headers": headers,
                 "timeout": min(max(timeout, 1.0), 300.0),
+                "trust": _normalize_trust(spec.get("trust")),
+                "inherit_env": _parse_inherit_env(spec.get("inherit_env")),
             }
         )
     return tuple(out)
@@ -244,7 +333,7 @@ def load_project_values(path: str | Path | None) -> tuple[dict[str, object], lis
     if not isinstance(raw, dict):
         return ({}, [f"ignoring malformed {path}: top level must be a table"])
     vals: dict[str, object] = {}
-    for key in ("provider", "model", "max_steps", "temperature", "history_budget_tokens"):
+    for key in PROJECT_ALLOWED_KEYS:
         if key in raw:
             vals[key] = raw[key]
     for key in PROJECT_BLOCKED_KEYS:
@@ -255,15 +344,18 @@ def load_project_values(path: str | Path | None) -> tuple[dict[str, object], lis
             warnings.append(f"ignoring {key} in {path} (spend policy is global/env only)")
     proj = raw.get("project", {})
     if isinstance(proj, dict):
+        for table, key in PROJECT_BLOCKED_SUBKEYS:
+            if key in proj:
+                warnings.append(
+                    f"ignoring [{table}].{key} in {path} "
+                    f"(approval policy is global config or env only)"
+                )
         docs = proj.get("docs", [])
         if isinstance(docs, list):
             vals["project_docs"] = [str(d) for d in docs if str(d).strip()]
         ns = proj.get("memory_namespace", "")
         if str(ns).strip():
             vals["memory_namespace"] = str(ns).strip()
-        cmds = proj.get("approved_commands", [])
-        if isinstance(cmds, list):
-            vals["approved_commands"] = [str(c) for c in cmds if str(c).strip()]
     return (vals, warnings)
 
 
@@ -599,7 +691,7 @@ class Config:
             project_root=str(project_file.parent) if project_file else "",
             project_docs=tuple(vals.get("project_docs", [])),  # type: ignore[arg-type]
             memory_namespace=str(vals.get("memory_namespace", "")),
-            approved_commands=tuple(vals.get("approved_commands", [])),  # type: ignore[arg-type]
+            approved_commands=tuple(file_vals.get("approved_commands", []) or ()),  # type: ignore[arg-type]
             project_warnings=tuple(project_warnings),
             mcp_servers=_parse_mcp_servers(file_vals.get("mcp_servers", {})),
             hooks=_parse_hooks(file_vals.get("hooks", {})),

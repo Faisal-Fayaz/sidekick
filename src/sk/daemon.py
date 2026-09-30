@@ -552,6 +552,7 @@ def check_once(
     state: dict | None = None, projects: list[str] | None = None, disk_warn: int = 90
 ) -> tuple[list[str], dict]:
     from .brief import DEFAULT_PROJECTS
+    from .store import redact
 
     state = dict(state or load_state())
     projs = projects if projects is not None else DEFAULT_PROJECTS
@@ -565,7 +566,11 @@ def check_once(
 
     fails, max_id = new_failures(int(state.get("last_shell_id", 0) or 0))
     for fid, cmd, cwd, rc in fails:
-        nudges.append(f"shell failure #{fid} (exit {rc}): {cmd[:100]} @ {cwd} — try `sk oops`")
+        # A failing command is exactly where credentials leak (export TOKEN=…,
+        # curl -H "Authorization: …", mysql -p…). These strings go to a desktop
+        # notification, which is visible on a lock screen (#300).
+        safe = redact(str(cmd or "")[:100])
+        nudges.append(f"shell failure #{fid} (exit {rc}): {safe} @ {cwd} — try `sk oops`")
     state["last_shell_id"] = max_id
 
     for d in dirty_repos(projs):
@@ -606,9 +611,12 @@ def digest_text(
     except Exception:
         fails, max_id = [], int(state.get("last_shell_id", 0) or 0)
     if fails:
+        from .store import redact
+
         lines = ["", "**overnight failures**"]
         for fid, cmd, cwd, rc in fails[:10]:
-            lines.append(f"- #{fid} (exit {rc}): {str(cmd)[:100]} @ {cwd} — try `sk oops`")
+            safe = redact(str(cmd or "")[:100])  # digest reaches a notification (#300)
+            lines.append(f"- #{fid} (exit {rc}): {safe} @ {cwd} — try `sk oops`")
         text += "\n" + "\n".join(lines)
     state["last_shell_id"] = max_id
     state["last_run"] = time.time()

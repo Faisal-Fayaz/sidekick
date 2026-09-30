@@ -137,6 +137,7 @@ def _write_config(tmp_path, monkeypatch, server_path=None, extra=""):
             f"command = '{sys.executable}'\n"
             f"args = ['{server_path}']\n"
             "timeout = 10\n"
+            "trust = 'full'  # in-process test server; untrusted default would gate it (#303)\n"
         )
     (d / "config.toml").write_text(body + extra)
     monkeypatch.setattr(config_mod, "CONFIG_DIR", d)

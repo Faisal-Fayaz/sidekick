@@ -11,7 +11,14 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
-from .tools import approval_tools, dispatch_tool, missing_required, tool_sysinfo, tools_schema
+from .tools import (
+    approval_tools,
+    dispatch_tool,
+    irreversible_refusal,
+    missing_required,
+    tool_sysinfo,
+    tools_schema,
+)
 
 # Audit session tag. Direct callers pass session= to run_agent; the TUI
 # dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
@@ -704,6 +711,13 @@ def _gated_dispatch(
         )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
+    # Hard refusal BEFORE approval, not inside the tool. Previously the blocklist
+    # ran inside tool_shell, i.e. after the approval callback, so --yes / /yolo /
+    # --allow / `sk mcp --allow-writes` waved it through (closes #298).
+    refusal = irreversible_refusal(name, args)
+    if refusal:
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (refusal, False)
     if name in approval_tools() and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
@@ -966,14 +980,36 @@ def _stream_chat(
         )
     tool_calls = None
     if tc_buf:
+        # Providers that stream tool_calls without ids (llama.cpp --server, some
+        # Ollama builds, text-JSON shims) used to get `call_0, call_1, ...`
+        # regenerated from a per-message index every turn. The accumulated
+        # history is re-sent in full, so one request could contain two assistant
+        # messages with the same tool_call_id, which is a hard 400 (#310).
+        #
+        # Derive from a stable hash of the call so ids are unique per request
+        # AND identical across a retry of the same turn, which matters because
+        # retries are real (see _create_with_retry).
         tool_calls = [
-            _TC(b["id"] or f"call_{i}", b["name"], b["args"])
+            _TC(b["id"] or _synthetic_call_id(i, b), b["name"], b["args"])
             for i, b in sorted(tc_buf.items())
             if b["name"]
         ]
         if not tool_calls:
             tool_calls = None
     return _Msg(acc_text, tool_calls, acc_reason, finish)
+
+
+def _synthetic_call_id(index: int, buf: dict) -> str:
+    """Deterministic, turn-local, collision-resistant id for an id-less call.
+
+    Stable for the same (index, tool, args) so a retried turn reuses the id;
+    distinct across turns because the args differ.
+    """
+    import hashlib
+
+    seed = f"{index}|{buf.get('name', '')}|{sorted((buf.get('args') or {}).items())}"
+    digest = hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:16]
+    return f"call_{index}_{digest}"
 
 
 def estimate_tokens(text: str) -> int:
@@ -997,16 +1033,58 @@ def _as_role_content(msgs: list[dict]) -> list[dict]:
     return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in msgs]
 
 
+def _keep_index(msgs: list[dict], anchor: int, floor: int, cap: int) -> int:
+    """Index to split at: grow the verbatim tail backward to a token floor.
+
+    Never keeps a fixed *count* of messages regardless of size. The old code had
+    an `or ri > n - 2` escape hatch that unconditionally ate the last two
+    messages, which emptied the middle slice and made compaction a silent no-op
+    whenever the newest messages were large (#306).
+
+    Two invariants:
+    - never split a `tool` result away from the assistant message that requested
+      it, since an orphaned tool message is a hard API 400;
+    - grow until `floor` tokens AND at least `min_text` text-bearing messages
+      are retained, then stop at `cap`.
+    """
+    n = len(msgs)
+    idx = n
+    kept = 0
+    text_msgs = 0
+    min_text = min(5, n)
+    while idx > anchor:
+        idx -= 1
+        content = str(msgs[idx].get("content", ""))
+        kept += estimate_tokens(content)
+        if content.strip():
+            text_msgs += 1
+        # never leave a tool result without its assistant turn above it
+        if msgs[idx].get("role") == "tool" and idx > anchor:
+            idx -= 1
+            kept += estimate_tokens(str(msgs[idx].get("content", "")))
+        if kept >= cap:
+            break
+        if kept >= floor and text_msgs >= min_text:
+            break
+    return max(idx, anchor)
+
+
 def compact_history(
     prior: str, msgs: list[dict], budget_tokens: int, summarizer
-) -> tuple[list[dict], str | None]:
-    """Budget-bounded prompt view of oldest-first turns. Pure logic; summarizer
-    does the single model call. Returns (prompt_msgs, new_summary|None).
+) -> tuple[list[dict], str | None, int | None]:
+    """Budget-bounded prompt view of oldest-first turns. Pure logic.
 
-    Under budget: everything passes through, no summarizer call. Over budget:
-    task anchor + newest turns fitting half the budget stay verbatim, the
-    middle folds into the prior summary. Empty middle or summarizer failure
-    falls back to plain truncation (compaction must never break a turn).
+    Returns (prompt_msgs, new_summary | None, split_index | None).
+
+    `split_index` is the index of the first message that stayed VERBATIM — the
+    messages below it are the ones represented in `new_summary`. Returning it
+    alongside the summary is what makes the watermark correct: the caller cannot
+    derive it by arithmetic over the session, because the summarised prefix and
+    the retained tail are two disjoint lists handed back together (#307).
+
+    `new_summary is None` means compaction did not run — under budget, nothing
+    to fold, or the summarizer produced nothing. That is deliberately distinct
+    from "the summarizer failed", which raises (#306).
     """
     as_role = _as_role_content(msgs)
     base = (
@@ -1015,30 +1093,27 @@ def compact_history(
         else []
     )
     if estimate_tokens(_render_turns(base + as_role)) <= budget_tokens:
-        return (base + as_role, None)
+        return (base + as_role, None, None)
     n = len(msgs)
     if n == 0:
-        return (base, None)
+        return (base, None, None)
     ai = next((i for i, m in enumerate(msgs) if m.get("role") == "user"), 0)
     half = max(500, budget_tokens // 2)
-    acc, ri = 0, n
-    while ri > 0 and (acc + estimate_tokens(msgs[ri - 1].get("content", "")) <= half or ri > n - 2):
-        acc += estimate_tokens(msgs[ri - 1].get("content", ""))
-        ri -= 1
+    ri = _keep_index(msgs, ai, floor=half, cap=max(half * 4, half))
     anchor = [] if ai >= ri else [msgs[ai]]
     middle = msgs[ai + 1 : ri]
+    keep = _as_role_content(anchor + msgs[ri:])
     if not middle:
-        return (base + _as_role_content(anchor + msgs[ri:]), None)
+        # nothing foldable: pass everything through rather than silently
+        # reporting a summarizer failure that never happened
+        return (base + _as_role_content(msgs), None, None)
     context = (prior + "\n" if (prior or "").strip() else "") + _render_turns(middle)
-    try:
-        new_summary = summarizer(context).strip()
-    except Exception:
-        return (base + _as_role_content(anchor + msgs[ri:]), None)
+    new_summary = summarizer(context).strip()  # may raise: that IS a failure
     if not new_summary:
-        return (base + _as_role_content(anchor + msgs[ri:]), None)
+        return (base + keep, None, None)
     out = [{"role": "user", "content": f"[Session summary so far]:\n{new_summary}"}]
-    out += _as_role_content(anchor + msgs[ri:])
-    return (out, new_summary)
+    out += keep
+    return (out, new_summary, ri)
 
 
 def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> list[dict]:
@@ -1048,9 +1123,12 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
      the merged summary. Falls back to the passed history on any failure.
     DB history stays complete — compaction is a view, never destructive."""
     try:
-        budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        try:
+            budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        except Exception:
+            budget = 3000
         if not (session or "").strip():
-            prompt, _ = compact_history("", history, budget, summarize_fn)
+            prompt, _, _ = compact_history("", history, budget, summarize_fn)
             return prompt
         from .store import get_history_full, get_summary, save_summary
 
@@ -1060,16 +1138,34 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
         prior, up_to = get_summary(session)
         uncovered = [m for m in full if m.get("id", 0) > up_to]
         if not uncovered:
+            # Nothing new to fold. Return the prior summary AND leave the
+            # watermark alone — the old code advanced past the retained tail,
+            # and this branch is also what discarded the summary itself (#307).
             if (prior or "").strip():
                 return [{"role": "user", "content": f"[Session summary so far]:\n{prior}"}]
             return history
-        prompt, new_summary = compact_history(prior, uncovered, budget, summarize_fn)
-        if new_summary is not None:
-            top = max([m.get("id", 0) for m in full] + [up_to])
+        prompt, new_summary, split = compact_history(prior, uncovered, budget, summarize_fn)
+        if new_summary is not None and split is not None:
+            # Watermark over the SUMMARISED PREFIX ONLY. Never max(id) over the
+            # whole session: compact_history deliberately keeps messages[split:]
+            # verbatim, and advancing past them discards them permanently.
+            summarised = uncovered[:split]
+            top = max([m.get("id", 0) for m in summarised] + [up_to])
             save_summary(session, new_summary, top)
         return prompt
-    except Exception:
+    except Exception as e:
+        _record_compact_failure(e)
         return history
+
+
+def _record_compact_failure(err: object) -> None:
+    """Compaction failed. Log it distinctly from "nothing to compact" (#306)."""
+    try:
+        from .store import log_compact_note
+
+        log_compact_note(f"compaction failed: {type(err).__name__}: {err}"[:300])
+    except Exception:
+        pass
 
 
 def make_summarizer(cfg):
@@ -1155,10 +1251,17 @@ def compact_session_now(session: str, cfg, hint: str = "") -> str:
         if estimate_tokens(_render_turns(base + as_role)) <= budget:
             return "_under budget — history kept verbatim_"
         before = estimate_tokens(_render_turns(uncovered))
-        prompt, new_summary = compact_history(prior, uncovered, budget, make_summarizer(cfg))
-        if new_summary is None:
-            return "_compaction failed (summarizer unreachable?) — history untouched_"
-        top = max([m.get("id", 0) for m in full] + [up_to])
+        try:
+            prompt, new_summary, split = compact_history(
+                prior, uncovered, budget, make_summarizer(cfg)
+            )
+        except Exception as e:
+            # The summarizer actually failed. Distinct from the branch below,
+            # which means there was nothing to fold (#306).
+            return f"_compaction failed ({type(e).__name__}: {e}) — history untouched_"
+        if new_summary is None or split is None:
+            return "_nothing foldable — history kept verbatim_"
+        top = max([m.get("id", 0) for m in uncovered[:split]] + [up_to])
         save_summary(session, new_summary, top)
         after = estimate_tokens(_render_turns(prompt))
         return (
@@ -1279,6 +1382,18 @@ def build_messages(
         smart_model = _TIERS.get("ollama", {}).get("smart", "qwen2.5-coder:7b")
     except Exception:
         smart_model = "qwen2.5-coder:7b"
+    # The live turn is persisted before run_agent is called (every surface does
+    # this, so `sk oops` and /rewind see it), and prepare_history re-reads the
+    # DB — so `history` can already end with this exact user message and
+    # appending it below would send every prompt twice (#299). Dedupe the tail
+    # here rather than relying on each caller's save/read ordering.
+    hist = list(history or [])
+    while (
+        hist
+        and str(hist[-1].get("role", "")) == "user"
+        and str(hist[-1].get("content", "")) == user_msg
+    ):
+        hist.pop()
     messages: list[dict] = [
         {
             "role": "system",
@@ -1297,7 +1412,7 @@ def build_messages(
                 smart_model=smart_model,
             ),
         },
-        *history[-20:],
+        *hist[-20:],
         {
             "role": "user",
             "content": (

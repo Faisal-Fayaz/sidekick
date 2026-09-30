@@ -1607,8 +1607,11 @@ class SidekickTUI(App):
         cfg = Config.load()
         if self.model_override:
             cfg.model = self.model_override
-        save_message(self.session, "user", text)
+        # History BEFORE persisting: build_messages appends the live user message
+        # itself, so reading back after the save sent every TUI prompt twice
+        # (#299). run.py and chat.py already ordered it this way.
         hist = get_history(self.session)
+        save_message(self.session, "user", text)
 
         def on_tool(name: str, args: dict) -> None:
             preview = args if name not in ("write_file",) else {"path": args.get("path")}

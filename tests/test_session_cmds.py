@@ -159,10 +159,18 @@ def test_compact_now_folds_and_saves(tmp_path, monkeypatch):
     _seed("s", 30, size=100)
     report = agent.compact_session_now("s", cfg)
     assert "compacted 30 messages" in report
-    prior, _ = store.get_summary("s")
+    prior, up_to = store.get_summary("s")
     assert prior == "BIG PICTURE"
-    # second call: everything covered
-    assert "already compacted" in agent.compact_session_now("s", cfg)
+    # The watermark must stop before the retained tail. It used to advance to
+    # max(id), so the second call found `uncovered` empty and reported
+    # "already compacted" — which meant those messages were gone from the prompt
+    # for good, not merely summarised (#307).
+    assert up_to < 30, f"watermark consumed the retained tail: {up_to}"
+    retained = [m for m in store.get_history_full("s") if m["id"] > up_to]
+    assert retained, "compaction retained nothing"
+    # second call sees only the retained window, which is already under budget
+    again = agent.compact_session_now("s", cfg)
+    assert "compacted" in again or "verbatim" in again or "under budget" in again
 
 
 def test_compact_now_empty_and_under_budget(tmp_path, monkeypatch):
