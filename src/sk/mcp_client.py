@@ -385,6 +385,14 @@ class MCPHttpClient:
         # host to an attacker host would otherwise replay the Authorization
         # header to whoever the redirect names, which is a free
         # credential-exfiltration primitive (#303). TLS verification stays on.
+        # SSRF guard at connect time, not at config-parse time: resolving here
+        # means `sk config` never touches the network, and the check still runs
+        # before any request is sent (#294).
+        from .tools.web import _url_blocked
+
+        blocked = _url_blocked(self.url, allow_loopback=True)
+        if blocked:
+            raise RuntimeError(blocked)
         self._client = httpx.Client(follow_redirects=False)
         try:
             self._request("initialize", _init_params(), self.timeout)
@@ -483,6 +491,11 @@ class MCPHttpClient:
             if not location:
                 raise RuntimeError(f"HTTP {resp.status_code} with no Location header")
             nxt = urljoin(self.url, location)
+            from .tools.web import _url_blocked
+
+            hop_blocked = _url_blocked(nxt, allow_loopback=True)
+            if hop_blocked:
+                raise RuntimeError(f"redirect blocked: {hop_blocked}")
             same_origin = _same_origin(self.url, nxt)
             # Configured headers follow within the origin and never across it.
             saved = dict(self.headers)

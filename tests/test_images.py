@@ -36,6 +36,15 @@ class _Resp:
             raise RuntimeError(f"HTTP {self.status_code}")
 
 
+def _public_dns(monkeypatch):
+    """Make every hostname resolve to a public IP, offline."""
+    import socket
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))]
+    )
+
+
 def _iso(tmp_path, monkeypatch):
     import sk.config as config_mod
     import sk.store as store
@@ -69,6 +78,7 @@ def test_url_variant_fetched(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     import httpx
 
+    _public_dns(monkeypatch)  # the provider-supplied URL now passes the SSRF guard (#294)
     monkeypatch.setattr(
         httpx, "post", lambda *a, **k: _Resp(200, {"data": [{"url": "https://img/x.png"}]})
     )
@@ -76,6 +86,50 @@ def test_url_variant_fetched(tmp_path, monkeypatch):
     out = tmp_path / "x.png"
     res = images.generate_image(_cfg("together"), "a cat", out=str(out))
     assert res.startswith("Saved image to") and out.read_bytes() == PNG
+
+
+def test_provider_url_cannot_reach_metadata_service(tmp_path, monkeypatch):
+    """A hostile provider returning a metadata URL is an SSRF primitive (#294).
+
+    The bytes used to be written to disk, and read_file has no path jail, so
+    the model could read them straight back into context.
+    """
+    _iso(tmp_path, monkeypatch)
+    import httpx
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: _Resp(
+            200,
+            {
+                "data": [
+                    {"url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"}
+                ]
+            },
+        ),
+    )
+    fetched = []
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: fetched.append(a) or _Resp(200, content=PNG))
+    out = tmp_path / "creds.png"
+    res = images.generate_image(_cfg(), "x", out=str(out))
+    assert not res.startswith("Saved image to")
+    assert not out.exists()
+    assert fetched == [], "metadata URL was fetched"
+
+
+def test_cgnat_metadata_endpoint_blocked(tmp_path, monkeypatch):
+    """100.100.100.200 (Alibaba/Tencent metadata) is not is_private on CPython."""
+    _iso(tmp_path, monkeypatch)
+    import httpx
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: _Resp(200, {"data": [{"url": "http://100.100.100.200/latest/meta-data/"}]}),
+    )
+    out = tmp_path / "c.png"
+    assert not images.generate_image(_cfg(), "x", out=str(out)).startswith("Saved image to")
 
 
 def test_validation_and_degrades(tmp_path, monkeypatch):

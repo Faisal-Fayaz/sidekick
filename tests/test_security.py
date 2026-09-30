@@ -524,3 +524,55 @@ def test_ordinary_project_writes_still_allowed(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     out = tool_write_file(str(home / "proj" / "src" / "a.py"), "print(1)")
     assert "Wrote" in out or "wrote" in out.lower(), out
+
+
+# --- #294: SSRF guard reaches every fetch path --------------------------------
+
+
+@pytest.mark.parametrize(
+    "ip",
+    [
+        "100.100.100.200",  # Alibaba/Tencent metadata: not is_private on CPython
+        "100.64.0.1",  # CGNAT
+        "0.0.0.0",  # unspecified
+        "169.254.169.254",
+        "127.0.0.1",
+        "10.0.0.1",
+        "192.168.1.1",
+        "172.16.0.1",
+        "198.18.0.1",
+        "::1",
+        "fd00::1",
+        "fe80::1",
+        "0177.0.0.1",
+        "2130706433",
+        "0x7f000001",
+    ],
+)
+def test_ssrf_guard_blocks_non_public_ips(ip, monkeypatch):
+    from sk.tools.web import _blocked_ip
+
+    monkeypatch.setattr(
+        __import__("socket"),
+        "getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", (ip, 0))],
+    )
+    assert _url_blocked("http://example.com/") is not None, ip
+
+
+def test_ssrf_guard_allows_public_ips(monkeypatch):
+    import socket
+
+    from sk.tools.web import _url_blocked
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))]
+    )
+    assert _url_blocked("https://example.com/x") is None
+
+
+def test_dns_failure_is_fail_closed(monkeypatch):
+    import socket
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    assert _url_blocked("https://example.com/x") is not None
