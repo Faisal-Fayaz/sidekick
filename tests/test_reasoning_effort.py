@@ -61,8 +61,61 @@ def test_extra_body_matrix():
     local = _cfg(provider="ollama", model="qwen2.5-coder:7b")
     body = _extra_body(local)
     assert "reasoning" not in body and "options" in body  # local knobs untouched
-    assert _extra_body(_cfg(provider="openai", model="gpt-4o")) == {}
+    assert "think" not in body  # default low keeps the model default
+    think_off = _cfg(provider="ollama", model="qwen3:4b")
+    think_off.reasoning_effort = "off"
+    assert _extra_body(think_off)["think"] is False
+    think_high = _cfg(provider="ollama", model="qwen3:4b")
+    think_high.reasoning_effort = "max"
+    assert _extra_body(think_high)["think"] is True
+    lm_off = _cfg(provider="lmstudio", model="local-model")
+    lm_off.reasoning_effort = "off"
+    assert "think" not in _extra_body(lm_off)  # think toggle is Ollama-only
+    assert _extra_body(_cfg(provider="openai", model="gpt-4o")) == {"reasoning_effort": "low"}
+    mini = _cfg(provider="openai", model="gpt-4o-mini")
+    mini.reasoning_effort = "minimal"
+    assert _extra_body(mini) == {"reasoning_effort": "low"}  # clamped
+    mx = _cfg(provider="openai", model="gpt-4o")
+    mx.reasoning_effort = "max"
+    assert _extra_body(mx) == {"reasoning_effort": "high"}  # clamped
+    assert _extra_body(_cfg(provider="openai", model="gpt-4o"), plan_mode=True) == {
+        "reasoning_effort": "high"
+    }
     assert _extra_body(_cfg(provider="custom", model="x")) == {}
+    assert _extra_body(_cfg(provider="groq", model="openai/gpt-oss-20b")) == {}
+
+
+def test_thinking_params_fit_max_tokens():
+    from sk.anthropic_backend import _thinking_params
+
+    assert _thinking_params("off", 2000) is None
+    assert _thinking_params("low", 2000) == {"type": "enabled", "budget_tokens": 1024}
+    assert _thinking_params("low", 400) is None  # 1024 cannot fit, omit
+    assert _thinking_params("high", 20000) == {"type": "enabled", "budget_tokens": 8192}
+    assert _thinking_params("max", 2000) == {"type": "enabled", "budget_tokens": 1024}
+    assert _thinking_params("bogus", 2000) is None
+
+
+def test_anthropic_payload_carries_thinking(tmp_path, monkeypatch):
+    import sk.anthropic_backend as ab
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    seen = {}
+
+    def fake_stream(base_url, api_key, payload, on_token, on_reasoning):
+        seen.update(payload)
+        return ([{"type": "text", "text": "done"}], "stop")
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    cfg = _cfg(provider="anthropic", model="claude-sonnet-5")
+    out = ab.run_anthropic_agent("say hi", [], cfg, session="s")
+    assert out == "done"
+    assert seen["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+    seen.clear()
+    cfg.reasoning_effort = "off"
+    out = ab.run_anthropic_agent("say hi", [], cfg, session="s")
+    assert out == "done" and "thinking" not in seen
 
 
 def test_run_agent_escalates_on_plan(tmp_path, monkeypatch):
