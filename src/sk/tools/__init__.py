@@ -34,7 +34,6 @@ from .shell import (
 )
 from .web import _html_to_text, _url_blocked, tool_read_url, tool_web_search
 from .write import (
-    WRITE_BLOCKLIST,
     WRITE_TOOLS,
     _check_write_path,
     _protected_paths,
@@ -53,7 +52,7 @@ __all__ = [
     "READONLY_DENIED_TOOLS",
     "SHELL_BLOCK_PATTERNS",
     "TOOLS_SCHEMA",
-    "WRITE_BLOCKLIST",
+    "_protected_paths",
     "WRITE_TOOLS",
     "_check_cmd",
     "_check_shell",

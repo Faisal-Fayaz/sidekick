@@ -411,6 +411,8 @@ def test_read_sensitive_cwd(tmp_path, monkeypatch):
     assert "blocked" not in tool_exec("pwd").lower()
     assert "blocked" not in tool_exec("echo hi").lower()
     assert "blocked" not in tool_list_dir("/tmp").lower()
+
+
 # --- #298: hard refusal runs BEFORE approval, against de-obfuscated forms ----
 # The blocklist used to live inside tool_shell, i.e. *after* the approval
 # callback, so --yes / /yolo / --allow / `sk mcp --allow-writes` waved it past.
@@ -576,3 +578,22 @@ def test_dns_failure_is_fail_closed(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: (_ for _ in ()).throw(OSError()))
     assert _url_blocked("https://example.com/x") is not None
+
+
+def test_containment_compares_components_not_string_prefixes():
+    """`str.startswith` containment is the classic escape (CVE-2025-54794 shape).
+
+    Asserted on the helper because the /tmp allow-root makes the end-to-end
+    case unobservable: any sibling of $HOME created by the test is itself
+    under /tmp and therefore legitimately writable.
+    """
+    from sk.tools.write import _is_under
+
+    root = Path("/srv/data")
+    assert _is_under(Path("/srv/data/a/b"), root) is True
+    assert _is_under(Path("/srv/data"), root) is True
+    # shares the string prefix, is not inside
+    assert _is_under(Path("/srv/data-evil/b"), root) is False
+    assert _is_under(Path("/srv/dat"), root) is False
+    assert _is_under(Path("/etc/passwd"), Path("/etc")) is True
+    assert _is_under(Path("/etcfoo/x"), Path("/etc")) is False
