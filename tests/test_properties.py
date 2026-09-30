@@ -11,7 +11,7 @@ import socket
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
-from sk.tools.read import ALLOWED_BINARIES, ALLOWED_GIT, BLOCKED_CHARS, _check_cmd
+from sk.tools.read import ALLOWED_BINARIES, ALLOWED_GIT, ALLOWED_OLLAMA, BLOCKED_CHARS, _check_cmd
 from sk.tools.web import _url_blocked
 
 
@@ -80,7 +80,7 @@ def test_unknown_binary_blocked(binary):
     assert isinstance(res, str) and "allowlist" in res
 
 
-@given(binary=st.sampled_from(sorted(ALLOWED_BINARIES - {"git", "find"})))
+@given(binary=st.sampled_from(sorted(ALLOWED_BINARIES - {"git", "find", "ollama"})))
 @settings(max_examples=50)
 def test_allowlisted_binary_passes_shape(binary):
     res = _check_cmd(f"{binary} hello")
@@ -92,6 +92,13 @@ def test_allowlisted_binary_passes_shape(binary):
 def test_git_subcommand_gated(sub):
     assume(sub not in ALLOWED_GIT)
     assert isinstance(_check_cmd(f"git {sub}"), str)
+
+
+@given(sub=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=10))
+@settings(max_examples=200)
+def test_ollama_subcommand_gated(sub):
+    assume(sub not in ALLOWED_OLLAMA)
+    assert isinstance(_check_cmd(f"ollama {sub}"), str)
 
 
 @given(flag=st.sampled_from(["-exec", "-delete"]), extra=safe_word)

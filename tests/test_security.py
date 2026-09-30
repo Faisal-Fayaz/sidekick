@@ -9,6 +9,7 @@ use monkeypatch so the real ~/.ssh is never touched.
 
 from sk.agent import _gated_dispatch
 from sk.tools import (
+    _check_cmd,
     _url_blocked,
     dispatch_tool,
     tool_exec,
@@ -197,9 +198,13 @@ def test_plan_mode_still_allows_reads_and_shell(tmp_path, monkeypatch):
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
     out, ok = _gated_dispatch(
+        "list_dir", {"path": "/tmp"}, approve=lambda n, a: True, session="t", plan_mode=True
+    )
+    assert ok is True
+    out, ok = _gated_dispatch(
         "exec", {"cmd": "pwd"}, approve=lambda n, a: True, session="t", plan_mode=True
     )
-    assert ok is True and "exit 0" in out
+    assert ok is False and "plan mode" in out  # #263: exec denied in plan mode
     out, ok = _gated_dispatch(
         "shell", {"cmd": "echo hi"}, approve=lambda n, a: True, session="t", plan_mode=True
     )
@@ -211,7 +216,7 @@ def test_readonly_denies_all_gated_tools(tmp_path, monkeypatch):
     from sk.tools import READONLY_DENIED_TOOLS, APPROVAL_TOOLS
 
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
-    assert READONLY_DENIED_TOOLS == set(APPROVAL_TOOLS)
+    assert READONLY_DENIED_TOOLS == set(APPROVAL_TOOLS) | {"exec"}  # #263: exec denied too
 
     def _boom(name, args):
         raise AssertionError("doomed calls must never prompt")
@@ -225,7 +230,11 @@ def test_readonly_denies_all_gated_tools(tmp_path, monkeypatch):
     out, ok = _gated_dispatch(
         "exec", {"cmd": "pwd"}, approve=lambda n, a: True, session="t", read_only=True
     )
-    assert ok is True
+    assert ok is False and "read-only" in out  # #263: exec denied in readonly
+    out, ok = _gated_dispatch(
+        "list_dir", {"path": "/tmp"}, approve=lambda n, a: True, session="t", read_only=True
+    )
+    assert ok is True  # true reads still flow
 
 
 def test_normal_mode_unaffected_by_gates(tmp_path, monkeypatch):
@@ -263,3 +272,46 @@ def test_deny_list_beats_allow_at_approver():
     finally:
         approvers.typer.confirm = real_confirm
     assert calls == []
+
+
+def test_exec_python3_blocked_no_code_execution(tmp_path):
+    """#263 PoC: file-based payload without metacharacters must not run."""
+    evil = tmp_path / "evil.py"
+    evil.write_text(
+        "import pathlib; pathlib.Path(__file__).with_name('exec_proof.txt').write_text('pwned')\n"
+    )
+    out = tool_exec(f"python3 {evil}")
+    assert "Blocked" in out and "not in allowlist" in out
+    assert not (tmp_path / "exec_proof.txt").exists()  # never executed
+    assert "Blocked" in tool_exec('python3 -c "print(1)"')
+    assert "Blocked" in tool_exec("python3 -m http.server")
+
+
+def test_exec_ollama_restricted_to_inventory():
+    """#263: ollama run/pull/push/serve escape read-only; only list/show/ps pass."""
+    assert isinstance(_check_cmd("ollama list"), tuple)
+    assert isinstance(_check_cmd("ollama show llama3.2:3b"), tuple)
+    for bad in (
+        "ollama",
+        "ollama run llama3.2:3b hi",
+        "ollama pull llama3.2:3b",
+        "ollama push my/model",
+        "ollama serve",
+        "ollama cp a b",
+    ):
+        out = _check_cmd(bad)
+        assert isinstance(out, str) and "Blocked" in out, bad
+
+
+def test_exec_denied_in_readonly_and_plan():
+    """#263: exec bypassed both hard modes; now it is denied in each."""
+    out, ok = _gated_dispatch("exec", {"cmd": "pwd"}, read_only=True)
+    assert ok is False and "read-only mode" in out
+    out, ok = _gated_dispatch("exec", {"cmd": "pwd"}, plan_mode=True)
+    assert ok is False and "plan mode" in out
+
+
+def test_exec_still_approval_free_normally():
+    """Gating is mode-only: everyday inventory commands never prompt."""
+    out, ok = _gated_dispatch("exec", {"cmd": "pwd"}, approve=lambda n, a: True)
+    assert ok is True and "exit 0" in out
