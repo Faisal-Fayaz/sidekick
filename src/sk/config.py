@@ -138,6 +138,67 @@ def _parse_hooks(raw: object) -> tuple[dict, ...]:
     return tuple(out)
 
 
+# MCP trust tiers. An untrusted server has every tool without a literal
+# `readOnlyHint: true` treated as write-capable, which means approval before
+# the call fires and no transparent retry after a transport failure. The default
+# is `untrusted` (fail closed): a server nobody has classified must not be able
+# to mutate external state silently. See #303.
+MCP_TRUST_LEVELS = ("full", "untrusted")
+
+
+def _normalize_trust(raw: object) -> str:
+    """'full' | 'untrusted'. Unknown or missing -> 'untrusted'."""
+    val = str(raw or "").strip().lower()
+    return val if val in MCP_TRUST_LEVELS else "untrusted"
+
+
+def _parse_inherit_env(raw: object) -> tuple[str, ...]:
+    """Glob patterns of extra env vars to pass to a stdio MCP server (#302)."""
+    if not isinstance(raw, list):
+        return ()
+    return tuple(str(p).strip() for p in raw if str(p).strip())
+
+
+def _validate_mcp_url(url: str) -> bool:
+    """True if `url` is a safe remote MCP endpoint.
+
+    Stricter than a scheme prefix test (#303):
+    - absolute http(s) only, so file:// and gopher:// cannot be reached
+    - no userinfo: `https://evil.example@mcp.internal` resolves to
+      mcp.internal while a human skimming the config sees evil.example and
+      believes the credential goes there. Rejecting beats stripping.
+    - no fragment: fragments never reach the server, so a fragment can carry a
+      different value to a log reader than the request actually uses.
+    - plain HTTP only for loopback, where traffic never leaves the host.
+    Never raises.
+    """
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    try:
+        parsed = urlsplit(url)
+    except Exception:
+        return False
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    if parsed.fragment:
+        return False
+    host = parsed.hostname or ""
+    if not host:
+        return False
+    if scheme == "http":
+        if host == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+    return True
+
+
 def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
     """Normalize [mcp_servers.<name>] tables from the global config file.
 
@@ -160,7 +221,7 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
         url = str(spec.get("url", "") or "").strip()
         if command and url:
             continue  # ambiguous transport: refuse, don't guess
-        if url and not _re.match(r"https?://", url):
+        if url and not _validate_mcp_url(url):
             continue
         if not command and not url:
             continue
@@ -183,6 +244,8 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
                 "url": url,
                 "headers": headers,
                 "timeout": min(max(timeout, 1.0), 300.0),
+                "trust": _normalize_trust(spec.get("trust")),
+                "inherit_env": _parse_inherit_env(spec.get("inherit_env")),
             }
         )
     return tuple(out)

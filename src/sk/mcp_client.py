@@ -16,6 +16,7 @@ import queue
 import subprocess
 import threading
 import time
+from urllib.parse import urljoin
 
 PROTOCOL_VERSION = "2024-11-05"
 PREFIX = "mcp__"
@@ -86,6 +87,62 @@ def _content_text(result: dict, name: str, tool: str) -> str:
     return out[:8000]
 
 
+# --- subprocess environment allowlist ---------------------------------------
+# An MCP stdio server is arbitrary code. Handing it the whole parent environment
+# gives it every credential the user has in their shell: provider API keys,
+# cloud tokens, GITHUB_TOKEN (#302). The reference implementation filters to a
+# fixed allowlist plus explicit config for the same reason.
+_ENV_ALLOW = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TERM",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TMPDIR",
+)
+
+
+def _safe_env(explicit: dict | None = None, patterns: tuple | list = ()) -> dict[str, str]:
+    """Environment for an MCP subprocess: an allowlist, plus explicit entries.
+
+    Never raises. `explicit` comes from the user's own config, so it is applied
+    last and wins. Glob patterns (e.g. `AWS_*`) are opt-in per server via the
+    `inherit_env` list, so granting access is a visible act rather than a
+    side effect of spawning a server.
+    """
+    out: dict[str, str] = {}
+    try:
+        for key in _ENV_ALLOW:
+            val = os.environ.get(key)
+            if val is not None:
+                out[key] = val
+        for key, val in os.environ.items():
+            if key.startswith("XDG_") and val:
+                out[key] = val
+    except Exception:
+        pass
+    try:
+        for pat in patterns or ():
+            from fnmatch import fnmatch
+
+            for key, val in os.environ.items():
+                if fnmatch(key, str(pat)):
+                    out[key] = val
+    except Exception:
+        pass
+    try:
+        for key, val in (explicit or {}).items():
+            out[str(key)] = str(val)
+    except Exception:
+        pass
+    return out
+
+
 class MCPClient:
     """One stdio MCP server process. Call via `with` or connect()/close()."""
 
@@ -96,11 +153,15 @@ class MCPClient:
         args: tuple | list = (),
         env: dict | None = None,
         timeout: float = 30.0,
+        trust: str = "untrusted",
+        inherit_env: tuple | list = (),
     ):
         self.name = name
         self.command = command
         self.args = [str(a) for a in (args or [])]
         self.env = dict(env or {})
+        self.trust = str(trust or "untrusted").strip().lower()
+        self.inherit_env = [str(p) for p in (inherit_env or [])]
         self.timeout = timeout
         self._proc: subprocess.Popen | None = None
         self._reader: threading.Thread | None = None
@@ -124,8 +185,7 @@ class MCPClient:
         if self.is_alive():
             return
         self.close()
-        full_env = dict(os.environ)
-        full_env.update(self.env)
+        full_env = _safe_env(self.env, self.inherit_env)
         try:
             proc = subprocess.Popen(
                 [self.command, *self.args],
@@ -260,6 +320,24 @@ class MCPClient:
                     pass
 
 
+_REDIRECT_CODES = (301, 302, 303, 307, 308)
+
+
+def _origin(url: str) -> tuple[str, str, int]:
+    from urllib.parse import urlsplit
+
+    try:
+        p = urlsplit(url)
+        port = p.port or (443 if p.scheme == "https" else 80)
+        return (p.scheme.lower(), (p.hostname or "").lower(), port)
+    except Exception:
+        return ("", "", 0)
+
+
+def _same_origin(a: str, b: str) -> bool:
+    return _origin(a) == _origin(b)
+
+
 class MCPHttpClient:
     """Streamable HTTP MCP server. Same interface as MCPClient.
 
@@ -303,7 +381,11 @@ class MCPHttpClient:
             raise RuntimeError("no url configured")
         import httpx
 
-        self._client = httpx.Client()
+        # follow_redirects=False on purpose: a 302 from the configured MCP
+        # host to an attacker host would otherwise replay the Authorization
+        # header to whoever the redirect names, which is a free
+        # credential-exfiltration primitive (#303). TLS verification stays on.
+        self._client = httpx.Client(follow_redirects=False)
         try:
             self._request("initialize", _init_params(), self.timeout)
             try:
@@ -396,6 +478,30 @@ class MCPHttpClient:
             self._session_id = None
             self._request("initialize", _init_params(), timeout)
             return self._request(method, params, timeout, _retried=True)
+        if resp.status_code in _REDIRECT_CODES and not _retried:
+            location = resp.headers.get("location", "")
+            if not location:
+                raise RuntimeError(f"HTTP {resp.status_code} with no Location header")
+            nxt = urljoin(self.url, location)
+            same_origin = _same_origin(self.url, nxt)
+            # Configured headers follow within the origin and never across it.
+            saved = dict(self.headers)
+            if not same_origin:
+                self.headers = {}
+            try:
+                resp = client.post(
+                    nxt,
+                    json=payload,
+                    headers=self._headers(),
+                    timeout=httpx.Timeout(10.0, read=max(1.0, timeout), write=10.0, pool=10.0),
+                )
+            finally:
+                self.headers = saved
+            sid = resp.headers.get("mcp-session-id")
+            if sid:
+                self._session_id = sid
+            if resp.status_code >= 400:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         if resp.status_code == 202:
             return {}
         if resp.status_code >= 400:
@@ -450,6 +556,39 @@ def _spec_key(spec: dict) -> str:
         return spec.get("name", "?") + "\x00?"
 
 
+def _read_only_hint(tool: dict) -> bool:
+    """True only for a literal `readOnlyHint: true`. Fail closed (#303).
+
+    A hint is a server-supplied *claim*, so a lying server can at worst skip
+    approval for a tool it claims is read-only. That argument only holds if the
+    server is already marked untrusted, which is why the default is untrusted.
+    """
+    try:
+        ann = (tool or {}).get("annotations")
+        if not isinstance(ann, dict):
+            return False
+        return ann.get("readOnlyHint") is True
+    except Exception:
+        return False
+
+
+def trust_gate_error(spec: dict, tool_name: str, tools: list[dict]) -> str | None:
+    """None when the call may proceed, else why it must not. Never raises."""
+    try:
+        if str(spec.get("trust", "untrusted") or "untrusted").strip().lower() != "untrusted":
+            return None
+        for t in tools or []:
+            if str(t.get("name", "")) == tool_name and _read_only_hint(t):
+                return None
+        return (
+            f"mcp server {spec.get('name', '?')!r} is untrusted and tool {tool_name!r} "
+            "is write-capable (no readOnlyHint=true annotation). Set "
+            'trust = "full" in ~/.sidekick/config.toml to allow it unattended.'
+        )
+    except Exception:
+        return "mcp trust check failed closed."
+
+
 def get_client(spec: dict) -> MCPClient | MCPHttpClient:
     """Cached connected client for a server spec. Raises RuntimeError."""
     key = _spec_key(spec)
@@ -479,6 +618,8 @@ def get_client(spec: dict) -> MCPClient | MCPHttpClient:
                     spec.get("args", ()),
                     spec.get("env", {}),
                     float(spec.get("timeout", 30) or 30),
+                    str(spec.get("trust", "untrusted") or "untrusted"),
+                    spec.get("inherit_env", ()),
                 )
             try:
                 client.connect()
@@ -568,6 +709,15 @@ def dispatch_mcp_tool(name: str, args: dict | None) -> str:
             client = get_client(spec)
         except Exception as e:
             return f"Error: mcp server '{server}' unavailable: {e}"
+        # Trust gate: an untrusted server's write-capable tools must not run
+        # unattended. Never transport work before this passes (#303).
+        try:
+            tools = client.list_tools()
+        except Exception:
+            tools = []
+        blocked = trust_gate_error(spec, tool, tools)
+        if blocked:
+            return f"Error: {blocked}"
         return client.call_tool(tool, args if isinstance(args, dict) else {})
     except Exception as e:
         return f"Error: mcp dispatch failed: {e}"
