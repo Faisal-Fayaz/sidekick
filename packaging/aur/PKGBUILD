@@ -1,14 +1,16 @@
 # Maintainer: Irfanwani <irfanwani347@gmail.com>
 # Arch User Repository package for the sidekick-agent PyPI package.
 # Publish flow: bump version in src/sk/__init__.py, tag vX.Y.Z, build + upload to AUR.
+# Per release, refresh pkgver + source URL + sha256sums below from
+# https://pypi.org/pypi/sidekick-agent/json (sdist url + sha256 entries).
 
 pkgname=python-sidekick-agent
 _pkgname=sidekick-agent
-pkgver=0.1.0
+pkgver=0.26.0
 pkgrel=1
 pkgdesc="Local-first terminal companion agent (Ollama-powered) — CLI 'sk'"
 arch=("any")
-url="https://github.com/Irfanwani/sidekick"
+url="https://github.com/Faisal-Fayaz/sidekick"
 license=("MIT")
 depends=(
   "python"
@@ -21,8 +23,8 @@ depends=(
 )
 makedepends=("python-build" "python-installer" "python-wheel" "python-setuptools")
 optdepends=("python-faster-whisper: local voice transcription for 'sk talk'")
-source=("${_pkgname}-${pkgver}.tar.gz::https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/${_pkgname}/${_pkgname}-${pkgver}.tar.gz")
-sha256sums=("SKIP")
+source=("${_pkgname}-${pkgver}.tar.gz::https://files.pythonhosted.org/packages/b3/c7/5f90094ee731258f331fe0c74c3cdeb5258515bb2357cff5389192cff89f/${_pkgname}-${pkgver}.tar.gz")
+sha256sums=("bb98d0d11b5f5c9969402bfd02f11c40164cdc98c22453c833944e4e22f398f1")
 
 build() {
   python -m build --wheel --no-isolation
