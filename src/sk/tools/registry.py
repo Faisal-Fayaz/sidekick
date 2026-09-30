@@ -65,7 +65,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "exec",
-            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects, no interpreters (no python3). No approval needed.",
+            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects, no interpreters (no python3). Sensitive paths (~/.ssh, ~/.gnupg, history.db) are blocked. No approval needed.",
             "parameters": {
                 "type": "object",
                 "properties": {
