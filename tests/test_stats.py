@@ -77,3 +77,54 @@ def test_stats_cli_md_and_json(tmp_path, monkeypatch):
 
     doc = json.loads(res.output)
     assert doc["turns"] == 1 and doc["tools"]["list_dir"] == 1
+
+
+def test_cost_table_covers_all_tiers():
+    """Refs #278: every routable model prices (0.0 counts as priced)."""
+    from sk.config import OPENCODE_FREE_MODELS, PRESETS, TIERS
+
+    ids: set[str] = set()
+    for tier in TIERS.values():
+        ids.update(tier.values())
+    for preset in PRESETS.values():
+        if (preset.get("model") or "").strip():
+            ids.add(preset["model"])
+    ids.update(OPENCODE_FREE_MODELS)
+    unpriced = sorted(i for i in ids if store.cost_per_mtok(i) is None)
+    assert unpriced == [], f"TIERS/preset models without a rate: {unpriced}"
+    assert store.cost_per_mtok("") is None
+    assert store.cost_per_mtok("mystery-model") is None
+
+
+def test_free_and_paid_rates(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    assert store.cost_per_mtok("qwen2.5-coder:7b") == 0.0
+    assert store.cost_per_mtok("muse-spark-1.3-contributor-free") == 0.0
+    assert store.cost_per_mtok("gpt-4o-mini") == 0.15
+    assert store.cost_per_mtok("openai/gpt-oss-120b") == 0.15
+    assert store.cost_per_mtok("models/gemini-3.6-flash") == 0.75
+    # longest-key substring fallback for versioned tags
+    assert store.cost_per_mtok("qwen2.5-coder:7b-instruct-q4_K_M") == 0.0
+    assert store.cost_per_mtok("my-gpt-4o-mini-clone") == 0.15
+
+
+def test_free_model_cost_zero_not_na(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    store.save_message("s", "user", "hi")
+    store.log_tool_run("s", "llm_call", "qwen2.5-coder:7b", True, "ollama", "localhost", True)
+    stats = store.usage_stats("s")
+    assert stats["per_model"]["qwen2.5-coder:7b"]["cost_usd"] == 0.0
+    assert stats["unpriced_tokens"] == 0
+
+
+def test_stats_cli_shows_priced_cost(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+
+    _iso(tmp_path, monkeypatch)
+    store.save_message("s", "user", "x" * 400)
+    store.log_tool_run("s", "llm_call", "gpt-4o-mini", True, "openai", "api.openai.com", True)
+    res = CliRunner().invoke(app, ["stats", "--session", "s"])
+    assert res.exit_code == 0, res.output
+    assert "gpt-4o-mini" in res.output and "≈$" in res.output

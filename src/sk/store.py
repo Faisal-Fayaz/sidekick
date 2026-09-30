@@ -866,13 +866,70 @@ def render_transcript(session: str, events: list[dict]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-# Approximate input $/MTok for known models. Estimates only: real bills
-# depend on input/output mix and current pricing. Unknown models → n/a.
+# Approximate input $/MTok for known models (refs #278). Estimates only:
+# real bills depend on input/output mix and current pricing. Sources
+# verified 2026-09-30: OpenAI docs (gpt-4o-mini $0.15, gpt-4o $2.50),
+# Groq self-serve (gpt-oss-20b $0.075, gpt-oss-120b $0.15), Together
+# (Llama-3.3-70B-Instruct-Turbo $1.04), DeepSeek docs (V4-Flash $0.14 —
+# legacy deepseek-chat/reasoner names retired 2026-07-24 map to it),
+# Google Cloud (Gemini 3.6/3.8 Flash $0.75 intro thru 2026-12-31).
+# Local and opencode-free-tier models cost 0. Unknown models → n/a.
 COST_PER_MTOK: dict[str, float] = {
+    # local-first default: $0 always (ollama / LM Studio)
+    "llama3.2:3b": 0.0,
+    "qwen2.5-coder:7b": 0.0,
+    "qwen3:4b": 0.0,
+    "local-model": 0.0,
+    # opencode free tier: $0 (requires free OPENCODE_API_KEY)
+    "ling-3.0-flash-fin-free": 0.0,
+    "mimo-v2.6-flash-free": 0.0,
+    "muse-spark-1.3-contributor-free": 0.0,
+    "nemotron-3-ultra-free": 0.0,
+    "nemotron-3.5-lightning-free": 0.0,
+    "space-bunny-free": 0.0,
+    "big-pickle": 0.0,
+    # openai / openrouter
+    "gpt-4o-mini": 0.15,
+    "gpt-4o": 2.5,
+    # groq
+    "openai/gpt-oss-20b": 0.075,
+    "openai/gpt-oss-120b": 0.15,
+    # together
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo": 1.04,
+    # deepseek (legacy names → V4-Flash rate)
+    "deepseek-chat": 0.14,
+    "deepseek-reasoner": 0.14,
+    # google
+    "models/gemini-3.6-flash": 0.75,
+    "models/gemini-3.8-flash": 0.75,
+    # anthropic (pre-existing rows, kept)
     "claude-sonnet-5": 2.0,
     "claude-opus-5": 5.0,
     "claude-haiku-4-5": 1.0,
 }
+
+
+def cost_per_mtok(model: str) -> float | None:
+    """Input $/MTok for a model id, or None when unpriced. Never raises.
+
+    Exact match first, then longest-key substring fallback so versioned
+    tags (e.g. `qwen2.5-coder:7b-instruct-q4`) still price instead of
+    going n/a. Longest-first ordering keeps `gpt-4o-mini` winning over
+    the `gpt-4o` substring.
+    """
+    try:
+        m = (model or "").strip()
+        if not m:
+            return None
+        if m in COST_PER_MTOK:
+            return COST_PER_MTOK[m]
+        low = m.lower()
+        for key in sorted(COST_PER_MTOK, key=len, reverse=True):
+            if key.lower() in low:
+                return COST_PER_MTOK[key]
+        return None
+    except Exception:
+        return None
 
 
 def _est_tokens(text: str) -> int:
@@ -943,7 +1000,7 @@ def usage_stats(session: str = "", limit: int = 5000) -> dict:
         model = info["model"] or "?"
         entry = per_model.setdefault(model, {"turns": 0, "tokens": 0, "cost_usd": None})
         entry["tokens"] += info["tokens"]
-        rate = COST_PER_MTOK.get(model)
+        rate = cost_per_mtok(model)
         if rate is not None:
             charged = round(info["tokens"] / 1_000_000 * rate, 4)
             entry["cost_usd"] = round((entry["cost_usd"] or 0.0) + charged, 4)
