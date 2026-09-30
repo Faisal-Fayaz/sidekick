@@ -6,6 +6,18 @@ import subprocess
 import threading
 
 
+def _normalize_shell(cmd: str) -> str:
+    """Canonicalize quoting so block patterns can't be dodged.
+
+    Strips single/double quotes and unbraces ${HOME}: rm -rf "$HOME",
+    '$HOME', ${HOME}, "~" all reduce to the bare forms the patterns match.
+    Over-blocking direction only (a quoted catastrophic spelling is still
+    catastrophic unquoted).
+    """
+    c = (cmd or "").replace("${HOME}", "$HOME")
+    return c.replace("'", "").replace('"', "")
+
+
 def _check_shell(cmd: str) -> str | None:
     """Hard blocks. Returns error or None if allowed (approval still applies)."""
     import re
@@ -14,8 +26,9 @@ def _check_shell(cmd: str) -> str | None:
         return "Error: empty command."
     if len(cmd) > 2000:
         return "Error: command too long (>2000 chars)."
+    norm = _normalize_shell(cmd)
     for pat in SHELL_BLOCK_PATTERNS:
-        if re.search(pat, cmd):
+        if re.search(pat, norm):
             return "Error: blocked destructive command (refused even with approval)."
     return None
 
@@ -41,9 +54,12 @@ def tool_shell(cmd: str, timeout: int = 30) -> str:
 
 SHELL_BLOCK_PATTERNS = [
     # rm with any recursive spelling at / | /* | /.. | ~ | $HOME (short or
-    # long flags, any order). Legit subpaths (~/x, /tmp/y, /.cache) never
-    # match: targets must be bare. Non-recursive rm passes (no flag).
-    r"\brm\b(?=[^;&|]*?(?:\s-[a-zA-Z]*[rR][a-zA-Z]*|--recursive\b))[^;&|]*?(?:(?<![\w/])/(?=[\s;$&|]|$)|(?<![\w/])/\*(?=[\s;$&|]|$)|/\.\.(?=[\s/;$&|]|$)|(?<![\w/])~(?=[\s;$&|]|$)|(?<![\w/])~/(?=[\s;$&|]|$)|\$HOME(?=[\s;$&|]|$)|\$HOME/(?=[\s;$&|]|$))",
+    # long flags, any order) plus bare system roots (/etc, /proc, /sys,
+    # /dev, /usr, /boot — bare, trailing-slash, or /* glob). Legit subpaths
+    # (~/x, /tmp/y, /.cache, /etc/hostname) never match: targets must be
+    # bare. Non-recursive rm passes (no flag). Commands are quote-stripped
+    # first (see _normalize_shell), so quoted spellings match too.
+    r"\brm\b(?=[^;&|]*?(?:\s-[a-zA-Z]*[rR][a-zA-Z]*|--recursive\b))[^;&|]*?(?:(?<![\w/])/(?=[\s;$&|]|$)|(?<![\w/])/\*(?=[\s;$&|]|$)|/\.\.(?=[\s/;$&|]|$)|(?<![\w/])~(?=[\s;$&|]|$)|(?<![\w/])~/(?=[\s;$&|]|$)|\$HOME(?=[\s;$&|]|$)|\$HOME/(?=[\s;$&|]|$)|(?<![\w/])/(?:etc|proc|sys|dev|usr|boot)(?:/(?=[\s;$&|]|$)|/\*(?=[\s;$&|]|$)|(?=[\s;$&|]|$)))",
     r"\bmkfs(\s|$|\.)",  # mkfs
     r"\bdd\b.*\bof=/dev/",  # dd to devices
     # fork bomb: self-piping backgrounded self-call (any name, any spacing).
