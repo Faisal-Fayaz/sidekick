@@ -11,7 +11,14 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
-from .tools import approval_tools, dispatch_tool, missing_required, tool_sysinfo, tools_schema
+from .tools import (
+    approval_tools,
+    dispatch_tool,
+    irreversible_refusal,
+    missing_required,
+    tool_sysinfo,
+    tools_schema,
+)
 
 # Audit session tag. Direct callers pass session= to run_agent; the TUI
 # dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
@@ -704,6 +711,13 @@ def _gated_dispatch(
         )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
+    # Hard refusal BEFORE approval, not inside the tool. Previously the blocklist
+    # ran inside tool_shell, i.e. after the approval callback, so --yes / /yolo /
+    # --allow / `sk mcp --allow-writes` waved it through (closes #298).
+    refusal = irreversible_refusal(name, args)
+    if refusal:
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (refusal, False)
     if name in approval_tools() and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
