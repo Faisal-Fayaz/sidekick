@@ -1152,6 +1152,17 @@ def build_messages(
 
     Extracted for the eval harness: every quality regression (unguessed specs,
     ~/ hallucinations, link refusals) is assertable here without a model.
+
+    Cache-discipline contract (refs #276): providers bill repeated prefixes
+    from cache only on exact matches, so this function emits one canonical
+    order — system message (instructions + project/repo context) → history →
+    fresh user message (AUTO LOCAL/WEB/SEARCH facts appended at the very
+    end). Tool schemas ride alongside via tools_schema(), which is itself
+    deterministic (builtins stable, extras name-sorted). The returned list
+    is fresh per turn: callers may drop/append control notes on it freely;
+    stored history dicts are shared by reference but never mutated in place,
+    and model/config changes take effect on new turns only (never by editing
+    already-sent messages).
     """
     from .images import encode_image_data_url, extract_image_refs, vision_capable
 
