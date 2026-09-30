@@ -34,6 +34,40 @@ ALLOWED_GIT = {"status", "log", "branch", "diff", "remote"}
 # read-only, so only the local inventory subcommands are allowed.
 ALLOWED_OLLAMA = {"list", "show", "ps"}
 
+
+def _read_block_targets() -> list[Path]:
+    """Sensitive roots reads must never touch: keys, agent history DB.
+
+    Deliberately narrower than WRITE_BLOCKLIST: /etc stays readable
+    (hostname/os-release grounding), only secret-bearing paths block.
+    """
+    home = Path.home()
+    cands = [home / ".ssh", home / ".gnupg", home / ".sidekick" / "history.db"]
+    out: list[Path] = []
+    for cand in cands:
+        out.append(cand)
+        try:
+            out.append(cand.resolve())
+        except Exception:
+            pass
+    return out
+
+
+def _check_read_path(path: str) -> Path | str:
+    """Path if readable, else an Error string. Sensitive roots always refuse."""
+    try:
+        p = Path(path).expanduser().resolve()
+    except Exception as e:
+        return f"Error: bad path: {e}"
+    for blocked in _read_block_targets():
+        try:
+            if p == blocked or blocked in p.parents:
+                return f"Error: reads of {p} are blocked (sensitive path)."
+        except Exception:
+            pass
+    return p
+
+
 BLOCKED_CHARS = {";", "&", "|", ">", "<", "`", "$", "(", ")", "\n"}
 
 
@@ -63,12 +97,24 @@ def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
     if binary_name == "ollama":
         if len(argv) < 2 or argv[1] not in ALLOWED_OLLAMA:
             return f"Blocked: only ollama {sorted(ALLOWED_OLLAMA)} allowed."
+    if binary_name in ("ls", "cat", "head", "tail", "wc", "du", "find"):
+        # file-dumping/listing binaries must not reach sensitive paths
+        # (read_file/list_dir enforce the same guard below).
+        operands = [a for a in argv[1:] if not a.startswith("-")]
+        if not operands and binary_name in ("ls", "du"):
+            operands = ["."]  # bare ls/du list the cwd: screen it too
+        for op in operands:
+            if isinstance(_check_read_path(op), str):
+                return f"Blocked: reads of '{op}' are blocked (sensitive path)."
     return (binary_name, argv)
 
 
 def tool_list_dir(path: str = ".") -> str:
     try:
-        p = Path(path).expanduser().resolve()
+        checked = _check_read_path(path)
+        if isinstance(checked, str):
+            return checked
+        p = checked
         if not p.exists():
             return f"Error: {p} does not exist."
         if not p.is_dir():
@@ -84,7 +130,10 @@ def tool_list_dir(path: str = ".") -> str:
 
 def tool_read_file(path: str, max_chars: int = 8000) -> str:
     try:
-        p = Path(path).expanduser().resolve()
+        checked = _check_read_path(path)
+        if isinstance(checked, str):
+            return checked
+        p = checked
         if not p.exists():
             return f"Error: {p} does not exist."
         if p.is_dir():
