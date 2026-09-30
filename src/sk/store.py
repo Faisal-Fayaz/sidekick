@@ -388,6 +388,29 @@ def save_summary(session: str, summary: str, up_to_id: int) -> None:
         pass
 
 
+def log_compact_note(note: str) -> None:
+    """Record a compaction outcome as a session-scoped tool_runs row.
+
+    Exists so "compaction did not run" and "compaction failed" are
+    distinguishable in `sk audit`. The caller used to report the latter for
+    the former, which sent debugging after a summarizer that was never called
+    (#306). Best-effort: never raises.
+    """
+    try:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts)"
+                " VALUES (?, 'compact', ?, 1, '', '', ?, ?)",
+                ("_system", redact(str(note or "")[:500]), 0, time.time()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def save_memory(content: str, namespace: str | None = None) -> str:
     content = content.strip()
     if not content:
