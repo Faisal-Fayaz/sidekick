@@ -20,7 +20,6 @@ ALLOWED_BINARIES = {
     "tail",
     "find",
     "lsblk",
-    "python3",
     "git",
     "ollama",
     "free",
@@ -30,6 +29,10 @@ ALLOWED_BINARIES = {
 }
 
 ALLOWED_GIT = {"status", "log", "branch", "diff", "remote"}
+
+# ollama run/pull/push reach the network and write models: exec stays
+# read-only, so only the local inventory subcommands are allowed.
+ALLOWED_OLLAMA = {"list", "show", "ps"}
 
 BLOCKED_CHARS = {";", "&", "|", ">", "<", "`", "$", "(", ")", "\n"}
 
@@ -57,6 +60,9 @@ def _check_cmd(cmd: str) -> tuple[str, list[str]] | str:
         # prevent find -exec / -delete
         if "-exec" in argv or "-delete" in argv:
             return "Blocked: find -exec/-delete not allowed."
+    if binary_name == "ollama":
+        if len(argv) < 2 or argv[1] not in ALLOWED_OLLAMA:
+            return f"Blocked: only ollama {sorted(ALLOWED_OLLAMA)} allowed."
     return (binary_name, argv)
 
 
