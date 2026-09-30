@@ -106,3 +106,52 @@ def test_plain_run_wires_reasoning_callback(monkeypatch):
     res = runner.invoke(app, ["run", "hi", "--yes", "--model", "fast"])
     assert res.exit_code == 0, res.output
     assert callable(seen.get("on_reasoning"))
+
+
+def test_auto_fast_exhaustion_escalates_to_smart_once(monkeypatch):
+    """Refs #275: auto-routed fast turn that exhausts retries once on smart."""
+    from sk.config import TIERS
+
+    calls = []
+
+    def fake_run_agent(task, history, cfg, **k):
+        calls.append(cfg.model)
+        return "(max steps reached)" if len(calls) == 1 else "smart answer"
+
+    monkeypatch.setattr(run_mod, "run_agent", fake_run_agent)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "write me a poem", "--json", "--yes"])
+    assert res.exit_code == 0, res.output
+    doc = json.loads(res.output)
+    assert doc["answer"] == "smart answer"
+    assert len(calls) == 2  # single retry: no ping-pong
+    assert calls[1] == TIERS["ollama"]["smart"]
+
+
+def test_auto_fast_good_answer_runs_once(monkeypatch):
+    calls = []
+
+    def fake_run_agent(task, history, cfg, **k):
+        calls.append(cfg.model)
+        return "a fine poem"
+
+    monkeypatch.setattr(run_mod, "run_agent", fake_run_agent)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "write me a poem", "--json", "--yes"])
+    assert res.exit_code == 0, res.output
+    assert json.loads(res.output)["answer"] == "a fine poem"
+    assert len(calls) == 1
+
+
+def test_explicit_model_never_escalates(monkeypatch):
+    calls = []
+
+    def fake_run_agent(task, history, cfg, **k):
+        calls.append(cfg.model)
+        return "(max steps reached)"
+
+    monkeypatch.setattr(run_mod, "run_agent", fake_run_agent)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "write me a poem", "--json", "--yes", "--model", "fast"])
+    assert res.exit_code == 0, res.output
+    assert len(calls) == 1  # explicit picks are the user's responsibility

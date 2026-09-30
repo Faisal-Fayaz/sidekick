@@ -1,7 +1,7 @@
 """Router tests: pure function table."""
 
 from sk.config import TIERS, provider_tier, resolve_alias
-from sk.router import FAST_MODEL, SMART_MODEL, pick_model, pick_tier
+from sk.router import FAST_MODEL, SMART_MODEL, pick_model, pick_tier, should_escalate
 
 
 def test_chat_goes_fast():
@@ -59,3 +59,28 @@ def test_resolve_alias_shared_by_cli_and_slash():
     assert resolve_alias("groq", "smart", "d") == TIERS["groq"]["smart"]
     assert resolve_alias("custom", "smart", "mydefault") == "mydefault"
     assert resolve_alias("ollama", "my-model", "d") == "my-model"
+
+
+def test_lone_generic_hit_stays_fast():
+    # refs #275: single generic verbs are chit-chat until paired.
+    assert pick_tier("write me a poem")[0] == "fast"
+    assert pick_tier("run that thing")[0] == "fast"
+    assert pick_tier("create something nice today")[0] == "fast"
+    assert pick_tier("explain recursion")[0] == "fast"
+
+
+def test_paired_hits_go_smart():
+    assert pick_tier("write a backup script")[0] == "smart"
+    assert pick_tier("run the tests")[0] == "smart"
+    assert pick_tier("delete the temp folder")[0] == "smart"
+    assert pick_tier("fix it now please")[0] == "smart"
+
+
+def test_should_escalate_marks_failed_turns():
+    assert should_escalate("") is True
+    assert should_escalate("   ") is True
+    assert should_escalate("(max steps reached)") is True
+    assert should_escalate("Accomplished: x\nBlocked: y\nNext: z") is True
+    assert should_escalate("bench-ok") is False
+    assert should_escalate("Hey! What are we working on?") is False
+    assert should_escalate("Denied: plan denied by user — nothing was executed.") is False

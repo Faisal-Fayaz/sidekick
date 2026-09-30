@@ -168,6 +168,37 @@ def run(
             read_only=read_only,
             plan_mode=plan,
         )
+        # Fast→smart escalation (refs #275): when the router owned the pick
+        # (auto) and chose fast, a failed turn retries once on smart. Single
+        # retry by construction — no loop, so no ping-pong. Interactive chat
+        # sessions are excluded (mid-session model swaps would confuse).
+        if (model or "auto").strip().lower() == "auto":
+            from sk.router import pick_tier, should_escalate
+
+            if pick_tier(task)[0] == "fast" and should_escalate(answer):
+                from sk.config import resolve_alias
+
+                cfg.model = resolve_alias(cfg.provider, "smart", cfg.model)
+                if not as_json:
+                    console.print(
+                        "\n[dim]escalated fast→smart (first turn failed) — retrying once[/dim]"
+                    )
+                answer = run_agent(
+                    task,
+                    history,
+                    cfg,
+                    on_tool=on_tool,
+                    on_token=on_token,
+                    approve=approve,
+                    on_reasoning=on_reasoning,
+                    auto_approve=yes,
+                    session=session,
+                    review_plan=_make_plan_reviewer(
+                        {"yolo": yes, "readonly": read_only, "plan": plan}
+                    ),
+                    read_only=read_only,
+                    plan_mode=plan,
+                )
     except Exception as e:
         if as_json:
             _emit(False, "", str(e)[:500])

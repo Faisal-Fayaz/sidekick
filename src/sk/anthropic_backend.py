@@ -151,8 +151,10 @@ def openai_messages_to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]
 def _cache_breakpoints(system: str, tools: list[dict]) -> tuple[str | list[dict], list[dict]]:
     """Attach prompt-caching breakpoints: system block + end of tools definition.
 
-    System + tools are static within a session, so Anthropic serves repeats
-    from cache (up to 10x cheaper). Returns "" for blank system (omit it).
+    System + tools assemble in a fixed canonical order within a session
+    (refs #276), so repeats serve from cache (up to 10x cheaper). Dynamic
+    context blocks still vary per turn, so only the static prefix and the
+    stable schema serve as cache hits. Returns "" for blank system (omit it).
     Minimum cacheable length (~1k tokens) means tiny prompts simply never
     form a cache entry — harmless. OpenAI-compatible providers cache matching
     prefixes automatically server-side, so this backend is the only place
@@ -165,6 +167,28 @@ def _cache_breakpoints(system: str, tools: list[dict]) -> tuple[str | list[dict]
         tools = [dict(t) for t in tools]
         tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
     return (sys_payload, tools)
+
+
+def _thinking_params(level: str, max_tokens: int) -> dict | None:
+    """Anthropic `thinking` block for an effort level, or None to omit.
+
+    Budget must stay under max_tokens with room (≥512) left for output;
+    steps down a tier while it doesn't fit, omits when even the 1024
+    minimum can't fit (or level is off). Never raises.
+    """
+    try:
+        budgets = {"minimal": 1024, "low": 2048, "medium": 4096, "high": 8192, "max": 16384}
+        budget = budgets.get((level or "").strip().lower())
+        if budget is None:
+            return None
+        cap = max(0, int(max_tokens or 0))
+        while budget > 1024 and cap - budget < 512:
+            budget //= 2
+        if cap - budget < 512:
+            return None
+        return {"type": "enabled", "budget_tokens": budget}
+    except Exception:
+        return None
 
 
 def _post(base_url: str, api_key: str, payload: dict, timeout: float = 300.0) -> dict:
@@ -445,6 +469,12 @@ def run_anthropic_agent(
 
     max_tokens = max_tokens_for(cfg.model, cfg.provider)
     max_steps = effective_max_steps(cfg.model, cfg)
+    try:
+        from .agent import _effort_level
+
+        _thinking = _thinking_params(_effort_level(cfg, plan_mode), max_tokens)
+    except Exception:
+        _thinking = None
     seen: dict[str, str] = {}
     completed: list[str] = []  # per-turn tool work done (for error reports)
 
@@ -455,6 +485,8 @@ def run_anthropic_agent(
             "temperature": cfg.temperature,
             "messages": messages,
         }
+        if _thinking is not None:
+            payload["thinking"] = _thinking
         if system_payload:
             payload["system"] = system_payload
         if tools:

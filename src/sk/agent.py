@@ -373,21 +373,50 @@ def _parse_text_tool(text: str) -> tuple[str, dict] | None:
     return hits[0] if hits else None
 
 
+def _effort_level(cfg: Config, plan_mode: bool = False) -> str:
+    """Normalized reasoning level: plan mode forces high, else the configured
+    level (garbage falls back to low via config parsing). Never raises."""
+    try:
+        from .config import REASONING_EFFORTS
+
+        level = "high" if plan_mode else str(getattr(cfg, "reasoning_effort", "low") or "low")
+        level = level.strip().lower()
+        return level if level in REASONING_EFFORTS else "low"
+    except Exception:
+        return "low"
+
+
 def _extra_body(cfg: Config, plan_mode: bool = False) -> dict:
-    """Provider-specific request params. Ollama-only knobs (options/num_ctx)
-    break cloud APIs with 400s, so they ship for local servers exclusively.
-    The reasoning effort ships for OpenRouter only (unknown custom endpoints
-    may 400 on unfamiliar keys): plan mode escalates to high, otherwise the
-    configured level applies; "off" omits the key (provider default). Never raises."""
+    """Provider-specific request params (sent as OpenAI extra_body). Never raises.
+
+    Local servers get Ollama-only knobs (options/num_ctx would 400 cloud
+    APIs, so they ship for ollama/lmstudio exclusively). Reasoning effort
+    ships per provider in its native spelling — OpenRouter `reasoning.effort`,
+    OpenAI `reasoning_effort` (minimal/max clamped to low/high), Ollama
+    `think` toggle (off disables thinking, high/max enables it, else the
+    model default). Unknown providers (groq/together/deepseek/google/custom)
+    get {} — unfamiliar keys 400 there. Plan mode escalates to high
+    everywhere; "off" omits the key (provider default).
+    """
+    level = _effort_level(cfg, plan_mode)
     if cfg.provider in ("ollama", "lmstudio"):
-        return {"options": {"num_ctx": 4096, "num_predict": 350}}
+        body: dict = {"options": {"num_ctx": 4096, "num_predict": 350}}
+        # think toggle is Ollama-only (LM Studio may 400 on unfamiliar keys).
+        if cfg.provider == "ollama":
+            if level == "off":
+                body["think"] = False
+            elif level in ("high", "max"):
+                body["think"] = True
+        return body
     if cfg.provider == "openrouter":
-        try:
-            level = "high" if plan_mode else str(getattr(cfg, "reasoning_effort", "low") or "low")
-        except Exception:
-            level = "low"
-        if level.strip().lower() not in ("", "off"):
-            return {"reasoning": {"effort": level.strip().lower()}}
+        if level != "off":
+            return {"reasoning": {"effort": level}}
+        return {}
+    if cfg.provider == "openai":
+        clamped = {"minimal": "low", "max": "high"}.get(level, level)
+        if clamped != "off":
+            return {"reasoning_effort": clamped}
+        return {}
     return {}
 
 
@@ -1152,6 +1181,17 @@ def build_messages(
 
     Extracted for the eval harness: every quality regression (unguessed specs,
     ~/ hallucinations, link refusals) is assertable here without a model.
+
+    Cache-discipline contract (refs #276): providers bill repeated prefixes
+    from cache only on exact matches, so this function emits one canonical
+    order — system message (instructions + project/repo context) → history →
+    fresh user message (AUTO LOCAL/WEB/SEARCH facts appended at the very
+    end). Tool schemas ride alongside via tools_schema(), which is itself
+    deterministic (builtins stable, extras name-sorted). The returned list
+    is fresh per turn: callers may drop/append control notes on it freely;
+    stored history dicts are shared by reference but never mutated in place,
+    and model/config changes take effect on new turns only (never by editing
+    already-sent messages).
     """
     from .images import encode_image_data_url, extract_image_refs, vision_capable
 
@@ -1266,6 +1306,99 @@ def build_messages(
         },
     ]
     return messages
+
+
+# Post-edit verify/repair budget (refs #280): at most this many extra
+# model rounds per turn are spent fixing verify failures. Never raises.
+VERIFY_REPAIR_BUDGET = 2
+
+
+def _edited_paths(batch: list[tuple[str, dict]]) -> list[str]:
+    """Paths touched by write_file/edit_file calls in a tool batch.
+    Deduplicated, capped. Never raises."""
+    out: list[str] = []
+    try:
+        for name, args in batch or []:
+            if name in ("write_file", "edit_file") and isinstance(args, dict):
+                p = str((args or {}).get("path", "")).strip()
+                if p and p not in out:
+                    out.append(p)
+            if len(out) >= 20:
+                break
+    except Exception:
+        pass
+    return out
+
+
+def _verify_command(paths: list[str]) -> str | None:
+    """Syntax-check shell command for edited paths, or None when nothing is
+    verifiable. v1 covers Python via stdlib compile() (no .pyc litter, no new
+    deps, python3 presence assumed); other extensions skip. Never raises."""
+    try:
+        import shlex
+
+        py = [str(p) for p in (paths or []) if str(p).strip().lower().endswith(".py")][:20]
+        if not py:
+            return None
+        files = " ".join(shlex.quote(p) for p in py)
+        return (
+            'python3 -c "import sys;'
+            "[compile(open(f).read(),f,'exec') for f in sys.argv[1:]]\" " + files
+        )
+    except Exception:
+        return None
+
+
+def _verify_passed(result: str) -> bool:
+    """True when a tool_shell result shows exit 0. Never raises."""
+    try:
+        return "[exit 0]" in (result or "")
+    except Exception:
+        return False
+
+
+def _verify_turn(
+    edited: list[str],
+    repairs_used: int,
+    approve: object = None,
+    session: str = "",
+    provider: str = "",
+    host: str = "",
+    read_only: bool = False,
+    plan_mode: bool = False,
+    on_tool=None,
+) -> tuple[bool, int, str]:
+    """Post-edit verification gate (refs #280).
+
+    Returns (done, repairs_used, note). done=True → caller breaks with the
+    model's final text. done=False → caller appends note to messages and
+    continues the loop for a targeted repair round (capped). Skips
+    (done=True, empty note) when nothing verifiable was edited, in
+    read-only/plan mode, or when the user declines the verify prompt.
+    The check runs through _gated_dispatch, so hooks, audit rows, and the
+    normal shell approval apply. Never raises.
+    """
+    try:
+        if repairs_used >= VERIFY_REPAIR_BUDGET or read_only or plan_mode:
+            return (True, repairs_used, "")
+        cmd = _verify_command(edited)
+        if cmd is None:
+            return (True, repairs_used, "")
+        if on_tool is not None:
+            try:
+                on_tool("shell", {"cmd": cmd})
+            except Exception:
+                pass
+        result, approved = _gated_dispatch(
+            "shell", {"cmd": cmd, "timeout": 60}, approve, session, provider, host
+        )
+        if not approved:
+            return (True, repairs_used, "")  # user declined verification
+        if _verify_passed(result):
+            return (True, repairs_used, "")
+        return (False, repairs_used + 1, result[:2000])
+    except Exception:
+        return (True, repairs_used, "")
 
 
 def _synthesize_exhaustion(
@@ -1425,6 +1558,8 @@ def run_agent(
     callback must still deny writes (see sk.cli.approvers).
     plan_mode switches the prompt line to propose-a-plan; the caller's approve
     callback must still deny file writes (shell keeps asking).
+    Edited Python files get a post-answer syntax check through the normal
+    shell approval; failures buy up to 2 targeted repair rounds (refs #280).
     session tags audit rows (tool_runs) for `sk audit`. Empty session falls
     back to the audit_session context var (used by the TUI worker path).
     review_plan(plan_text, calls) -> bool: one confirmation for multi-tool
@@ -1512,6 +1647,8 @@ def run_agent(
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
     completed: list[str] = []  # per-turn tool work done (for error reports)
+    edited: list[str] = []  # write_file/edit_file targets (for post-edit verify)
+    repairs_used = 0  # verify-fail repair rounds consumed (capped)
 
     max_parallel = max_parallel_for(cfg.model)
     # Some providers/models reject native function calling (HTTP 400 "tool
@@ -1604,6 +1741,9 @@ def run_agent(
                 read_only=read_only,
                 plan_mode=plan_mode,
             )
+            for p in _edited_paths(batch):
+                if p not in edited:
+                    edited.append(p)
             _record_completed(completed, batch, outs)
             combined = [
                 f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
@@ -1633,7 +1773,30 @@ def run_agent(
                 continue
             final_text = msg_text
             messages.append({"role": "assistant", "content": final_text})
-            break
+            # post-edit verify (refs #280): edited code that fails its syntax
+            # check gets targeted repair rounds instead of shipping broken.
+            done, repairs_used, note = _verify_turn(
+                edited,
+                repairs_used,
+                approve,
+                session,
+                cfg.provider,
+                _provider_host(cfg),
+                read_only,
+                plan_mode,
+                on_tool,
+            )
+            if done:
+                break
+            messages.append(
+                {
+                    "role": "user",
+                    "content": CONTROL_TAG
+                    + "[verify failed — fix ONLY the reported errors, then answer again]\n"
+                    + note,
+                }
+            )
+            continue
 
         # has tool calls: parse, plan-review gate, then append assistant turn + execute
         parsed: list[tuple[str, str, dict]] = []
@@ -1674,6 +1837,9 @@ def run_agent(
             read_only=read_only,
             plan_mode=plan_mode,
         )
+        for p in _edited_paths(batch):
+            if p not in edited:
+                edited.append(p)
         for (tid, _tname, _targs), (result, _repeated) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
         _record_completed(completed, batch, outs)

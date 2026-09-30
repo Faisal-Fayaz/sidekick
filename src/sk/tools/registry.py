@@ -65,7 +65,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "exec",
-            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects, no interpreters (no python3). No approval needed.",
+            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects, no interpreters (no python3). Sensitive paths (~/.ssh, ~/.gnupg, history.db) are blocked. No approval needed.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -459,18 +459,36 @@ def _dispatch_plugin(name: str, args: dict) -> str | None:
         return None
 
 
+def _schema_name(entry: dict) -> str:
+    """Sort key for tool schema entries. Never raises."""
+    try:
+        fn = entry.get("function", {}) if isinstance(entry, dict) else {}
+        return str(fn.get("name", "")) if isinstance(fn, dict) else ""
+    except Exception:
+        return ""
+
+
 def tools_schema() -> list[dict]:
-    """Builtin schema + loaded plugin tools + live MCP server tools. Never raises."""
+    """Builtin schema + loaded plugin tools + live MCP server tools. Never raises.
+
+    Cache-discipline contract (refs #276): prompt caches key on exact
+    prefixes, so every request assembles in one canonical order —
+    system message → tool schemas → project/repo context → history →
+    fresh user/tool output — and the schema list itself is deterministic:
+    builtins first (stable declaration order), extras name-sorted. Plugin
+    load order and MCP server flaps must never reorder the schema, or
+    every turn pays a full cache miss.
+    """
     try:
         from sk.plugins import schema_extra
 
-        out = list(TOOLS_SCHEMA) + schema_extra()
+        out = list(TOOLS_SCHEMA) + sorted(schema_extra(), key=_schema_name)
     except Exception:
         out = list(TOOLS_SCHEMA)
     try:
         from sk.mcp_client import mcp_schema_extra
 
-        out = out + mcp_schema_extra()
+        out = out + sorted(mcp_schema_extra(), key=_schema_name)
     except Exception:
         pass
     return out

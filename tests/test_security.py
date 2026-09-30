@@ -13,6 +13,8 @@ from sk.tools import (
     _url_blocked,
     dispatch_tool,
     tool_exec,
+    tool_list_dir,
+    tool_read_file,
     tool_shell,
     tool_write_file,
 )
@@ -352,3 +354,55 @@ def test_exec_still_approval_free_normally():
     """Gating is mode-only: everyday inventory commands never prompt."""
     out, ok = _gated_dispatch("exec", {"cmd": "pwd"}, approve=lambda n, a: True)
     assert ok is True and "exit 0" in out
+
+
+def _fake_home_with_secrets(tmp_path, monkeypatch):
+    """Fake HOME holding a key + history DB. Never touches the real ~/.ssh."""
+    import sk.tools as _t
+
+    monkeypatch.setattr(_t.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))  # for expanduser("~")
+    (tmp_path / ".ssh").mkdir(exist_ok=True)
+    (tmp_path / ".ssh" / "id_rsa").write_text("SECRET-KEY-MATERIAL")
+    (tmp_path / ".sidekick").mkdir(exist_ok=True)
+    (tmp_path / ".sidekick" / "history.db").write_text("secret-history")
+    return tmp_path
+
+
+def test_read_sensitive_paths_blocked(tmp_path, monkeypatch):
+    """#265 PoCs: keys + history DB unreadable via read_file/list_dir/exec."""
+    home = _fake_home_with_secrets(tmp_path, monkeypatch)
+    key = str(home / ".ssh" / "id_rsa")
+    out = tool_read_file(key)
+    assert "blocked" in out.lower() and "SECRET-KEY-MATERIAL" not in out
+    out = tool_list_dir(str(home / ".ssh"))
+    assert "blocked" in out.lower() and "id_rsa" not in out
+    out = tool_read_file(str(home / ".sidekick" / "history.db"))
+    assert "blocked" in out.lower() and "secret-history" not in out
+    assert "blocked" in tool_read_file("~/.ssh/id_rsa").lower()  # ~ expansion
+    assert "blocked" in tool_exec(f"cat {key}").lower()
+    assert "blocked" in tool_exec(f"head -c 10 {key}").lower()
+    assert "blocked" in tool_exec(f"ls {home / '.ssh'}").lower()
+
+
+def test_read_nonsensitive_stays_open(tmp_path, monkeypatch):
+    """#265 is scoped: /etc grounding + tmp files + plain inventory still flow."""
+    _fake_home_with_secrets(tmp_path, monkeypatch)
+    f = tmp_path / "notes.txt"
+    f.write_text("hello")
+    assert "hello" in tool_read_file(str(f))
+    assert "notes.txt" in tool_list_dir(str(tmp_path))
+    assert "blocked" not in tool_exec("cat /etc/hostname").lower()
+    assert "blocked" not in tool_exec("ls /tmp").lower()
+    assert "blocked" not in tool_exec(f"cat {f}").lower()
+
+
+def test_read_sensitive_cwd(tmp_path, monkeypatch):
+    """#265: bare ls/du/list_dir inside ~/.ssh still refuse; pwd/echo unaffected."""
+    home = _fake_home_with_secrets(tmp_path, monkeypatch)
+    monkeypatch.chdir(home / ".ssh")
+    assert "blocked" in tool_exec("ls").lower()
+    assert "blocked" in tool_list_dir(".").lower()
+    assert "blocked" not in tool_exec("pwd").lower()
+    assert "blocked" not in tool_exec("echo hi").lower()
+    assert "blocked" not in tool_list_dir("/tmp").lower()

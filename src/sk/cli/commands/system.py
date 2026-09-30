@@ -454,7 +454,8 @@ def config(
     ),
     spend_cap: str = typer.Option("", help="Cap per-session spend in USD, 0 = unlimited"),
     reasoning_effort: str = typer.Option(
-        "", help="Reasoning effort for OpenRouter models: off|minimal|low|medium|high|max"
+        "",
+        help="Reasoning effort: off|minimal|low|medium|high|max (OpenRouter, OpenAI, Anthropic thinking budget, Ollama think toggle)",
     ),
     theme: str = typer.Option(
         "",
