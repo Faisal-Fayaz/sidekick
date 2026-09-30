@@ -63,6 +63,15 @@ PATH_HINT = re.compile(
     r"(~/|\.\w{1,5}\b|/home/|[\w\-./]+\.(py|ts|tsx|js|rs|go|md|toml|json|yaml)\b)"
 )
 
+# Generic verbs that only signal real work alongside another task term.
+# A lone generic hit ("write me a poem") stays fast; two hits of any kind
+# ("write a backup script") go smart. Fixes the measured #275 over-route.
+GENERIC_WORDS = {"write", "file", "run", "execute", "create", "explain"}
+
+# Loop-machinery verdicts that mark a turn as failed/low-confidence and
+# eligible for one fast→smart retry (see should_escalate). Never raises.
+EXHAUSTION_MARKERS = ("(max steps reached)", "Accomplished:")
+
 
 def pick_tier(task: str) -> tuple[str, str]:
     """Return (tier, reason) where tier is 'fast' or 'smart'. Pure function."""
@@ -72,11 +81,12 @@ def pick_tier(task: str) -> tuple[str, str]:
     no_urls = re.sub(r"https?://\S+", " ", task)
     if PATH_HINT.search(no_urls):
         return ("smart", "mentions paths/files")
-    hits = sum(1 for w in SMART_WORDS if re.search(rf"\b{re.escape(w)}\b", t))
-    if hits >= 1 and len(t.split()) > 2:
-        return ("smart", f"keyword ({hits} code/task terms)")
-    if hits >= 2:
-        return ("smart", f"keywords ({hits})")
+    hits = {w for w in SMART_WORDS if re.search(rf"\b{re.escape(w)}\b", t)}
+    specific = hits - GENERIC_WORDS
+    if specific and len(t.split()) > 2:
+        return ("smart", f"keyword ({len(hits)} code/task terms)")
+    if len(hits) >= 2:
+        return ("smart", f"keywords ({len(hits)})")
     return ("fast", "chit-chat/fetch/recall")
 
 
@@ -123,3 +133,19 @@ def route(task: str, provider: str = "ollama", model_override: str = "") -> dict
         "native_tools": native_tools_for(model),
         "max_parallel": max_parallel_for(model),
     }
+
+
+def should_escalate(answer: str) -> bool:
+    """True when a fast-tier turn failed and deserves one smart retry.
+
+    Signals: empty answer, the hard "(max steps reached)" fallback, or the
+    exhaustion synthesis ("Accomplished:" 3-line report) which means the step
+    budget died without a final answer. Pure function, never raises.
+    """
+    try:
+        t = (answer or "").strip()
+        if not t:
+            return True
+        return t.startswith("Accomplished:") or "(max steps reached)" in t
+    except Exception:
+        return False
