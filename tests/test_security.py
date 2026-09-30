@@ -31,6 +31,26 @@ CATASTROPHIC_SHELL = [
     "echo hi > /dev/sda",
     "shred /dev/sda",
     "chmod -R 777 /",
+    # #264: quoted/braced spellings normalize to the bare forms above
+    'rm -rf "$HOME"',
+    "rm -rf '$HOME'",
+    "rm -rf ${HOME}",
+    "rm -rf ${HOME}/",
+    'rm -rf "~"',
+    "rm -rf '/etc'",
+    'sudo rm -rf "$HOME"',
+    'dd if=x of="/dev/sda"',
+    # #264: bare system roots (bare, trailing slash, /* glob)
+    "rm -rf /etc",
+    "rm -rf /etc/",
+    "rm -rf /etc/*",
+    "rm -rf /proc",
+    "rm -rf /sys",
+    "rm -rf /dev",
+    "rm -rf /usr",
+    "rm -rf /boot",
+    "rm -rf /boot/*",
+    "rm --recursive /usr",
 ]
 
 WRITE_BLOCKED_PATHS = [
@@ -73,6 +93,23 @@ def test_shell_hard_blocks_catastrophic():
 def test_shell_allows_benign():
     assert "hello-shell" in tool_shell("echo hello-shell")
     assert "ok" in dispatch_tool("shell", {"cmd": "echo ok"})
+
+
+def test_shell_block_allows_targeted_paths():
+    """#264: targeted subpaths stay approval-gated (only bare roots hard-block)."""
+    from sk.tools.shell import _check_shell
+
+    for ok in (
+        "rm -rf /tmp/x",
+        "rm -rf ~/proj",
+        "rm -rf $HOME/tmp",
+        "rm -rf ${HOME}/tmp",
+        "rm -rf /etc/hostname",
+        "rm /etc/hostname",
+        "rm -rf /etc2",
+        "ls /etc",
+    ):
+        assert _check_shell(ok) is None, ok
 
 
 def test_write_blocklist_sensitive_paths():
