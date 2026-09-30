@@ -20,8 +20,11 @@ APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "shell_session", "delete_file"}
 # hard mode gates (prompt text alone does not stop disobedient models):
 # plan mode blocks file writes (shell exploration stays approval-gated);
 # read-only mode blocks every approval-gated tool.
-PLAN_DENIED_TOOLS = set(WRITE_TOOLS) | {"delete_file"}
-READONLY_DENIED_TOOLS = set(APPROVAL_TOOLS)
+# exec is approval-free but must still die in these modes: after python3's
+# removal it is read-only, yet inventory commands have no place in a mode
+# that promises zero side effects.
+PLAN_DENIED_TOOLS = set(WRITE_TOOLS) | {"delete_file", "exec"}
+READONLY_DENIED_TOOLS = set(APPROVAL_TOOLS) | {"exec"}
 
 TOOLS_SCHEMA = [
     {
@@ -62,7 +65,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "exec",
-            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects. No approval needed.",
+            "description": "Run a READ-ONLY shell command (ls, df, du, git status/log, pwd, etc). No pipes/redirects, no interpreters (no python3). No approval needed.",
             "parameters": {
                 "type": "object",
                 "properties": {
