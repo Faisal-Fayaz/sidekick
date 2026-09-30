@@ -169,6 +169,28 @@ def _cache_breakpoints(system: str, tools: list[dict]) -> tuple[str | list[dict]
     return (sys_payload, tools)
 
 
+def _thinking_params(level: str, max_tokens: int) -> dict | None:
+    """Anthropic `thinking` block for an effort level, or None to omit.
+
+    Budget must stay under max_tokens with room (≥512) left for output;
+    steps down a tier while it doesn't fit, omits when even the 1024
+    minimum can't fit (or level is off). Never raises.
+    """
+    try:
+        budgets = {"minimal": 1024, "low": 2048, "medium": 4096, "high": 8192, "max": 16384}
+        budget = budgets.get((level or "").strip().lower())
+        if budget is None:
+            return None
+        cap = max(0, int(max_tokens or 0))
+        while budget > 1024 and cap - budget < 512:
+            budget //= 2
+        if cap - budget < 512:
+            return None
+        return {"type": "enabled", "budget_tokens": budget}
+    except Exception:
+        return None
+
+
 def _post(base_url: str, api_key: str, payload: dict, timeout: float = 300.0) -> dict:
     """POST /v1/messages. Honors Retry-After on 429/529 (2 retries). Returns decoded body."""
     import time
@@ -447,6 +469,12 @@ def run_anthropic_agent(
 
     max_tokens = max_tokens_for(cfg.model, cfg.provider)
     max_steps = effective_max_steps(cfg.model, cfg)
+    try:
+        from .agent import _effort_level
+
+        _thinking = _thinking_params(_effort_level(cfg, plan_mode), max_tokens)
+    except Exception:
+        _thinking = None
     seen: dict[str, str] = {}
     completed: list[str] = []  # per-turn tool work done (for error reports)
 
@@ -457,6 +485,8 @@ def run_anthropic_agent(
             "temperature": cfg.temperature,
             "messages": messages,
         }
+        if _thinking is not None:
+            payload["thinking"] = _thinking
         if system_payload:
             payload["system"] = system_payload
         if tools:

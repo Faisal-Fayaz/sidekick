@@ -373,21 +373,50 @@ def _parse_text_tool(text: str) -> tuple[str, dict] | None:
     return hits[0] if hits else None
 
 
+def _effort_level(cfg: Config, plan_mode: bool = False) -> str:
+    """Normalized reasoning level: plan mode forces high, else the configured
+    level (garbage falls back to low via config parsing). Never raises."""
+    try:
+        from .config import REASONING_EFFORTS
+
+        level = "high" if plan_mode else str(getattr(cfg, "reasoning_effort", "low") or "low")
+        level = level.strip().lower()
+        return level if level in REASONING_EFFORTS else "low"
+    except Exception:
+        return "low"
+
+
 def _extra_body(cfg: Config, plan_mode: bool = False) -> dict:
-    """Provider-specific request params. Ollama-only knobs (options/num_ctx)
-    break cloud APIs with 400s, so they ship for local servers exclusively.
-    The reasoning effort ships for OpenRouter only (unknown custom endpoints
-    may 400 on unfamiliar keys): plan mode escalates to high, otherwise the
-    configured level applies; "off" omits the key (provider default). Never raises."""
+    """Provider-specific request params (sent as OpenAI extra_body). Never raises.
+
+    Local servers get Ollama-only knobs (options/num_ctx would 400 cloud
+    APIs, so they ship for ollama/lmstudio exclusively). Reasoning effort
+    ships per provider in its native spelling — OpenRouter `reasoning.effort`,
+    OpenAI `reasoning_effort` (minimal/max clamped to low/high), Ollama
+    `think` toggle (off disables thinking, high/max enables it, else the
+    model default). Unknown providers (groq/together/deepseek/google/custom)
+    get {} — unfamiliar keys 400 there. Plan mode escalates to high
+    everywhere; "off" omits the key (provider default).
+    """
+    level = _effort_level(cfg, plan_mode)
     if cfg.provider in ("ollama", "lmstudio"):
-        return {"options": {"num_ctx": 4096, "num_predict": 350}}
+        body: dict = {"options": {"num_ctx": 4096, "num_predict": 350}}
+        # think toggle is Ollama-only (LM Studio may 400 on unfamiliar keys).
+        if cfg.provider == "ollama":
+            if level == "off":
+                body["think"] = False
+            elif level in ("high", "max"):
+                body["think"] = True
+        return body
     if cfg.provider == "openrouter":
-        try:
-            level = "high" if plan_mode else str(getattr(cfg, "reasoning_effort", "low") or "low")
-        except Exception:
-            level = "low"
-        if level.strip().lower() not in ("", "off"):
-            return {"reasoning": {"effort": level.strip().lower()}}
+        if level != "off":
+            return {"reasoning": {"effort": level}}
+        return {}
+    if cfg.provider == "openai":
+        clamped = {"minimal": "low", "max": "high"}.get(level, level)
+        if clamped != "off":
+            return {"reasoning_effort": clamped}
+        return {}
     return {}
 
 
