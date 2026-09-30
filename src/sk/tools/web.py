@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 def _url_blocked(url: str) -> str | None:
     """SSRF guard. Returns error or None if OK."""
@@ -172,6 +174,55 @@ def extract_embedded_text(html: str, budget: int = 8000) -> str:
     return "\n\n".join(parts)[:budget]
 
 
+def _fetch_with_redirects(
+    url: str,
+    headers: dict,
+    timeout: int = 20,
+    params: dict | None = None,
+    context: str = "fetching",
+) -> tuple[Any, str]:
+    """GET with a manual redirect chain: initial URL + every hop re-validated
+    against the SSRF guard (httpx auto-follow would fetch targets unchecked).
+
+    Returns (response, "") or (None, error). params go on the first request
+    only; redirect hops carry their own URLs. Never raises.
+    """
+    from urllib.parse import urljoin
+
+    try:
+        import httpx
+    except Exception as e:
+        return None, f"Error {context}: {e}"
+    blocked = _url_blocked(url)
+    if blocked:
+        return None, blocked
+    try:
+        current = url.strip()
+        r = None
+        with httpx.Client(timeout=timeout, follow_redirects=False) as c:
+            for i in range(4):  # initial fetch + up to 3 hops
+                kw = {"headers": headers}
+                if params and i == 0:
+                    kw["params"] = params
+                r = c.get(current, **kw)
+                if r.status_code not in (301, 302, 303, 307, 308):
+                    break
+                loc = (r.headers.get("location") or "").strip()
+                if not loc:
+                    break
+                current = urljoin(current, loc)
+                blocked = _url_blocked(current)
+                if blocked:
+                    return None, f"Error: redirect to blocked URL: {current}"
+            else:
+                return None, "Error: too many redirects (max 3)."
+        if r is None:
+            return None, "Error: fetch failed."
+        return r, ""
+    except Exception as e:
+        return None, f"Error {context}: {str(e)[:300]}"
+
+
 def tool_web_search(query: str, count: int = 5) -> str:
     """Keyless web search via DuckDuckGo html endpoint. Returns title/url/snippet lines."""
     import re
@@ -181,17 +232,18 @@ def tool_web_search(query: str, count: int = 5) -> str:
     if not query:
         return "Error: empty query."
     count = max(1, min(int(count or 5), 8))
+    r, err = _fetch_with_redirects(
+        "https://html.duckduckgo.com/html/",
+        {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
+        timeout=20,
+        params={"q": query},
+        context="searching",
+    )
+    if err:
+        return err
     try:
-        import httpx
-
-        with httpx.Client(timeout=20, follow_redirects=True) as c:
-            r = c.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query},
-                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
-            )
-            r.raise_for_status()
-            html = r.text
+        r.raise_for_status()
+        html = r.text
     except Exception as e:
         return f"Error searching: {str(e)[:200]}"
     # result links: <a class="result__a" href="//duckduckgo.com/l/?uddg=<url>&...">title</a>
@@ -215,45 +267,21 @@ def tool_web_search(query: str, count: int = 5) -> str:
 
 
 def tool_read_url(url: str, max_chars: int = 6000) -> str:
-    blocked = _url_blocked(url)
-    if blocked:
-        return blocked
     max_chars = max(500, min(int(max_chars or 6000), 15000))
+    r, err = _fetch_with_redirects(url, {"User-Agent": "sidekick/0.1"})
+    if err:
+        return err
     try:
-        from urllib.parse import urljoin
-
-        import httpx
-
-        # Manual redirect chain: every hop is re-validated against the SSRF
-        # guard (httpx auto-follow would fetch redirect targets unchecked).
-        current = url.strip()
-        r = None
-        with httpx.Client(timeout=20, follow_redirects=False) as c:
-            for _ in range(4):  # initial fetch + up to 3 hops
-                r = c.get(current, headers={"User-Agent": "sidekick/0.1"})
-                if r.status_code not in (301, 302, 303, 307, 308):
-                    break
-                loc = (r.headers.get("location") or "").strip()
-                if not loc:
-                    break
-                current = urljoin(current, loc)
-                blocked = _url_blocked(current)
-                if blocked:
-                    return f"Error: redirect to blocked URL: {current}"
-            else:
-                return "Error: too many redirects (max 3)."
-            if r is None:
-                return "Error: fetch failed."
-            r.raise_for_status()
-            ctype = r.headers.get("content-type", "")
-            if (
-                "text" not in ctype
-                and "html" not in ctype
-                and "json" not in ctype
-                and "xml" not in ctype
-            ):
-                return f"Error: unsupported content-type '{ctype}'."
-            raw = r.text
+        r.raise_for_status()
+        ctype = r.headers.get("content-type", "")
+        if (
+            "text" not in ctype
+            and "html" not in ctype
+            and "json" not in ctype
+            and "xml" not in ctype
+        ):
+            return f"Error: unsupported content-type '{ctype}'."
+        raw = r.text
     except Exception as e:
         return f"Error fetching: {str(e)[:300]}"
     if len(raw) > 1_000_000:
