@@ -980,14 +980,36 @@ def _stream_chat(
         )
     tool_calls = None
     if tc_buf:
+        # Providers that stream tool_calls without ids (llama.cpp --server, some
+        # Ollama builds, text-JSON shims) used to get `call_0, call_1, ...`
+        # regenerated from a per-message index every turn. The accumulated
+        # history is re-sent in full, so one request could contain two assistant
+        # messages with the same tool_call_id, which is a hard 400 (#310).
+        #
+        # Derive from a stable hash of the call so ids are unique per request
+        # AND identical across a retry of the same turn, which matters because
+        # retries are real (see _create_with_retry).
         tool_calls = [
-            _TC(b["id"] or f"call_{i}", b["name"], b["args"])
+            _TC(b["id"] or _synthetic_call_id(i, b), b["name"], b["args"])
             for i, b in sorted(tc_buf.items())
             if b["name"]
         ]
         if not tool_calls:
             tool_calls = None
     return _Msg(acc_text, tool_calls, acc_reason, finish)
+
+
+def _synthetic_call_id(index: int, buf: dict) -> str:
+    """Deterministic, turn-local, collision-resistant id for an id-less call.
+
+    Stable for the same (index, tool, args) so a retried turn reuses the id;
+    distinct across turns because the args differ.
+    """
+    import hashlib
+
+    seed = f"{index}|{buf.get('name', '')}|{sorted((buf.get('args') or {}).items())}"
+    digest = hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:16]
+    return f"call_{index}_{digest}"
 
 
 def estimate_tokens(text: str) -> int:
@@ -1360,6 +1382,18 @@ def build_messages(
         smart_model = _TIERS.get("ollama", {}).get("smart", "qwen2.5-coder:7b")
     except Exception:
         smart_model = "qwen2.5-coder:7b"
+    # The live turn is persisted before run_agent is called (every surface does
+    # this, so `sk oops` and /rewind see it), and prepare_history re-reads the
+    # DB — so `history` can already end with this exact user message and
+    # appending it below would send every prompt twice (#299). Dedupe the tail
+    # here rather than relying on each caller's save/read ordering.
+    hist = list(history or [])
+    while (
+        hist
+        and str(hist[-1].get("role", "")) == "user"
+        and str(hist[-1].get("content", "")) == user_msg
+    ):
+        hist.pop()
     messages: list[dict] = [
         {
             "role": "system",
@@ -1378,7 +1412,7 @@ def build_messages(
                 smart_model=smart_model,
             ),
         },
-        *history[-20:],
+        *hist[-20:],
         {
             "role": "user",
             "content": (
