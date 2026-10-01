@@ -104,6 +104,9 @@ ignore = ["UP035", "E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "F401", "I001"]
 
+# The mypy gate path list is repeated in three files (pyproject comment,
+# .pre-commit-config.yaml, .github/workflows/ci.yml). That is a maintenance tax
+# and has already drifted once. tests/test_ci_config.py asserts they agree.
 [tool.pytest.ini_options]
 # Absent entirely before (#320): no addopts, no testpaths, no registered
 # markers, no xfail discipline. Every invocation in the repo spelled the path out
@@ -126,7 +129,7 @@ ignore_missing_imports = true
 # CI gate: mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py
 #   src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py
 #   src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py
-#   src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py src/sk/plugins.py src/sk/skills.py src/sk/checkpoints.py src/sk/gitdiff.py src/sk/mcp_client.py src/sk/memory_files.py
+#   src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py src/sk/plugins.py src/sk/skills.py src/sk/checkpoints.py src/sk/gitdiff.py src/sk/mcp_client.py src/sk/memory_files.py src/sk/trust.py
 disallow_untyped_defs = false
 warn_unused_ignores = true
 strict_equality = true

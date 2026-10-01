@@ -9,6 +9,7 @@ No Ollama needed: only prompt assembly + tools + gates are asserted.
 """
 
 import sk.store as store
+import sk.trust as trust
 from sk.agent import SYSTEM_PROMPT, _gated_dispatch, build_messages
 from sk.config import Config
 
@@ -79,22 +80,31 @@ def test_build_local_facts_existing_dir(tmp_path, monkeypatch):
     (tmp_path / "sidekick" / "pyproject.toml").write_text("[project]\n")
     monkeypatch.setattr(agent.Path, "home", lambda: tmp_path)
     msgs = agent.build_messages("check ~/sidekick and tell me scope", [], _cfg())
-    user = msgs[-1]["content"]
-    assert "AUTO LOCAL FACTS" in user and "pyproject.toml" in user
+    # Grounded facts are outside-content: fenced and provenance-labelled, never
+    # appended to the user's own turn (#299).
+    assert "pyproject.toml" not in msgs[-1]["content"], "injected into the user turn"
+    fenced = msgs[-2]["content"]
+    assert trust.OPEN in fenced and "pyproject.toml" in fenced
+    assert "local filesystem listing" in fenced
 
 
 def test_build_web_blocked_offline(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     msgs = build_messages("fetch http://127.0.0.1:9/ now", [], _cfg())
-    user = msgs[-1]["content"]
-    assert "AUTO WEB FACTS" in user and "blocked" in user.lower()
+    assert "blocked" not in msgs[-1]["content"].lower(), "injected into the user turn"
+    fenced = msgs[-2]["content"]
+    assert trust.OPEN in fenced and "blocked" in fenced.lower()
+    assert "fetched web page" in fenced
 
 
 def test_build_no_facts_for_plain_chat(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     msgs = build_messages("say hi in 3 words", [], _cfg())
-    assert "AUTO LOCAL FACTS" not in msgs[-1]["content"]
-    assert "AUTO WEB FACTS" not in msgs[-1]["content"]
+    assert len(msgs) == 2, "an empty untrusted message should not be sent"
+    assert msgs[-1]["content"] == "say hi in 3 words"
+    # only the non-system messages: the system prompt legitimately *describes*
+    # the fence so the model can recognise one
+    assert trust.OPEN not in str(msgs[1:])
 
 
 def _cfg_provider(provider, model):
@@ -361,7 +371,10 @@ def test_build_messages_auto_search(monkeypatch, tmp_path):
     from sk.agent import build_messages
 
     msgs = build_messages("search on the internet for the most used AI model", [], _cfg())
-    assert "AUTO SEARCH" in msgs[-1]["content"] and "Example Model" in msgs[-1]["content"]
+    assert "Example Model" not in msgs[-1]["content"], "injected into the user turn"
+    fenced = msgs[-2]["content"]
+    assert trust.OPEN in fenced and "Example Model" in fenced
+    assert "web search results" in fenced
 
 
 def test_prompt_greeting_and_search_rules():

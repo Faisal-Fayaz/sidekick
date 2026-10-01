@@ -158,7 +158,14 @@ def test_project_docs_escape_skipped(tmp_path):
     assert _project_docs_block(cfg) == "(none)"
 
 
-def test_project_docs_in_system_prompt(tmp_path, monkeypatch):
+def test_project_docs_fenced_not_in_system_prompt(tmp_path, monkeypatch):
+    """Docs named in .sidekick.toml arrive as fenced data (#299).
+
+    Was `test_project_docs_in_system_prompt` and asserted the inverse. Keeping
+    a test that locks in system-priority injection would be the same mistake as
+    the two compaction watermark tests that asserted data loss.
+    """
+    import sk.trust as trust
     from sk.agent import build_messages
 
     _iso_home(tmp_path, monkeypatch)
@@ -166,8 +173,11 @@ def test_project_docs_in_system_prompt(tmp_path, monkeypatch):
     (proj / "AGENTS.md").write_text("project law: always haiku")
     cfg = Config.load(cwd=str(proj))
     cfg.project_docs = ("AGENTS.md",)
-    system = build_messages("hi", [], cfg)[0]["content"]
-    assert "project law" in system
+    msgs = build_messages("hi", [], cfg)
+    assert "project law" not in msgs[0]["content"]
+    fenced = "\n".join(str(m.get("content", "")) for m in msgs[1:-1])
+    assert "project law" in fenced
+    assert trust.OPEN in fenced
 
 
 # --- namespace ---
