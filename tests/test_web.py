@@ -132,3 +132,65 @@ def test_search_redirect_loop_capped(monkeypatch):
     out = tool_web_search("sidekick")
     assert "too many redirects" in out
     assert len(_SearchChainClient.instances[-1].hops) == 4
+
+
+def _iso_flap(monkeypatch):
+    """Stub _url_blocked alternating clean/private: models rebinding DNS."""
+    from sk.tools import web as webmod
+
+    _SearchChainClient.instances.clear()
+    _SearchChainClient.mode = "evil-redirect"  # raises if anything is fetched
+    calls = {"n": 0}
+    real_blocked = webmod._url_blocked
+
+    def _flap(url):
+        calls["n"] += 1
+        if "duckduckgo.com" in url:
+            if calls["n"] % 2 == 1:
+                return None
+            return "Error: host resolves to private IP (127.0.0.1)."
+        return real_blocked(url)
+
+    monkeypatch.setattr(webmod, "_url_blocked", _flap)
+    monkeypatch.setattr("httpx.Client", _SearchChainClient)
+    return calls
+
+
+def test_search_flapping_dns_refused_before_fetch(monkeypatch):
+    """#335: alternating answers refuse on the recheck; evil never fetched."""
+    calls = _iso_flap(monkeypatch)
+    out = tool_web_search("sidekick")
+    assert "private IP" in out
+    assert calls["n"] == 2  # initial check + recheck, then refuse
+    assert _SearchChainClient.instances == []  # no client built: nothing fetchable
+
+
+def test_read_url_flapping_dns_refused(monkeypatch):
+    """#335: same recheck on the read path."""
+    calls = _iso_flap(monkeypatch)
+    out = tool_read_url("https://html.duckduckgo.com/html/")
+    assert "private IP" in out
+    assert calls["n"] == 2
+    assert _SearchChainClient.instances == []  # no client built: nothing fetchable
+
+
+def test_guard_checked_twice_per_hop(monkeypatch):
+    """#335: stable DNS costs exactly two guard calls per hop, then proceeds."""
+    from sk.tools import web as webmod
+
+    _SearchChainClient.instances.clear()
+    _SearchChainClient.mode = "ok-redirect"
+    calls = {"n": 0}
+    real_blocked = webmod._url_blocked
+
+    def _counting(url):
+        calls["n"] += 1
+        if "duckduckgo.com" in url or "example.com" in url:
+            return None
+        return real_blocked(url)
+
+    monkeypatch.setattr(webmod, "_url_blocked", _counting)
+    monkeypatch.setattr("httpx.Client", _SearchChainClient)
+    out = tool_web_search("sidekick")
+    assert "Alpha result" in out
+    assert calls["n"] == 4  # initial x2 + redirect hop x2
