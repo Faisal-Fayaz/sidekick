@@ -589,3 +589,194 @@ def test_error_carries_progress_anthropic(tmp_path, monkeypatch):
     out = ab.run_anthropic_agent("do things", [], _cfg(), approve=lambda n, a: True, session="s")
     assert out.startswith("Turn failed partway")
     assert "list_dir" in out and "overloaded" in out and "Resume with" in out
+
+
+# --- #312: parity gaps between the Anthropic and OpenAI agent loops ----------
+
+
+def test_synthetic_block_id_is_stable_and_distinct():
+    """An id-less `tool_use` block must not produce `tool_use_id: ""` (hard 400)."""
+    a = ab._synthetic_block_id(0, {"name": "read"})
+    assert a == ab._synthetic_block_id(0, {"name": "read"}), "not stable across retries"
+    assert a != ab._synthetic_block_id(0, {"name": "write"}), "not distinct per tool"
+    assert a != ab._synthetic_block_id(1, {"name": "read"}), "not distinct per index"
+    assert a.startswith("toolu_")
+
+
+def test_counting_sink_counts_deliveries():
+    seen: list[str] = []
+    sink = ab._CountingSink(seen.append)
+    sink("a")
+    sink("b")
+    assert seen == ["a", "b"] and sink.count == 2
+    # counts even with no downstream sink
+    bare = ab._CountingSink(None)
+    bare("x")
+    assert bare.count == 1
+
+
+def test_counting_sink_swallows_callback_errors():
+    def boom(_t):
+        raise RuntimeError("render failed")
+
+    sink = ab._CountingSink(boom)
+    sink("a")
+    assert sink.count == 1
+
+
+def _anthropic_turn(tmp_path, monkeypatch, *, stream_impl, post_impl=None):
+    """Drive run_anthropic_agent with both transports stubbed. Returns (out, calls)."""
+    import sk.model_profiles as mp
+    from sk.config import Config
+
+    cfg = Config(
+        provider="anthropic",
+        model="claude-x",
+        base_url="https://api.anthropic.test",
+        api_key="k",
+        max_steps=1,
+        max_steps_custom=True,
+        temperature=0.2,
+    )
+    seen_tok: list[str] = []
+    post_calls: list[dict] = []
+
+    def _post(url, key, payload, timeout=300.0):
+        post_calls.append(payload)
+        return post_impl(payload) if post_impl else {"content": [], "stop_reason": "end_turn"}
+
+    monkeypatch.setattr(ab, "_stream", stream_impl)
+    monkeypatch.setattr(ab, "_post", _post)
+    monkeypatch.setattr(mp, "max_tokens_for", lambda *a, **k: 512)
+    monkeypatch.setattr(mp, "effective_max_steps", lambda *a, **k: 1)
+    out = ab.run_anthropic_agent("hello", [], cfg, on_token=seen_tok.append, session="s")
+    return out, seen_tok, post_calls
+
+
+def test_stream_failure_after_partial_output_does_not_duplicate(tmp_path, monkeypatch):
+    """#312: the user saw the answer twice.
+
+    _stream can raise AFTER delivering most of the answer (error SSE mid-body, a
+    transport drop). The old code set `streamed = False` and re-emitted the whole
+    text from the non-streaming fallback, so the already-streamed prefix appeared
+    twice. Now the fallback text is only emitted when nothing was delivered.
+    """
+
+    def stream_impl(url, key, payload, on_token=None, on_reasoning=None):
+        on_token("already ")
+        on_token("streamed")
+        raise RuntimeError("stream error: upstream reset")
+
+    def post_impl(payload):
+        return {
+            "content": [{"type": "text", "text": "already streamed"}],
+            "stop_reason": "end_turn",
+        }
+
+    out, toks, _ = _anthropic_turn(
+        tmp_path, monkeypatch, stream_impl=stream_impl, post_impl=post_impl
+    )
+    assert toks == ["already ", "streamed"], f"answer duplicated: {toks}"
+
+
+def test_stream_failure_before_any_output_emits_fallback_once(tmp_path, monkeypatch):
+    """Nothing delivered -> the fallback text IS the answer, so emit it once."""
+
+    def stream_impl(url, key, payload, on_token=None, on_reasoning=None):
+        raise RuntimeError("connection refused")
+
+    def post_impl(payload):
+        return {"content": [{"type": "text", "text": "recovered"}], "stop_reason": "end_turn"}
+
+    out, toks, _ = _anthropic_turn(
+        tmp_path, monkeypatch, stream_impl=stream_impl, post_impl=post_impl
+    )
+    assert toks == ["recovered"], f"expected exactly one emission, got {toks}"
+    assert out == "recovered"
+
+
+def test_no_tool_calls_returns_text(tmp_path, monkeypatch):
+    def stream_impl(url, key, payload, on_token=None, on_reasoning=None):
+        on_token("hi there")
+        return ([{"type": "text", "text": "hi there"}], "end_turn")
+
+    out, toks, _ = _anthropic_turn(tmp_path, monkeypatch, stream_impl=stream_impl)
+    assert out == "hi there"
+    assert toks == ["hi there"]
+
+
+def test_max_tokens_continuation_is_attempted(tmp_path, monkeypatch):
+    """A turn cut off mid-thought asks for the tool calls instead of giving up.
+
+    The OpenAI path has had this since #198; Anthropic returned `_stop` and threw
+    it away, so a model that ran long returned prose and executed nothing (#312).
+    """
+    import sk.model_profiles as mp
+    from sk.config import Config
+
+    cfg = Config(
+        provider="anthropic",
+        model="claude-x",
+        base_url="https://api.anthropic.test",
+        api_key="k",
+        max_steps=3,
+        max_steps_custom=True,
+        temperature=0.2,
+    )
+    seen: list[dict] = []
+
+    def stream_impl(url, key, payload, on_token=None, on_reasoning=None):
+        seen.append(payload)
+        if len(seen) == 1:
+            return ([{"type": "text", "text": "I will read the fi"}], "max_tokens")
+        return ([{"type": "text", "text": "done"}], "end_turn")
+
+    monkeypatch.setattr(ab, "_stream", stream_impl)
+    monkeypatch.setattr(mp, "max_tokens_for", lambda *a, **k: 512)
+    monkeypatch.setattr(mp, "effective_max_steps", lambda *a, **k: 3)
+    out = ab.run_anthropic_agent("hello", [], cfg, session="s")
+    assert out == "done"
+    assert len(seen) >= 2, "no continuation attempted after max_tokens"
+    followups = [m for m in seen[1]["messages"] if isinstance(m.get("content"), str)]
+    assert any("tool calls now" in str(m.get("content", "")) for m in followups)
+
+
+def test_tool_result_is_not_silently_truncated(tmp_path, monkeypatch):
+    """#312: tool results were cut to 6000 chars here but not on the OpenAI path.
+
+    The two providers disagreed, with no marker, so the model silently lost
+    output it needed to continue.
+    """
+    import sk.model_profiles as mp
+    from sk.config import Config
+
+    cfg = Config(
+        provider="anthropic",
+        model="claude-x",
+        base_url="https://api.anthropic.test",
+        api_key="k",
+        max_steps=2,
+        max_steps_custom=True,
+        temperature=0.2,
+    )
+    big = "Z" * 12000
+    payloads: list[dict] = []
+
+    def stream_impl(url, key, payload, on_token=None, on_reasoning=None):
+        payloads.append(payload)
+        if len(payloads) == 1:
+            return (
+                [{"type": "tool_use", "id": "tu1", "name": "read_file", "input": {"path": "x"}}],
+                "tool_use",
+            )
+        return ([{"type": "text", "text": "ok"}], "end_turn")
+
+    monkeypatch.setattr(ab, "_stream", stream_impl)
+    monkeypatch.setattr("sk.agent._run_tools_batch", lambda *a, **k: [(big, False)])
+    monkeypatch.setattr(mp, "max_tokens_for", lambda *a, **k: 512)
+    monkeypatch.setattr(mp, "effective_max_steps", lambda *a, **k: 2)
+    ab.run_anthropic_agent("read x", [], cfg, session="s")
+    assert len(payloads) >= 2
+    second = payloads[1]["messages"]
+    blob = str(second)
+    assert big in blob, "tool result was truncated before reaching the model"
