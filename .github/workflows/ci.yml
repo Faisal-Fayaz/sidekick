@@ -6,8 +6,18 @@ permissions:
   contents: read
 
 # Cancel superseded runs: six matrix legs per push adds up fast.
+#
+# The event name must be part of the group. Without it a `workflow_dispatch` on
+# main lands in the same group as the push run and cancel-in-progress kills it,
+# so re-running CI on main destroyed the very gate it was meant to re-check.
+# With the suffix, push and dispatch runs are independent.
+#
+# This is a prerequisite for requiring status checks on main. When two runs
+# report the same check names for one SHA — as a cancelled push run and a
+# dispatched run both did — branch protection has to take the latest run per
+# name, and which one that is becomes load-bearing. Keep the groups separate.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 on:

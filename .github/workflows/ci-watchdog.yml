@@ -1,0 +1,77 @@
+name: ci-watchdog
+
+# Backstop for a gap that is invisible by construction: when a push to main
+# produces *no* CI run at all, nothing in the workflow can report a failure,
+# because nothing ran. That is not hypothetical — the squash-merge of #353
+# (1fff2e9) produced no run, no cancellation, and no indication of a skip. The
+# previous main run was still listed as most recent, so `gh run list` looked
+# normal.
+#
+# The primary fix is required status checks on main, which turn a missing run
+# into a blocked merge. This catches the case where that is misconfigured or
+# bypassed, and where a run lands on main after the fact rather than as a gate.
+#
+# Caveats worth remembering: schedule events only fire from the default branch,
+# GitHub may delay them by up to ~an hour, and they auto-disable after 60 days
+# of repository inactivity.
+
+permissions:
+  actions: read
+  contents: read
+
+on:
+  schedule:
+    # Off-minute on purpose: every scheduled workflow fires at :00, which is the
+    # busiest window on GitHub.
+    - cron: "23 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  assert-main-is-verified:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert main's HEAD has a green ci run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # No `set -e`: the greps below are the decision, and a non-match must
+          # not abort the step before the reasoning is printed.
+          set -uo pipefail
+
+          if ! sha=$(gh api "repos/$REPO/commits/main" --jq .sha 2>/dev/null); then
+            echo "::error::could not read main from the API — token or permissions problem"
+            exit 1
+          fi
+          short=${sha:0:7}
+          echo "main HEAD: $short"
+
+          # Comma-separated, not tab: grep's BRE treats \t as a literal 't', and
+          # '|' would be ERE alternation. A comma appears in no field.
+          runs=$(gh api \
+            "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=20" \
+            --jq '.workflow_runs[] | "\(.status),\(.conclusion),\(.event)"' 2>/dev/null || true)
+
+          if [ -z "$runs" ]; then
+            echo "::error::no ci.yml run exists for main@$short at all. A push to main that produces no run cannot report failure, because nothing ran — check for a skipped workflow or a degraded Actions backend."
+            exit 1
+          fi
+
+          echo "$runs" | sed 's/^/  /'
+
+          # Green wins outright, whatever else is attached to the SHA.
+          if echo "$runs" | grep -qE '^completed,success,'; then
+            echo "ok: main@$short has a green ci run"
+            exit 0
+          fi
+
+          # Not green yet, but still moving. A 3-minute CI run must not be
+          # reported as a missing run by a 2-hourly watchdog; only conclude
+          # "missing" once nothing is in flight.
+          if echo "$runs" | grep -qE '^(queued|in_progress|waiting|pending),'; then
+            echo "ok: main@$short has a ci run in flight; nothing to conclude yet"
+            exit 0
+          fi
+
+          echo "::error::main@$short has no successful ci run and nothing in flight. The runs attached to it are listed above; the most recent completed one is the verdict."
+          exit 1
