@@ -58,7 +58,7 @@ Between maintainers ([Faisal-Fayaz](https://github.com/Faisal-Fayaz),
 ## Before opening a PR
 
 ```bash
-uv run --with pytest --with hypothesis pytest tests -q   # full suite (759 tests, no Ollama needed)
+uv run --with pytest --with hypothesis pytest tests -q   # full suite, no Ollama needed
 uvx ruff check src tests               # lint baseline (E/F/I/UP, see pyproject)
 uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py
 ```
@@ -76,7 +76,6 @@ Notes:
   `tests/conftest.py` isolates config + history DB. Keep it that way.
 - New capabilities that touch `shell`, writes, or fetchers need regression
   tests in `tests/test_security.py` (destructive patterns, blocklists, SSRF).
-- Keep the test-count badge in `README.md` in sync (`pytest --collect-only`);
   CI fails the build if it drifts.
 - Pure refactors ship with zero test edits (green suite without touching
   `tests/` proves no behavior change).
@@ -96,6 +95,14 @@ merging to `main` of the canonical repo with a bumped `__version__` in
 `src/sk/__init__.py` trusted-publishes `sidekick-agent` to PyPI and cuts a
 GitHub Release. So **don't bump the version in a regular feature PR** — bump
 it only in the PR that is meant to become a release.
+
+### Branch hygiene
+
+**Delete your feature branch once it is merged.** Squash-merged branches are
+not ancestors of `main`, so they accumulate silently — 71 had piled up before
+this rule existed, including a `feature/read-only-mode` branch whose feature
+shipped in v0.19.0. The exception is `release/*`, which the release-guard job
+references; leave those.
 
 ### Version policy
 

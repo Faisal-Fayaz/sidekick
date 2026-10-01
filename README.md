@@ -8,7 +8,7 @@
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1018%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml/badge.svg)](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sidekick-agent.svg)](https://pypi.org/project/sidekick-agent/)
 
@@ -55,10 +55,8 @@ heard> what files are in the sidekick repo
 | Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| 1018-test suite incl. prompt-regression evals | ✅ | rare |
-| Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
-| Costs $0 by default, spend caps when you bring keys | ✅ | metered |
-| Proves your code never leaked (`sk audit` local-vs-egress ledger) | ✅ | ❌ (their product *is* your code) |
+| Offline test suite incl. prompt-regression evals | ✅ | rare |
+| Audit ledger you can hand to an auditor (`sk audit`, credentials redacted) | ✅ | ❌ (their product *is* your code) |
 | Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
 ## Quickstart
@@ -160,7 +158,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it from inside a session |
 | `/plan`, `/build` | Plan mode: propose without writing (blocked writes) / back to build mode |
 | `/rewind [n]` | Undo an agent file edit — snapshots write/edit/delete targets (`shell` mutations are not tracked, use git for those) |
-| `sk run "task" [--yes] [--plan] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools; `--plan` proposes without writing) |
+| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools; `--plan` proposes without writing) |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk digest [--force]` | Teammate pilot: brief + overnight failures, desktop nudge or log |
@@ -196,7 +194,7 @@ flowchart TB
     CLI --> AGENT[agent.py: stream → tools → synthesize]
     TUI --> AGENT
     AGENT --> GROUND[deterministic grounding: ~/paths, URLs,\nsysinfo — injected before the model sees the prompt]
-    AGENT --> TOOLS[tools.py: 19 tools, allowlists,\nhard-blocks, SSRF guard]
+    AGENT --> TOOLS[tools/: 19 tools, allowlists,\nhard-blocks, SSRF guard]
     AGENT --> MEM[(store.py: history, memories FTS5,\ntodos, shell log)]
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```
@@ -210,7 +208,7 @@ Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]`
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # 1018 passed: unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q   # unit + regression + Textual pilot, no Ollama needed
 ```
 
 The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
@@ -229,7 +227,7 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 ## Roadmap
 
-See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, `v0.2.0` / `v0.3.0` milestones, done list). It changes by pull request only.
+See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, next milestone, done list). It changes by pull request only.
 
 ## License
 

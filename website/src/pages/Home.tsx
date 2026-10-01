@@ -9,6 +9,7 @@ import {
   PROVIDERS,
   QUICKSTART_STEPS,
   TUI_KEYS,
+  VERSION,
   WHATNEW,
 } from '../data/content';
 
@@ -31,7 +32,7 @@ export default function Home() {
           <div>
             <pre className="ascii">{ASCII}</pre>
             <span className="eyebrow">
-              <span className="dot-live" /> v0.26.0 · 780 tests passing · local-first
+              <span className="dot-live" /> v{VERSION} · offline tests · local-first
             </span>
             <h1 className="hero-title">
               A terminal companion <br />
@@ -74,7 +75,7 @@ export default function Home() {
           <div className="stat-row">
             {[
               { n: '17', l: 'gated tools · reads auto-run, writes approved' },
-              { n: '780', l: 'tests incl. prompt-regression evals' },
+              { n: 'offline', l: 'suite incl. prompt-regression evals' },
               { n: '11', l: 'provider presets incl. ollama + custom URL' },
               { n: '0', l: 'cloud accounts required · $0 default bill' },
             ].map((s) => (

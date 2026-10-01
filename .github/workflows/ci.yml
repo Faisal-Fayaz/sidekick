@@ -1,5 +1,15 @@
 name: ci
 
+# Least privilege. Default GITHUB_TOKEN is write-scoped for contents on push,
+# and no job in this workflow writes (#319).
+permissions:
+  contents: read
+
+# Cancel superseded runs: six matrix legs per push adds up fast.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -20,13 +30,13 @@ jobs:
           python-version: "3.12"
 
       - name: Ruff check (E/F/I/UP baseline, see pyproject [tool.ruff])
-        run: uvx ruff check src tests
+        run: uvx ruff@0.16.9 check src tests
 
       - name: Ruff format check
-        run: uvx ruff format --check src tests
+        run: uvx ruff@0.16.9 format --check src tests
 
       - name: Mypy baseline (see pyproject [tool.mypy])
-        run: uvx mypy src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py src/sk/plugins.py src/sk/skills.py src/sk/checkpoints.py src/sk/gitdiff.py src/sk/mcp_client.py src/sk/memory_files.py
+        run: uvx mypy@1.10 src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py src/sk/plugins.py src/sk/skills.py src/sk/checkpoints.py src/sk/gitdiff.py src/sk/mcp_client.py src/sk/memory_files.py
 
   test:
     runs-on: ${{ matrix.os }}
@@ -46,12 +56,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package + test extras
-        run: uv pip install --system -e ".[test]"
+        run: uv sync --frozen --extra test
 
       - name: Run tests
         run: uv run pytest tests -q
 
-  badge:
+  test-count:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,11 +69,17 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Check test-count badge matches collected tests
-        run: |
-          COUNT=$(uv run --with pytest --with hypothesis pytest tests --collect-only -q 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)
-          echo "collected=$COUNT"
-          grep -q "tests-${COUNT}%20passing" README.md || (echo "README badge stale: expected tests-${COUNT} passing" && exit 1)
+      # Replaces a gate that grepped the README for the collected count. Two
+      # problems: any PR that added a test failed it (51 commits exist purely to
+      # reconcile one hand-maintained string, duplicated across 7 places), and
+      # `grep -oE '[0-9]+' | head -1` on the last line silently extracted a number
+      # out of a collection error and passed. Collection must now succeed; the
+      # count is reported, not asserted (#319).
+      - name: Install package + test extras
+        run: uv sync --frozen --extra test
+
+      - name: Collect tests
+        run: uv run pytest tests --collect-only -q
 
   release-guard:
     runs-on: ubuntu-latest
@@ -95,10 +111,36 @@ jobs:
           python-version: "3.12"
 
       - name: Install package + test extras
-        run: uv pip install --system -e ".[test]"
+        run: uv sync --frozen --extra test
 
       - name: Report coverage (informational, not gated)
         run: uv run pytest tests -q --cov=sk --cov-report=term-missing 2>&1 | tail -n 40
+
+  website:
+    # The Vite site had no CI at all — no build, no typecheck, no link check —
+    # which is how three version copies and a 780-vs-actual test-count claim sat
+    # in the tree unnoticed (#323). `tsc -b` is the real gate: it is what caught
+    # the missing @types/node here.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: website-dist
+          path: website/dist
+          retention-days: 7
 
   build:
     runs-on: ubuntu-latest
