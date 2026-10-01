@@ -39,6 +39,20 @@ def test_prompt_requires_sysinfo_grounding():
     assert "MUST call sysinfo" in SYSTEM_PROMPT and "Never guess RAM/GPU/CPU" in SYSTEM_PROMPT
 
 
+def test_prompt_tool_honesty_doctrine():
+    """#340: the harness forbids inventing tool results."""
+    assert "TOOL HONESTY" in SYSTEM_PROMPT
+    assert "`tool`-role messages" in SYSTEM_PROMPT
+    assert "Never invent search results" in SYSTEM_PROMPT
+
+
+def test_tool_honesty_ships_in_system_prompt(tmp_path, monkeypatch):
+    """#340: doctrine reaches the live prompt, not just the template."""
+    _iso(tmp_path, monkeypatch)
+    system = build_messages("search the web for sidekick", [], _cfg())[0]["content"]
+    assert "TOOL HONESTY" in system and "Never invent search results" in system
+
+
 def test_prompt_path_rule():
     assert "~/X means" in SYSTEM_PROMPT
 
