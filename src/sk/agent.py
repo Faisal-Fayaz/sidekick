@@ -6,6 +6,7 @@ import json
 import os
 import platform
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 from openai import OpenAI
@@ -860,6 +861,79 @@ def _create_with_retry(client, kwargs: dict, tries: int = 3, on_token=None) -> o
     raise last
 
 
+@dataclass(frozen=True)
+class DeltaEvent:
+    """One normalised fact from a streamed chunk.
+
+    The seam that makes the stream accumulator testable (#318). Provider chunk
+    shapes differ wildly — objects with attributes, plain dicts, `reasoning` on
+    some providers and not others, `tool_calls` arriving in fragments — so
+    `_delta_events` flattens all of that into this one shape and
+    `_stream_chat` does nothing but accumulate. Testing the accumulator no
+    longer requires an HTTP client, an SSE fixture, or monkeypatching a module
+    attribute, which is why it sat at 0% coverage for so long.
+    """
+
+    text: str = ""
+    reasoning: str = ""
+    tool_index: int = -1
+    tool_id: str = ""
+    tool_name: str = ""
+    tool_args: str = ""
+    finish: str = ""
+
+
+def _get(obj, key):
+    """Attribute-or-key read, for chunks that may be objects or dicts."""
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def _delta_events(chunk) -> list[DeltaEvent]:
+    """Normalise one streamed chunk into DeltaEvents. Pure; never raises.
+
+    Handles both the object and dict chunk shapes, the optional `reasoning`
+    field (qwen3 via Ollama), and fragmented `tool_calls` where `name` and
+    `arguments` arrive across several chunks and must be concatenated by index.
+    """
+    out: list[DeltaEvent] = []
+    try:
+        choices = _get(chunk, "choices") or []
+        if not choices:
+            return out
+        choice = choices[0]
+    except Exception:
+        return out
+    try:
+        fr = _get(choice, "finish_reason")
+        if fr:
+            out.append(DeltaEvent(finish=str(fr)))
+        delta = _get(choice, "delta")
+        if delta is None:
+            return out
+        r = _get(delta, "reasoning")
+        if r:
+            out.append(DeltaEvent(reasoning=r if isinstance(r, str) else str(r)))
+        c = _get(delta, "content")
+        if c:
+            out.append(DeltaEvent(text=c if isinstance(c, str) else str(c)))
+        for tc in _get(delta, "tool_calls") or []:
+            idx = _get(tc, "index")
+            fn = _get(tc, "function")
+            out.append(
+                DeltaEvent(
+                    tool_index=int(idx) if isinstance(idx, int) else 0,
+                    tool_id=str(_get(tc, "id") or ""),
+                    tool_name=str(_get(fn, "name") or ""),
+                    tool_args=str(_get(fn, "arguments") or ""),
+                )
+            )
+    except Exception:
+        return out
+    return out
+
+
 def _stream_chat(
     client,
     model: str,
@@ -870,104 +944,69 @@ def _stream_chat(
     extra: dict,
     on_token=None,
     on_reasoning=None,
+    transport=None,
 ) -> _Msg:
     """Streaming chat.completions with tool accumulation.
 
     Content deltas -> on_token, reasoning deltas -> on_reasoning (falls back
     to on_token when no separate sink is given, so old callers keep working).
+
+    `transport(params) -> Iterable[chunk]` is the injectable seam (#318). It
+    defaults to the retrying OpenAI path; tests pass a generator of chunks and
+    exercise every branch below without touching the network.
     """
     _on_r = on_reasoning if on_reasoning is not None else on_token
     acc_text = ""
     acc_reason = ""
     finish = ""
     tc_buf: dict[int, dict] = {}  # idx -> {id, name, args}
+    params = dict(
+        model=model,
+        messages=messages,
+        tools=tools,
+        tool_choice="auto" if tools else "none",
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+        extra_body=extra,
+    )
+    if transport is None:
+
+        def transport(p):  # noqa: ANN001
+            return _create_with_retry(client, p, on_token=on_token)
+
     try:
-        stream = _create_with_retry(
-            client,
-            dict(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto" if tools else "none",
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                extra_body=extra,
-            ),
-            on_token=on_token,
-        )
-        for chunk in stream:  # type: ignore[attr-defined]
-            try:
-                choice = chunk.choices[0]
-            except Exception:
-                continue
-            fr = getattr(choice, "finish_reason", None)
-            if fr:
-                finish = str(fr)
-            delta = getattr(choice, "delta", None)
-            if delta is None:
-                continue
-            # reasoning field (qwen3 via Ollama) — separate sink when provided
-            r = getattr(delta, "reasoning", None) or (
-                delta.get("reasoning") if isinstance(delta, dict) else None
-            )
-            if r:
-                acc_reason += r if isinstance(r, str) else str(r)
-                if _on_r is not None:
-                    try:
-                        _on_r(r if isinstance(r, str) else str(r))
-                    except Exception:
-                        pass
-            c = getattr(delta, "content", None)
-            if c is None and isinstance(delta, dict):
-                c = delta.get("content")
-            if c:
-                acc_text += c
-                if on_token is not None:
-                    try:
-                        on_token(c)
-                    except Exception:
-                        pass
-            tcs = getattr(delta, "tool_calls", None)
-            if tcs is None and isinstance(delta, dict):
-                tcs = delta.get("tool_calls")
-            if tcs:
-                for tc in tcs:
-                    idx = tc.index if hasattr(tc, "index") else tc.get("index", 0)
-                    buf = tc_buf.setdefault(idx, {"id": "", "name": "", "args": ""})
-                    tid = getattr(tc, "id", None) or (
-                        tc.get("id") if isinstance(tc, dict) else None
-                    )
-                    if tid:
-                        buf["id"] = tid
-                    fn = getattr(tc, "function", None) or (
-                        tc.get("function") if isinstance(tc, dict) else None
-                    )
-                    if fn:
-                        n = getattr(fn, "name", None) or (
-                            fn.get("name") if isinstance(fn, dict) else None
-                        )
-                        a = getattr(fn, "arguments", None) or (
-                            fn.get("arguments") if isinstance(fn, dict) else None
-                        )
-                        if n:
-                            buf["name"] = (buf["name"] or "") + n
-                        if a:
-                            buf["args"] = (buf["args"] or "") + a
+        for chunk in transport(params):
+            for ev in _delta_events(chunk):
+                if ev.reasoning:
+                    acc_reason += ev.reasoning
+                    if _on_r is not None:
+                        try:
+                            _on_r(ev.reasoning)
+                        except Exception:
+                            pass
+                if ev.text:
+                    acc_text += ev.text
+                    if on_token is not None:
+                        try:
+                            on_token(ev.text)
+                        except Exception:
+                            pass
+                if ev.finish:
+                    finish = ev.finish
+                if ev.tool_index >= 0:
+                    buf = tc_buf.setdefault(ev.tool_index, {"id": "", "name": "", "args": ""})
+                    if ev.tool_id:
+                        buf["id"] = ev.tool_id
+                    if ev.tool_name:
+                        buf["name"] = (buf["name"] or "") + ev.tool_name
+                    if ev.tool_args:
+                        buf["args"] = (buf["args"] or "") + ev.tool_args
     except Exception:
         # fallback to non-streaming on error
         resp = _create_with_retry(
             client,
-            dict(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto" if tools else "none",
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=False,
-                extra_body=extra,
-            ),
+            dict(params, stream=False),
             on_token=on_token,
         )
         m = resp.choices[0].message  # type: ignore[attr-defined]
@@ -1004,10 +1043,20 @@ def _synthetic_call_id(index: int, buf: dict) -> str:
 
     Stable for the same (index, tool, args) so a retried turn reuses the id;
     distinct across turns because the args differ.
+
+    `buf["args"]` is a raw JSON **string** at call time, not a parsed dict. An
+    earlier version of this function assumed a dict, so every id-less provider
+    hit an AttributeError and silently degraded to the non-streaming fallback —
+    the fix looked present but did nothing. Accept both shapes (#310).
     """
     import hashlib
 
-    seed = f"{index}|{buf.get('name', '')}|{sorted((buf.get('args') or {}).items())}"
+    args = buf.get("args")
+    if isinstance(args, dict):
+        args_repr = repr(sorted(args.items()))
+    else:
+        args_repr = str(args or "")
+    seed = f"{index}|{buf.get('name', '')}|{args_repr}"
     digest = hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:16]
     return f"call_{index}_{digest}"
 
