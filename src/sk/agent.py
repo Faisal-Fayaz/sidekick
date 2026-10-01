@@ -40,6 +40,7 @@ Rules:
 - TODOS: open todos are in OPEN TODOS below. If user says "add todo / my todos / done #N", use todo tools. Proactively offer next todo when asked "what next".
 - GROUNDING (mandatory): if the question contains my / my device / my machine / hardware / what LLM / what model can I run, you MUST call sysinfo first. Never guess RAM/GPU/CPU. Use the sysinfo output numbers in your answer.
 - TOOL HONESTY (mandatory): report results ONLY from `tool`-role messages in this conversation. Never invent search results, file contents, command outputs, URLs, or prices. If you did not call the tool, say so plainly and offer to run it now — do not fill the gap from training memory.
+- CHALLENGE non-trivial asks (mandatory): when a task has multiple viable approaches or real costs — rewrites, migrations, architecture, "should I", stack switches — deliberate FIRST instead of obeying. Cross-question the premise (why this approach? what decides between alternatives? what does success require?), research the alternatives with tools, present compact pros/cons INCLUDING the case against, then stop and await direction. One round only: proceed fully on any confirmation ("yes", "do it anyway", "proceed") without re-litigating, and never refuse a confirmed task. Straightforward errands get no interrogation: if there is nothing real to challenge, say so in one line and proceed.
 - PATHS (mandatory): ~/X means {home}/X, NOT ./X. If the user asks about a path under ~, you MUST call list_dir with that exact path (~/X). Never answer "does not exist" from cwd listing. cwd is {cwd} but ~ is {home}. Always try the exact path first.
 - exec is READ-ONLY (ls, df, free, git status, etc). Never claim you ran a blocked command.
 - WRITES need approval: write_file/edit_file/make_dir/delete_file/shell will ask the user. Announce what you will write + why before calling. Keep writes under HOME or /tmp, max 100KB. Never write to ~/.ssh, ~/.gnupg, /etc, /usr.
@@ -53,7 +54,7 @@ Rules:
 - Current working directory: {cwd} — HOME is {home}.
 - Today is {today}. Answer date/day questions from this, never tools or memory.
 - OS: {os}. Platform: {platform}.
-REAL SYSTEM SNAPSHOT (do not re-guess, but still call sysinfo tool if user asks about their device so the trace shows grounding):
+{deliberation}REAL SYSTEM SNAPSHOT (do not re-guess, but still call sysinfo tool if user asks about their device so the trace shows grounding):
 {sysinfo}
 SAVED MEMORIES (use these, do not re-ask):
 {memories}
@@ -1325,6 +1326,45 @@ def compact_session_now(session: str, cfg, hint: str = "") -> str:
         return f"_compaction failed ({e}) — history untouched_"
 
 
+DELIBERATION_TRIGGERS = (
+    r"\brewrite\b",
+    r"\bmigrat\w*\b",
+    r"\brearchitect\w*\b",
+    r"\bredesign\b",
+    r"\bport\b.{0,30}\bto\b",
+    r"\bconvert\b.{0,30}\bto\b",
+    r"\bswitch\b.{0,30}\bfrom\b",
+    r"\bshould i\b",
+    r"\bpros and cons\b",
+    r"\btrade-?offs?\b",
+    r"\bworth it\b",
+    r"\bwhich\b.{0,30}\bbetter\b",
+)
+
+DELIBERATION_NUDGE = """DELIBERATION (triggered: this turn looks like a multi-path or high-stakes task):
+Before acting, respond FIRST with a short deliberation — 2-4 cross-questions that challenge the premise (why this approach? what decides between the alternatives? what does success require?), plus the key trade-offs you already see. Research the alternatives with tools (web_search/read_url for ecosystem facts) and give a compact pros/cons read, INCLUDING when not to do it. Then stop and await direction — one round only. NON-BLOCKING: any confirmation ("yes", "do it anyway", "proceed", answers to the questions) means execute fully without re-litigating; never refuse a confirmed task. If on reflection the task is straightforward after all, say so in one line and proceed — do not interrogate for sport.
+"""
+
+
+def deliberation_nudge(user_msg: str) -> str:
+    """Nudge block when the turn looks multi-path/high-stakes, else ''.
+
+    Broad by design: the doctrine (not the regex) decides proportionality,
+    so false positives degrade to a one-line 'straightforward, proceeding'.
+    Never raises.
+    """
+    try:
+        text = (user_msg or "").lower()
+        import re as _re
+
+        for pat in DELIBERATION_TRIGGERS:
+            if _re.search(pat, text):
+                return DELIBERATION_NUDGE
+    except Exception:
+        pass
+    return ""
+
+
 def build_messages(
     user_msg: str,
     history: list[dict],
@@ -1464,6 +1504,7 @@ def build_messages(
                 smart_model=smart_model,
                 model=cfg.model,
                 provider=cfg.provider,
+                deliberation=deliberation_nudge(user_msg),
             ),
         },
         # Outside-content arrives as its own message immediately after the system
