@@ -104,6 +104,20 @@ ignore = ["UP035", "E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "F401", "I001"]
 
+[tool.pytest.ini_options]
+# Absent entirely before (#320): no addopts, no testpaths, no registered
+# markers, no xfail discipline. Every invocation in the repo spelled the path out
+# by hand, and the suite-wide `xfail(strict=True, reason="GH-<n>")` convention
+# documented in tests/test_qa_regression.py was invisible to the tooling.
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+xfail_strict = true
+markers = [
+    "eval: locked prompt-regression eval (tests/test_eval.py)",
+    "regression: locked to a specific GitHub issue",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
