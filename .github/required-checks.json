@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Source of truth for main's required status checks. Applied with:",
+    "  gh api -X PUT repos/Faisal-Fayaz/sidekick/branches/main/protection --input .github/required-checks.json",
+    "",
+    "tests/test_ci_config.py asserts this equals ci.yml's job list minus the",
+    "exclusions below. Branch protection lives in GitHub settings, not in the",
+    "tree, so nothing else would notice a job being renamed: the required",
+    "context would keep the old name, no run would ever report it, and main",
+    "would be blocked from every subsequent push with no obvious cause.",
+    "",
+    "Use PUT, not PATCH. PATCH updates an existing protection config and 404s",
+    "when there is none."
+  ],
+  "strict": false,
+  "enforce_admins": false,
+  "excluded": {
+    "coverage": "informational by its own job comment; never a gate",
+    "release-guard": "`if: github.event_name == 'pull_request'`, so it reports as `skipped` on every push to main. Requiring it either blocks main permanently or leans on GitHub's ambiguous skipped-is-passing behaviour."
+  },
+  "contexts": [
+    "lint",
+    "test-count",
+    "build",
+    "website",
+    "test (ubuntu-latest, 3.12)",
+    "test (ubuntu-latest, 3.13)",
+    "test (ubuntu-latest, 3.14)",
+    "test (macos-latest, 3.12)",
+    "test (macos-latest, 3.13)",
+    "test (macos-latest, 3.14)"
+  ]
+}
