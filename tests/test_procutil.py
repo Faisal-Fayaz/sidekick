@@ -15,14 +15,9 @@ from __future__ import annotations
 
 import io
 import os
-import resource
 import time
 
 from sk.procutil import DEFAULT_MAX_BYTES, Bounded, run_bounded
-
-
-def _rss_mb() -> int:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
 
 
 # --- run_bounded: normal operation -----------------------------------------
@@ -55,17 +50,25 @@ def test_missing_binary_is_an_error_not_an_exception():
 
 
 def test_yes_is_killed_at_the_cap_not_at_the_timeout():
-    """The case from the issue. `yes` runs until something stops it."""
-    base = _rss_mb()
+    """The case from the issue. `yes` runs until something stops it.
+
+    Asserts the cap's actual contract — bounded bytes retained, and a killed
+    child — rather than process RSS. ru_maxrss is a process-wide high-water mark
+    that never decreases, so inside a pytest run it measures whatever else
+    happened to allocate, not this code; it is also KB on Linux and bytes on
+    macOS, which made an earlier RSS threshold mean 64MB on one and 64KB on the
+    other. That assertion failed on macOS while the code was correct.
+    """
+    cap = 1 << 20
     t = time.monotonic()
-    r = run_bounded(["bash", "-c", "yes"], timeout=60, max_bytes=1 << 20)
+    r = run_bounded(["bash", "-c", "yes"], timeout=60, max_bytes=cap)
     elapsed = time.monotonic() - t
 
     assert r.truncated and r.overflowed
     assert r.returncode == -9, "child must be SIGKILLed, not left to time out"
     assert elapsed < 5, f"waited {elapsed:.1f}s — the kill did not land"
-    assert len(r.stdout) <= (1 << 20) + 1
-    assert _rss_mb() - base < 64, "output cap did not bound peak memory"
+    assert len(r.stdout) <= cap, "retained more than the cap allows"
+    assert len(r.stderr) <= cap
 
 
 def test_urandom_flood_is_killed():
@@ -173,7 +176,13 @@ def test_mcp_reader_drops_oversized_line_and_resyncs():
 
 
 def test_mcp_unterminated_flood_is_bounded():
-    """A server emitting 128MB with no newline must not allocate it."""
+    """A server emitting 128MB with no newline must not retain it.
+
+    Asserts retained bytes, not process RSS: ru_maxrss is a process-wide
+    high-water mark that never decreases, so a delta measured here reflects
+    unrelated allocation (and is KB on Linux but bytes on macOS, so the same
+    threshold meant 64MB in one CI job and 64KB in another).
+    """
 
     class _Flood:
         def __init__(self):
@@ -187,10 +196,9 @@ def test_mcp_unterminated_flood_is_bounded():
 
     from sk.mcp_client import _iter_bounded_lines
 
-    base = _rss_mb()
     got = list(_iter_bounded_lines(_Flood(), 1 << 20))
-    assert got == []
-    assert _rss_mb() - base < 64
+    assert got == [], "an unterminated flood must yield nothing, not a partial line"
+    assert sum(len(x) for x in got) == 0
 
 
 def test_mcp_reader_handles_split_lines():
@@ -279,3 +287,21 @@ def test_overflowed_distinguishes_kill_from_timeout():
 def test_env_is_inherited_when_not_given():
     r = run_bounded(["bash", "-c", "echo $HOME"], timeout=5)
     assert os.path.expanduser("~") in r.stdout
+
+
+def test_mcp_reader_never_exceeds_the_cap_in_any_case():
+    """The invariant, stated once: nothing yielded is ever larger than max_bytes."""
+    from sk.mcp_client import _iter_bounded_lines
+
+    payloads = [
+        b"short\n",
+        b"Y" * 4096 + b"\n",  # line exactly at a small cap
+        b"Z" * 100_000 + b"\n",  # far over
+        b"W" * 50_000,  # unterminated, over
+        b'{"id":1}\n' + b"Q" * 90_000 + b'\n{"id":2}\n',
+    ]
+    for cap in (16, 4096, 65536, 1 << 20):
+        for data in payloads:
+            got = list(_iter_bounded_lines(io.BytesIO(data), cap))
+            for line in got:
+                assert len(line) <= cap, f"cap={cap} yielded {len(line)} bytes"
