@@ -28,6 +28,13 @@ def test_prompt_forbids_cloud_models():
     assert "GPT-2" in SYSTEM_PROMPT and "Never recommend" in SYSTEM_PROMPT
 
 
+def test_prompt_identity_is_dynamic():
+    """#339: no hardcoded model/provider identity in the template."""
+    assert "`{model}` via `{provider}`" in SYSTEM_PROMPT
+    assert "via Ollama (OS" not in SYSTEM_PROMPT
+    assert "you are {smart_model} doing it now" not in SYSTEM_PROMPT
+
+
 def test_prompt_requires_sysinfo_grounding():
     assert "MUST call sysinfo" in SYSTEM_PROMPT and "Never guess RAM/GPU/CPU" in SYSTEM_PROMPT
 
@@ -74,6 +81,32 @@ def test_build_no_facts_for_plain_chat(tmp_path, monkeypatch):
     msgs = build_messages("say hi in 3 words", [], _cfg())
     assert "AUTO LOCAL FACTS" not in msgs[-1]["content"]
     assert "AUTO WEB FACTS" not in msgs[-1]["content"]
+
+
+def _cfg_provider(provider, model):
+    return Config(
+        provider=provider,
+        model=model,
+        base_url="http://x/v1",
+        api_key="x",
+        max_steps=1,
+        temperature=0.0,
+    )
+
+
+def test_identity_follows_configured_provider(tmp_path, monkeypatch):
+    """#339: the identity line names the configured model/provider, never qwen."""
+    _iso(tmp_path, monkeypatch)
+    for provider, model in (
+        ("groq", "llama-3.3-70b-versatile"),
+        ("anthropic", "claude-sonnet-4-5"),
+        ("ollama", "qwen2.5-coder:7b"),
+    ):
+        system = build_messages("hi", [], _cfg_provider(provider, model))[0]["content"]
+        assert f"`{model}` via `{provider}`" in system
+        assert "via Ollama (OS" not in system
+    groq_system = build_messages("hi", [], _cfg_provider("groq", "llama-3.3-70b"))[0]["content"]
+    assert "you are qwen" not in groq_system.lower()
 
 
 def test_build_injects_memory_and_todos(tmp_path, monkeypatch):
