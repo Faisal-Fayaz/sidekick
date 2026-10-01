@@ -53,6 +53,34 @@ def test_tool_honesty_ships_in_system_prompt(tmp_path, monkeypatch):
     assert "TOOL HONESTY" in system and "Never invent search results" in system
 
 
+def test_challenge_doctrine_in_template():
+    """#341: deliberate-first with hard non-blocking rules."""
+    from sk.agent import SYSTEM_PROMPT as _SP
+
+    assert "CHALLENGE non-trivial asks" in _SP
+    assert "proceed fully on any confirmation" in _SP
+    assert "never refuse a confirmed task" in _SP
+    assert "Straightforward errands get no interrogation" in _SP
+
+
+def test_deliberation_nudge_fires_on_multipath(tmp_path, monkeypatch):
+    """#341: rewrite/migrate/should-I prompts get the nudge; errands don't."""
+    _iso(tmp_path, monkeypatch)
+    for prompt in (
+        "rewrite my python project in rust",
+        "migrate from postgres to mysql, what do you think",
+        "should I use celery or plain cron here",
+        "which is better for this, redis or memcached",
+    ):
+        system = build_messages(prompt, [], _cfg())[0]["content"]
+        assert "DELIBERATION (triggered" in system, prompt
+        assert "NON-BLOCKING" in system
+        assert "do it anyway" in system
+    for prompt in ("list /tmp files", "say hi in 3 words", "what time is it"):
+        system = build_messages(prompt, [], _cfg())[0]["content"]
+        assert "DELIBERATION (triggered" not in system, prompt
+
+
 def test_prompt_path_rule():
     assert "~/X means" in SYSTEM_PROMPT
 
