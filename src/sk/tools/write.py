@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..atomic import atomic_write_text
+
 
 def tool_delete_file(path: str) -> str:
     """Delete a file or empty dir under HOME/tmp. Approval-gated, blocklist enforced."""
@@ -185,14 +187,21 @@ def tool_make_dir(path: str) -> str:
 def _verify_write(p: Path, content: str) -> str | None:
     """Confirm the bytes on disk match what was requested. None when ok,
     else an error string. Silent truncation (short writes, lost tails) must
-    never report success. Never raises."""
+    never report success. Never raises.
+
+    Compares content, not just size (#316). A size check cannot tell a correct
+    write from a file that happens to be the right length — a stale file left by
+    a failed write, or a same-length truncation — so it would pass while the
+    requested content was absent. Writes are capped at 100KB, so re-reading is
+    cheaper than the ambiguity it removes.
+    """
     try:
-        actual = p.stat().st_size
-        expected = len(content.encode("utf-8", errors="replace"))
+        expected = content.encode("utf-8", errors="replace")
+        actual = p.read_bytes()
         if actual != expected:
             return (
                 f"Error: write verification failed for {p} "
-                f"({actual} bytes on disk, expected {expected}) — retry."
+                f"({len(actual)} bytes on disk, expected {len(expected)}) — retry."
             )
         return None
     except Exception as e:
@@ -207,8 +216,7 @@ def tool_write_file(path: str, content: str) -> str:
     if len(content) > 100_000:
         return "Error: content too large (>100KB), refusing."
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
+        atomic_write_text(p, content)
         problem = _verify_write(p, content)
         if problem is not None:
             return problem
@@ -240,7 +248,10 @@ def tool_edit_file(path: str, old_string: str, new_string: str) -> str:
         text = text.replace(old_string, new_string, 1)
         if len(text) > 500_000:
             return "Error: result too large, refusing."
-        p.write_text(text)
+        atomic_write_text(p, text)
+        problem = _verify_write(p, text)
+        if problem is not None:
+            return problem
         return f"Edited {p} (1 replacement, {len(new_string)} chars in)"
     except Exception as e:
         return f"Error: {e}"

@@ -104,10 +104,10 @@ def _load_history() -> list[str]:
 def _save_history(items: list[str]) -> None:
     import json
 
+    from sk.atomic import atomic_write_text
     from sk.config import CONFIG_DIR
 
     try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        (CONFIG_DIR / "input_history").write_text(json.dumps(items[-100:]))
+        atomic_write_text(CONFIG_DIR / "input_history", json.dumps(items[-100:]))
     except Exception:
         pass

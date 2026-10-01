@@ -16,21 +16,54 @@ import sys
 import time
 from pathlib import Path
 
+from sk.atomic import atomic_write_text, quarantine
+
 JOBS_PATH = Path.home() / ".sidekick" / "jobs.json"
+
+# Set by load_jobs() when the file existed but could not be read (#316). Module
+# level because load_jobs() is called from many read-only paths that have no
+# other way to surface a problem; last_load_error() is the accessor.
+_LAST_LOAD_ERROR = ""
 
 
 def load_jobs() -> dict:
-    """All job records. {} on any failure. Never raises."""
+    """All job records. Never raises.
+
+    A missing file is legitimately empty. A *corrupt* one is not: returning {}
+    there let the next save_jobs() overwrite the whole registry, so a truncated
+    write destroyed every record rather than just the unreadable one (#316). The
+    corrupt file is moved aside — a truncated file is usually mostly intact, so
+    it is worth keeping — and the condition is recorded for `sk jobs` to show.
+    """
+    global _LAST_LOAD_ERROR
     try:
         data = json.loads(JOBS_PATH.read_text())
-        return data if isinstance(data, dict) else {}
-    except Exception:
+    except FileNotFoundError:
+        _LAST_LOAD_ERROR = ""
         return {}
+    except Exception as e:
+        moved = quarantine(JOBS_PATH, "jobs")
+        _LAST_LOAD_ERROR = f"jobs.json was unreadable ({e})" + (
+            f"; moved aside to {moved.name}" if moved else "; could not move it aside"
+        )
+        return {}
+    if not isinstance(data, dict):
+        moved = quarantine(JOBS_PATH, "jobs")
+        _LAST_LOAD_ERROR = "jobs.json did not contain an object" + (
+            f"; moved aside to {moved.name}" if moved else ""
+        )
+        return {}
+    _LAST_LOAD_ERROR = ""
+    return data
+
+
+def last_load_error() -> str:
+    """Why the last load_jobs() came back empty, if it was not simply absent."""
+    return _LAST_LOAD_ERROR
 
 
 def save_jobs(jobs: dict) -> None:
-    JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    JOBS_PATH.write_text(json.dumps(jobs))
+    atomic_write_text(JOBS_PATH, json.dumps(jobs))
 
 
 def create_job(

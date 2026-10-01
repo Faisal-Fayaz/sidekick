@@ -232,9 +232,14 @@ def jobs(
     limit: int = typer.Option(10, "--limit", "-n", help="Show this many recent jobs"),
 ):
     """List background jobs (`sk run --bg`)."""
-    from sk.jobs import load_jobs
+    from sk.jobs import last_load_error, load_jobs
 
     rows = sorted(load_jobs().items(), key=lambda kv: kv[1].get("created", 0), reverse=True)
+    problem = last_load_error()
+    if problem:
+        # A silently empty job list reads as "no jobs yet" — indistinguishable
+        # from a fresh install, so a lost registry would go unnoticed (#316).
+        console.print(f"[red]![/red] {problem}")
     if not rows:
         console.print('[dim](no background jobs yet — start one with `sk run --bg "task"`)[/dim]')
         return
