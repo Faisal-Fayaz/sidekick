@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,12 +12,9 @@ try:
 except ImportError:  # pragma: no cover
     import tomli as tomllib  # type: ignore
 
-try:
-    import tomli_w  # for writing; fallback to manual write
-
-    _HAS_TOMLI_W = True
-except ImportError:
-    _HAS_TOMLI_W = False
+# Writing merges text into the existing file (see _merge_scalars) instead of
+# parse-and-redump, so no TOML writer dependency is needed — which is exactly
+# what lets nested tables and the user's comments survive a save (#347).
 
 
 CONFIG_DIR = Path.home() / ".sidekick"
@@ -573,6 +571,78 @@ def is_session_denied(name: str, args: dict, deny: tuple[str, ...] | list[str]) 
         return False
 
 
+def _toml_value(v: object) -> str:
+    """Render one scalar or flat-array value as TOML (bools lowercase)."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, str):
+        return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(v, (int, float)):
+        return f"{v}"
+    if isinstance(v, (list, tuple)):
+        # a bare f"{v}" would emit Python repr — invalid TOML
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
+    return f'"{v}"'
+
+
+_SCALAR_LINE = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
+
+
+def _merge_scalars(existing: str, managed: dict) -> str:
+    """Return `existing` with `managed`'s keys set, preserving everything else.
+
+    Operates on text rather than parse-and-redump for two reasons: a nested table
+    like `[mcp_servers.files]` cannot be re-emitted without a TOML writer, and
+    round-tripping through one discards the user's comments and formatting — in a
+    file people hand-edit, that is itself a loss.
+
+    Only lines before the first table header are touched. Everything from that
+    header onward is copied verbatim, so a managed key name that also appears
+    inside a table (`[hooks]` with `command = ...`) is never rewritten.
+    """
+    lines = existing.split("\n")
+    table_start = next((i for i, ln in enumerate(lines) if ln.strip().startswith("[")), len(lines))
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for i, line in enumerate(lines):
+        if i >= table_start:
+            break
+        m = _SCALAR_LINE.match(line)
+        if m and m.group(1) in managed:
+            key = m.group(1)
+            # preserve any trailing comment on the line we replace
+            tail = line.split("#", 1)[1] if "#" in line else ""
+            out.append(f"{key} = {_toml_value(managed[key])}" + (f"  #{tail}" if tail else ""))
+            seen.add(key)
+            continue
+        out.append(line)
+
+    missing = [k for k in managed if k not in seen]
+    if missing:
+        # trim the blank lines we may have just copied past the last value, so we
+        # do not accumulate a growing gap between the scalars and the tables
+        while out and not out[-1].strip():
+            out.pop()
+        if out:
+            out.append("")
+        for k in missing:
+            out.append(f"{k} = {_toml_value(managed[k])}")
+
+    head = "\n".join(out).rstrip("\n")
+    tail = "\n".join(lines[table_start:]).strip("\n")
+    return (head + "\n\n" + tail + "\n") if tail else head + "\n"
+
+
+def _write_toml_preserving(target: Path, existing: str, managed: dict) -> None:
+    """Write via a temp file and rename, so an interrupted save cannot truncate
+    the user's config (#347: losing mcp_servers/hooks was already bad enough)."""
+    text = _merge_scalars(existing, managed)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(target)
+
+
 DEFAULTS: dict[str, str | int | float] = {
     "provider": "ollama",
     "model": str(PRESETS["ollama"]["model"]),
@@ -766,7 +836,13 @@ class Config:
 
     def save(self, path=None) -> None:
         """Persist settings. Writes to the active profile file when one is
-        active, else the global config file. `path` overrides both."""
+        active, else the global config file. `path` overrides both.
+
+        Only the scalar keys this class owns are written. Everything else in the
+        file — `[mcp_servers]`, `[hooks]`, `[skills]`, comments, the user's own
+        formatting — is left exactly as found. Rewriting the file from a fixed
+        key set silently deleted those tables on every `sk config` call (#347).
+        """
         self.normalize_model_alias()
         import os as _os
 
@@ -774,7 +850,12 @@ class Config:
             Path(path) if path else (profile_path(self.profile) if self.profile else CONFIG_PATH)
         )
         target.parent.mkdir(parents=True, exist_ok=True)
-        data = {
+        try:
+            existing = target.read_text(encoding="utf-8")
+        except Exception:
+            existing = ""
+
+        managed = {
             "provider": self.provider,
             "model": self.model,
             "base_url": self.base_url,
@@ -787,23 +868,8 @@ class Config:
             "reasoning_effort": self.reasoning_effort,
             "egress_allow": list(self.egress_allow),
         }
-        if _HAS_TOMLI_W:
-            with open(target, "wb") as f:
-                tomli_w.dump(data, f)
-        else:
-            # minimal manual writer, no dependency needed (bools lowercase: valid TOML)
-            def _toml(v):
-                if isinstance(v, bool):
-                    return "true" if v else "false"
-                if isinstance(v, str):
-                    return f'"{v}"'
-                if isinstance(v, (list, tuple)):
-                    # a bare `{v}` would emit Python repr — invalid TOML
-                    return "[" + ", ".join(_toml(x) for x in v) + "]"
-                return f"{v}"
+        _write_toml_preserving(target, existing, managed)
 
-            lines = [f"{k} = {_toml(v)}" for k, v in data.items()]
-            target.write_text("\n".join(lines) + "\n")
         if self.api_key.strip():
             try:
                 _os.chmod(target, 0o600)
