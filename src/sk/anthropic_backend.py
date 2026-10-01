@@ -148,6 +148,45 @@ def openai_messages_to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]
     return ("\n\n".join(system_parts), [{"role": r, "content": b} for r, b in merged])
 
 
+class _CountingSink:
+    """Callable wrapper that counts how many chunks actually reached the user.
+
+    Used to distinguish "the stream delivered nothing" from "the stream delivered
+    part of the answer and then failed". Only the former justifies emitting the
+    whole answer from the non-streaming fallback (#312).
+    """
+
+    __slots__ = ("count", "_inner")
+
+    def __init__(self, inner):
+        self.count = 0
+        self._inner = inner
+
+    def __call__(self, text):
+        self.count += 1
+        if self._inner is not None:
+            try:
+                self._inner(text)
+            except Exception:
+                pass
+
+
+def _synthetic_block_id(index: int, block: dict) -> str:
+    """Stable id for a `tool_use` block the provider streamed without one.
+
+    Anthropic requires every `tool_result` to reference a `tool_use_id`, so an
+    id-less block previously produced `tool_use_id: ""` and a hard 400 on the next
+    request. Derived from (index, name) so it is identical across a retry of the
+    same turn. Mirrors the OpenAI path's `_synthetic_call_id` (#312).
+    """
+    import hashlib
+
+    name = str((block or {}).get("name", "") or "")
+    seed = f"{index}|{name}"
+    digest = hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:16]
+    return f"toolu_{index}_{digest}"
+
+
 def _cache_breakpoints(system: str, tools: list[dict]) -> tuple[str | list[dict], list[dict]]:
     """Attach prompt-caching breakpoints: system block + end of tools definition.
 
@@ -316,7 +355,10 @@ def _stream(
                     block = obj.get("content_block", {}) or {}
                     acc[idx] = {
                         "type": block.get("type", "text"),
-                        "id": block.get("id", ""),
+                        # A tool_use block with no id yields tool_use_id="" on the
+                        # way back, which is a hard 400. Synthesise a stable one
+                        # (#312); mirrors the OpenAI id-less path.
+                        "id": block.get("id") or _synthetic_block_id(idx, block),
                         "name": block.get("name", ""),
                         "text": block.get("text", ""),
                         "thinking": "",
@@ -477,6 +519,7 @@ def run_anthropic_agent(
         _thinking = None
     seen: dict[str, str] = {}
     completed: list[str] = []  # per-turn tool work done (for error reports)
+    continued = 0  # max_tokens continuations this turn (mirrors the OpenAI path)
 
     for _ in range(max(1, max_steps)):
         payload: dict = {
@@ -491,12 +534,20 @@ def run_anthropic_agent(
             payload["system"] = system_payload
         if tools:
             payload["tools"] = tools
+        # Track whether any delta actually reached the user, not merely whether
+        # _stream returned. _stream can raise AFTER most of the answer was
+        # delivered (error SSE mid-body, transport drop), and the old code
+        # treated that as "nothing streamed" and re-emitted the whole text —
+        # the user saw the answer twice. Emitting the fallback text is only
+        # correct when nothing was delivered (#312).
+        emitted = _CountingSink(on_token)
+
         try:
-            blocks, _stop = _stream(
+            blocks, stop_reason = _stream(
                 cfg.effective_base_url(),
                 cfg.effective_api_key(),
                 payload,
-                on_token,
+                emitted,
                 on_reasoning,
             )
             streamed = True
@@ -509,17 +560,33 @@ def run_anthropic_agent(
 
                 return _error_with_progress(completed, e)
             blocks = resp.get("content", []) if isinstance(resp, dict) else []
+        _stop = stop_reason if streamed else None
         texts = [
             b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
         ]
         uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
         text = "".join(texts).strip()
-        if not streamed and text and on_token is not None:
+        if not streamed and text and on_token is not None and emitted.count == 0:
             try:
-                on_token(text)  # fallback path: deltas never flowed, emit whole text
+                on_token(text)  # nothing reached the user: emit the whole answer once
             except Exception:
                 pass
         if not uses:
+            # Cut off mid-thought (stop_reason == "max_tokens"): ask for the tool
+            # calls instead of accepting a plan with no action. Without this the
+            # model returned prose that got cut mid-JSON and the turn ended with
+            # nothing executed (#312).
+            if _stop == "max_tokens" and continued < 2:
+                continued += 1
+                if text:
+                    messages.append({"role": "assistant", "content": text})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Continue: emit the tool calls now, no more prose.",
+                    }
+                )
+                continue
             return text or "(empty)"
         batch = [
             (
@@ -550,15 +617,19 @@ def run_anthropic_agent(
             read_only=read_only,
             plan_mode=plan_mode,
         )
-        for u, (result, _) in zip(uses, outs):
+        for i, (u, (result, _)) in enumerate(zip(uses, outs)):
             messages.append(
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "tool_result",
-                            "tool_use_id": u.get("id", ""),
-                            "content": result[:6000],
+                            "tool_use_id": u.get("id") or _synthetic_block_id(i, u),
+                            # Full result, matching the OpenAI path. Truncating to
+                            # 6000 chars here silently dropped tool output the
+                            # model needs, with no marker, and the two providers
+                            # disagreed about it (#312).
+                            "content": result,
                         }
                     ],
                 }
