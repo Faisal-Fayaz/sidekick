@@ -75,8 +75,11 @@ jobs:
       # `grep -oE '[0-9]+' | head -1` on the last line silently extracted a number
       # out of a collection error and passed. Collection must now succeed; the
       # count is reported, not asserted (#319).
+      - name: Install package + test extras
+        run: uv sync --frozen --extra test
+
       - name: Collect tests
-        run: uv run --with pytest --with hypothesis pytest pytest tests --collect-only -q
+        run: uv run pytest tests --collect-only -q
 
   release-guard:
     runs-on: ubuntu-latest
