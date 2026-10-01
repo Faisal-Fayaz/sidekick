@@ -9,6 +9,7 @@ import pytest
 import sk.memory_files as mf
 import sk.slash as slash
 import sk.store as store
+import sk.trust as trust
 from sk.agent import _project_docs_block, build_messages
 from sk.config import Config
 
@@ -112,14 +113,25 @@ def test_block_none_when_nothing(tmp_path, monkeypatch):
     assert _project_docs_block(cfg) == "(none)"
 
 
-def test_discovered_in_system_prompt(tmp_path, monkeypatch):
+def test_discovered_docs_are_fenced_not_system_prompt(tmp_path, monkeypatch):
+    """A repo's AGENTS.md is data, not a system instruction (#299).
+
+    Previously asserted the opposite — that it lands in the system message — and
+    that assertion is what encoded the vulnerability. A cloned repo could ship an
+    AGENTS.md and it carried system-level authority.
+    """
     _sctx(tmp_path, monkeypatch)
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "AGENTS.md").write_text("project law: always haiku")
     monkeypatch.chdir(proj)
-    system = build_messages("hi", [], _cfg())[0]["content"]
-    assert "project law" in system
+    msgs = build_messages("hi", [], _cfg())
+    system = msgs[0]["content"]
+    assert "project law" not in system, "repo docs must not be system-level"
+    fenced = "\n".join(str(m.get("content", "")) for m in msgs[1:-1])
+    assert "project law" in fenced, "repo docs must still be delivered"
+    assert trust.OPEN in fenced and trust.CLOSE in fenced
+    assert trust.PREAMBLE in fenced
 
 
 def test_init_scaffolds_with_facts(tmp_path, monkeypatch):
