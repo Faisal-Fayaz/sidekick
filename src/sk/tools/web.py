@@ -235,6 +235,23 @@ def extract_embedded_text(html: str, budget: int = 8000) -> str:
     return "\n\n".join(parts)[:budget]
 
 
+def _url_blocked_twice(url: str) -> str | None:
+    """SSRF guard, asked twice in immediate succession.
+
+    Cheap DNS-rebinding mitigation: a rebind attacker can't distinguish the
+    two check queries from the fetch query, so flapping answers (alternating
+    public/private, short-TTL flips) get caught here instead of at fetch time.
+    Round-robin public pools pass (both answers public). Fail-closed on
+    transient DNS failure. Not a proof: a query-counting adversary that
+    answers cleanly twice and flips on the third still wins — closing that
+    needs connection-level IP pinning, which breaks TLS SNI/cert validation.
+    """
+    first = _url_blocked(url)
+    if first:
+        return first
+    return _url_blocked(url)
+
+
 def _fetch_with_redirects(
     url: str,
     headers: dict,
@@ -245,6 +262,9 @@ def _fetch_with_redirects(
     """GET with a manual redirect chain: initial URL + every hop re-validated
     against the SSRF guard (httpx auto-follow would fetch targets unchecked).
 
+    Each hop is guard-checked twice in immediate succession (see
+    _url_blocked_twice): DNS must answer consistently or the fetch refuses.
+
     Returns (response, "") or (None, error). params go on the first request
     only; redirect hops carry their own URLs. Never raises.
     """
@@ -254,7 +274,7 @@ def _fetch_with_redirects(
         import httpx
     except Exception as e:
         return None, f"Error {context}: {e}"
-    blocked = _url_blocked(url)
+    blocked = _url_blocked_twice(url)
     if blocked:
         return None, blocked
     try:
@@ -272,7 +292,7 @@ def _fetch_with_redirects(
                 if not loc:
                     break
                 current = urljoin(current, loc)
-                blocked = _url_blocked(current)
+                blocked = _url_blocked_twice(current)
                 if blocked:
                     return None, f"Error: redirect to blocked URL: {current}"
             else:
