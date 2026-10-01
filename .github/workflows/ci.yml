@@ -14,6 +14,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Re-run CI on demand. Added after a merge to main produced no run at all,
+  # with nothing to indicate a skip. That matters here: the post-merge main run
+  # is what caught a macOS-only failure that all 12 PR checks passed (#315),
+  # so a silently missing main run is a hole in the one gate that caught it.
+  workflow_dispatch:
 
 jobs:
   lint:
