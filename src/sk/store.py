@@ -388,6 +388,78 @@ def save_summary(session: str, summary: str, up_to_id: int) -> None:
         pass
 
 
+def log_egress(tool: str, host: str, url: str, reason: str | None, session: str = "") -> None:
+    """Record one egress decision (allow or deny) in the audit ledger (#328).
+
+    Reuses tool_runs rather than adding a table: `sk audit` already renders these
+    rows, and a denial with ok=0 is a row that can only exist if something
+    actually tried to leave. That is the property `sk audit --prove` (#156)
+    needs. Best-effort: never raises.
+    """
+    try:
+        conn = _connect()
+        try:
+            decision = "deny" if reason else "allow"
+            target = redact(
+                f"host={host or '-'} url={url} decision={decision} reason={reason or '-'}"
+            )
+            conn.execute(
+                "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts)"
+                " VALUES (?, ?, ?, 1, 'egress', ?, ?, ?)",
+                (
+                    session or "_egress",
+                    f"egress:{str(tool or 'fetch')[:40]}",
+                    target[:500],
+                    str(host or ""),
+                    0 if reason else 1,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def egress_summary(session: str = "") -> list[dict]:
+    """Per-host allow/deny counts from the ledger. Never raises."""
+    rows: list[dict] = []
+    try:
+        conn = _connect()
+        try:
+            if session.strip():
+                cur = conn.execute(
+                    "SELECT host, target, ok FROM tool_runs WHERE tool LIKE 'egress:%' AND session=?",
+                    (session.strip(),),
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT host, target, ok FROM tool_runs WHERE tool LIKE 'egress:%'"
+                )
+            for host, target, ok in cur.fetchall():
+                reason = "-"
+                if target and "reason=" in str(target):
+                    # reason is the final field, and reasons contain spaces
+                    reason = str(target).rsplit("reason=", 1)[1].strip() or "-"
+                found = next((r for r in rows if r["host"] == (host or "-")), None)
+                if found is None:
+                    found = {"host": host or "-", "allowed": 0, "denied": 0, "reasons": set()}
+                    rows.append(found)
+                if ok:
+                    found["allowed"] += 1
+                else:
+                    found["denied"] += 1
+                    found["reasons"].add(reason)
+            for r in rows:
+                r["reasons"] = sorted(r for r in r["reasons"] if r and r != "-")
+        finally:
+            conn.close()
+    except Exception:
+        return []
+    return sorted(rows, key=lambda r: (-r["denied"], r["host"]))
+
+
 def log_compact_note(note: str) -> None:
     """Record a compaction outcome as a session-scoped tool_runs row.
 

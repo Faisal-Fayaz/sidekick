@@ -20,6 +20,12 @@ import sk.slash as slash
 import sk.store as store
 from sk.config import Config
 
+# These tests fake HTTP to exercise redirect/SSRF logic; they need the
+# egress policy to say yes to the public decoy hosts. Deny-by-default
+# (#328) would otherwise short-circuit every case here.
+pytestmark = pytest.mark.usefixtures("egress_test_hosts")
+
+
 ISSUES = "https://github.com/Faisal-Fayaz/sidekick/issues"
 
 

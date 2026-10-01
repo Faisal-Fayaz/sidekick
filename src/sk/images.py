@@ -135,9 +135,19 @@ def generate_image(cfg, prompt: str, size: str = "", model: str = "", out: str =
             # provider is. Without this guard a metadata-service URL is an SSRF
             # primitive: the bytes land in dest and the model can read them
             # straight back into context (#294).
+            from .egress import check as _egress_check
+            from .egress import hint as _egress_hint
+            from .egress import record as _egress_record
             from .tools.web import _check_image_url
 
             remote = str(datum["url"])
+            # egress policy first: free, no DNS, and the actionable message.
+            # A provider-supplied URL is exactly the destination an attacker
+            # reaches through prompt injection (#328).
+            deny = _egress_check(remote)
+            _egress_record("image", remote, deny)
+            if deny:
+                return f"Error: egress blocked — {deny}. Allow it with `{_egress_hint(remote)}`."
             blocked = _check_image_url(remote)
             if blocked:
                 return blocked
@@ -145,6 +155,7 @@ def generate_image(cfg, prompt: str, size: str = "", model: str = "", out: str =
                 g = httpx.get(remote, timeout=120.0, follow_redirects=False)
                 g.raise_for_status()
                 blob = g.content
+                _egress_record("image", remote, None)
             except Exception as e:
                 return f"Error: could not fetch image url: {e}"
         if not blob:

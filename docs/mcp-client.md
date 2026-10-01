@@ -53,6 +53,19 @@ description, e.g. `mcp__files__read_file`. Behavior:
   and cool down briefly; the turn continues with other tools.
 - Proxied tools are **not** re-served by `sk mcp` (no recursive serving).
 
+### MCP and the egress allowlist
+
+MCP servers you configure are **not** subject to the egress allowlist
+([`egress.md`](egress.md)). That allowlist governs destinations the *model*
+chooses — a page it asks to read, a search hit, a provider-supplied image URL.
+A server URL is something you typed into your own config, alongside its trust
+level, so it is treated the same way as your model provider: always reachable.
+
+If a server is compromised or misbehaving, the gate that matters is approval —
+MCP tools are asked by default like `shell`, and `--read-only` denies them. If
+you want a hard network boundary for the whole process, use one at the OS level
+(`unshare --net sk run …`) rather than trying to express it as host rules.
+
 ## Minimal stdio server (Python)
 
 Any program speaking JSON-RPC 2.0 over newline-delimited stdio works. It

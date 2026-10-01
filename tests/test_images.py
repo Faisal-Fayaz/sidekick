@@ -5,7 +5,14 @@ import base64
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import sk.images as images
+
+# These tests fake HTTP to exercise redirect/SSRF logic; they need the
+# egress policy to say yes to the public decoy hosts. Deny-by-default
+# (#328) would otherwise short-circuit every case here.
+pytestmark = pytest.mark.usefixtures("egress_test_hosts")
 
 
 def _cfg(provider="openai"):
@@ -74,10 +81,11 @@ def test_b64_success_saves_exact_bytes(tmp_path, monkeypatch):
     assert seen["json"]["model"] == "gpt-image-1" and seen["json"]["size"] == "1024x1024"
 
 
-def test_url_variant_fetched(tmp_path, monkeypatch):
+def test_url_variant_fetched(tmp_path, monkeypatch, egress_test_hosts):
     _iso(tmp_path, monkeypatch)
     import httpx
 
+    egress_test_hosts("img")  # the provider hands back https://img/x.png
     _public_dns(monkeypatch)  # the provider-supplied URL now passes the SSRF guard (#294)
     monkeypatch.setattr(
         httpx, "post", lambda *a, **k: _Resp(200, {"data": [{"url": "https://img/x.png"}]})

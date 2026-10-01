@@ -61,3 +61,41 @@ def _isolate_history(tmp_path, monkeypatch):
     store_mod.set_default_namespace("")
     yield
     store_mod.set_default_namespace("")
+
+
+# Public hosts the suite fakes. A module that stubs httpx and wants to keep
+# testing SSRF/redirect behaviour opts in with `pytestmark = pytest.mark.usefixtures(...)`.
+# Not autouse: the point of #328 is that network access is denied unless asked for.
+EGRESS_TEST_HOSTS = (
+    "example.com",
+    "*.example.com",
+    "example.org",
+    "duckduckgo.com",
+    "*.duckduckgo.com",
+)
+
+
+@pytest.fixture
+def egress_test_hosts(monkeypatch):
+    """Grant the fake-network hosts this suite uses. Opt-in, per module.
+
+    Call it directly with extra hosts when a test needs a decoy outside the
+    shared set: `egress_test_hosts("img")` appends to it.
+    """
+    import sk.config as config_mod
+
+    extra: tuple[str, ...] = ()
+    real_load = config_mod.Config.load
+
+    def _load(*a, **kw):
+        cfg = real_load(*a, **kw)
+        cfg.egress_allow = EGRESS_TEST_HOSTS + extra
+        return cfg
+
+    monkeypatch.setattr(config_mod.Config, "load", staticmethod(_load))
+
+    def _add(*hosts: str) -> None:
+        nonlocal extra
+        extra = extra + tuple(hosts)
+
+    return _add

@@ -56,6 +56,7 @@ heard> what files are in the sidekick repo
 | Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
 | Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
 | Offline test suite incl. prompt-regression evals | ✅ | rare |
+| Deny-by-default egress for what the model fetches (`sk egress`, logged) | ✅ | ❌ |
 | Audit ledger you can hand to an auditor (`sk audit`, credentials redacted) | ✅ | ❌ (their product *is* your code) |
 | Costs $0 by default, spend caps when you bring keys | ✅ | metered |
 
@@ -168,6 +169,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk history` / `sk oops` | Shell log / explain last failure |
 | `sk imagine "prompt" [--out f.png]` | Generate an image via the provider images endpoint |
 | `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
+| `sk egress [list\|allow HOST\|deny HOST\|test URL]` | Egress policy: what the model may fetch, and what it was blocked from ([docs](docs/egress.md)) |
 | `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
@@ -203,7 +205,32 @@ Design bets that paid off: **deterministic grounding beats prompt instructions**
 
 ## Safety
 
-Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]` in TUI, prompt in CLI), HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. Multi-tool turns with destructive actions get **one plan review** up front instead of per-tool prompts (silent in `--yes`/`/yolo`; denials execute nothing). `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs. API keys chmod 600, masked in output.
+Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]` in TUI, prompt in CLI), HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. Multi-tool turns with destructive actions get **one plan review** up front instead of per-tool prompts (silent in `--yes`/`/yolo`; denials execute nothing). `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs.
+
+**Egress is deny-by-default.** Sidekick will not fetch a destination the model
+asked for until you allow that host:
+
+```bash
+sk egress                              # what is allowed, and what was blocked
+sk egress allow example.com            # allow one host
+sk egress allow '*.example.com'        # or a whole domain
+sk egress deny example.com             # revoke
+sk egress test https://example.com/x   # check a URL without fetching it
+```
+
+This covers every destination the *model* can cause a fetch of: `read_url`,
+`web_search` (including each search hit), and provider-supplied image URLs. With
+an empty allowlist, all three are refused. Your model API endpoint and the MCP
+servers you configured are unaffected — you chose those, they are not something
+a prompt can talk the agent into adding. Every allow and deny is written to the
+ledger with the host and reason, visible via `sk egress` and `sk audit`.
+
+**The ceiling, stated plainly:** this governs fetches made *through the agent's
+tools*. A `shell` command running `curl` is not covered — no string denylist can
+be a network boundary. That is why shell still needs approval, and why
+[issue #329](https://github.com/Faisal-Fayaz/sidekick/issues/329) (OS-level
+sandboxing) is the real answer rather than another pattern list. See
+[`docs/egress.md`](docs/egress.md). API keys chmod 600, masked in output.
 
 ## Tests
 
