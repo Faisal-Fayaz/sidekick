@@ -131,8 +131,18 @@ def generate_image(cfg, prompt: str, size: str = "", model: str = "", out: str =
             except Exception as e:
                 return f"Error: bad image payload: {e}"
         elif datum.get("url"):
+            # The URL is provider-supplied, so it is attacker-controlled if the
+            # provider is. Without this guard a metadata-service URL is an SSRF
+            # primitive: the bytes land in dest and the model can read them
+            # straight back into context (#294).
+            from .tools.web import _check_image_url
+
+            remote = str(datum["url"])
+            blocked = _check_image_url(remote)
+            if blocked:
+                return blocked
             try:
-                g = httpx.get(str(datum["url"]), timeout=120.0)
+                g = httpx.get(remote, timeout=120.0, follow_redirects=False)
                 g.raise_for_status()
                 blob = g.content
             except Exception as e:

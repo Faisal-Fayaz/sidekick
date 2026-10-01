@@ -6,12 +6,20 @@ import json
 import os
 import platform
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 from openai import OpenAI
 
 from .config import Config
-from .tools import approval_tools, dispatch_tool, missing_required, tool_sysinfo, tools_schema
+from .tools import (
+    approval_tools,
+    dispatch_tool,
+    irreversible_refusal,
+    missing_required,
+    tool_sysinfo,
+    tools_schema,
+)
 
 # Audit session tag. Direct callers pass session= to run_agent; the TUI
 # dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
@@ -704,6 +712,13 @@ def _gated_dispatch(
         )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
+    # Hard refusal BEFORE approval, not inside the tool. Previously the blocklist
+    # ran inside tool_shell, i.e. after the approval callback, so --yes / /yolo /
+    # --allow / `sk mcp --allow-writes` waved it through (closes #298).
+    refusal = irreversible_refusal(name, args)
+    if refusal:
+        log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
+        return (refusal, False)
     if name in approval_tools() and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
@@ -846,6 +861,79 @@ def _create_with_retry(client, kwargs: dict, tries: int = 3, on_token=None) -> o
     raise last
 
 
+@dataclass(frozen=True)
+class DeltaEvent:
+    """One normalised fact from a streamed chunk.
+
+    The seam that makes the stream accumulator testable (#318). Provider chunk
+    shapes differ wildly — objects with attributes, plain dicts, `reasoning` on
+    some providers and not others, `tool_calls` arriving in fragments — so
+    `_delta_events` flattens all of that into this one shape and
+    `_stream_chat` does nothing but accumulate. Testing the accumulator no
+    longer requires an HTTP client, an SSE fixture, or monkeypatching a module
+    attribute, which is why it sat at 0% coverage for so long.
+    """
+
+    text: str = ""
+    reasoning: str = ""
+    tool_index: int = -1
+    tool_id: str = ""
+    tool_name: str = ""
+    tool_args: str = ""
+    finish: str = ""
+
+
+def _get(obj, key):
+    """Attribute-or-key read, for chunks that may be objects or dicts."""
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def _delta_events(chunk) -> list[DeltaEvent]:
+    """Normalise one streamed chunk into DeltaEvents. Pure; never raises.
+
+    Handles both the object and dict chunk shapes, the optional `reasoning`
+    field (qwen3 via Ollama), and fragmented `tool_calls` where `name` and
+    `arguments` arrive across several chunks and must be concatenated by index.
+    """
+    out: list[DeltaEvent] = []
+    try:
+        choices = _get(chunk, "choices") or []
+        if not choices:
+            return out
+        choice = choices[0]
+    except Exception:
+        return out
+    try:
+        fr = _get(choice, "finish_reason")
+        if fr:
+            out.append(DeltaEvent(finish=str(fr)))
+        delta = _get(choice, "delta")
+        if delta is None:
+            return out
+        r = _get(delta, "reasoning")
+        if r:
+            out.append(DeltaEvent(reasoning=r if isinstance(r, str) else str(r)))
+        c = _get(delta, "content")
+        if c:
+            out.append(DeltaEvent(text=c if isinstance(c, str) else str(c)))
+        for tc in _get(delta, "tool_calls") or []:
+            idx = _get(tc, "index")
+            fn = _get(tc, "function")
+            out.append(
+                DeltaEvent(
+                    tool_index=int(idx) if isinstance(idx, int) else 0,
+                    tool_id=str(_get(tc, "id") or ""),
+                    tool_name=str(_get(fn, "name") or ""),
+                    tool_args=str(_get(fn, "arguments") or ""),
+                )
+            )
+    except Exception:
+        return out
+    return out
+
+
 def _stream_chat(
     client,
     model: str,
@@ -856,104 +944,69 @@ def _stream_chat(
     extra: dict,
     on_token=None,
     on_reasoning=None,
+    transport=None,
 ) -> _Msg:
     """Streaming chat.completions with tool accumulation.
 
     Content deltas -> on_token, reasoning deltas -> on_reasoning (falls back
     to on_token when no separate sink is given, so old callers keep working).
+
+    `transport(params) -> Iterable[chunk]` is the injectable seam (#318). It
+    defaults to the retrying OpenAI path; tests pass a generator of chunks and
+    exercise every branch below without touching the network.
     """
     _on_r = on_reasoning if on_reasoning is not None else on_token
     acc_text = ""
     acc_reason = ""
     finish = ""
     tc_buf: dict[int, dict] = {}  # idx -> {id, name, args}
+    params = dict(
+        model=model,
+        messages=messages,
+        tools=tools,
+        tool_choice="auto" if tools else "none",
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+        extra_body=extra,
+    )
+    if transport is None:
+
+        def transport(p):  # noqa: ANN001
+            return _create_with_retry(client, p, on_token=on_token)
+
     try:
-        stream = _create_with_retry(
-            client,
-            dict(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto" if tools else "none",
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                extra_body=extra,
-            ),
-            on_token=on_token,
-        )
-        for chunk in stream:  # type: ignore[attr-defined]
-            try:
-                choice = chunk.choices[0]
-            except Exception:
-                continue
-            fr = getattr(choice, "finish_reason", None)
-            if fr:
-                finish = str(fr)
-            delta = getattr(choice, "delta", None)
-            if delta is None:
-                continue
-            # reasoning field (qwen3 via Ollama) — separate sink when provided
-            r = getattr(delta, "reasoning", None) or (
-                delta.get("reasoning") if isinstance(delta, dict) else None
-            )
-            if r:
-                acc_reason += r if isinstance(r, str) else str(r)
-                if _on_r is not None:
-                    try:
-                        _on_r(r if isinstance(r, str) else str(r))
-                    except Exception:
-                        pass
-            c = getattr(delta, "content", None)
-            if c is None and isinstance(delta, dict):
-                c = delta.get("content")
-            if c:
-                acc_text += c
-                if on_token is not None:
-                    try:
-                        on_token(c)
-                    except Exception:
-                        pass
-            tcs = getattr(delta, "tool_calls", None)
-            if tcs is None and isinstance(delta, dict):
-                tcs = delta.get("tool_calls")
-            if tcs:
-                for tc in tcs:
-                    idx = tc.index if hasattr(tc, "index") else tc.get("index", 0)
-                    buf = tc_buf.setdefault(idx, {"id": "", "name": "", "args": ""})
-                    tid = getattr(tc, "id", None) or (
-                        tc.get("id") if isinstance(tc, dict) else None
-                    )
-                    if tid:
-                        buf["id"] = tid
-                    fn = getattr(tc, "function", None) or (
-                        tc.get("function") if isinstance(tc, dict) else None
-                    )
-                    if fn:
-                        n = getattr(fn, "name", None) or (
-                            fn.get("name") if isinstance(fn, dict) else None
-                        )
-                        a = getattr(fn, "arguments", None) or (
-                            fn.get("arguments") if isinstance(fn, dict) else None
-                        )
-                        if n:
-                            buf["name"] = (buf["name"] or "") + n
-                        if a:
-                            buf["args"] = (buf["args"] or "") + a
+        for chunk in transport(params):
+            for ev in _delta_events(chunk):
+                if ev.reasoning:
+                    acc_reason += ev.reasoning
+                    if _on_r is not None:
+                        try:
+                            _on_r(ev.reasoning)
+                        except Exception:
+                            pass
+                if ev.text:
+                    acc_text += ev.text
+                    if on_token is not None:
+                        try:
+                            on_token(ev.text)
+                        except Exception:
+                            pass
+                if ev.finish:
+                    finish = ev.finish
+                if ev.tool_index >= 0:
+                    buf = tc_buf.setdefault(ev.tool_index, {"id": "", "name": "", "args": ""})
+                    if ev.tool_id:
+                        buf["id"] = ev.tool_id
+                    if ev.tool_name:
+                        buf["name"] = (buf["name"] or "") + ev.tool_name
+                    if ev.tool_args:
+                        buf["args"] = (buf["args"] or "") + ev.tool_args
     except Exception:
         # fallback to non-streaming on error
         resp = _create_with_retry(
             client,
-            dict(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto" if tools else "none",
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=False,
-                extra_body=extra,
-            ),
+            dict(params, stream=False),
             on_token=on_token,
         )
         m = resp.choices[0].message  # type: ignore[attr-defined]
@@ -966,14 +1019,46 @@ def _stream_chat(
         )
     tool_calls = None
     if tc_buf:
+        # Providers that stream tool_calls without ids (llama.cpp --server, some
+        # Ollama builds, text-JSON shims) used to get `call_0, call_1, ...`
+        # regenerated from a per-message index every turn. The accumulated
+        # history is re-sent in full, so one request could contain two assistant
+        # messages with the same tool_call_id, which is a hard 400 (#310).
+        #
+        # Derive from a stable hash of the call so ids are unique per request
+        # AND identical across a retry of the same turn, which matters because
+        # retries are real (see _create_with_retry).
         tool_calls = [
-            _TC(b["id"] or f"call_{i}", b["name"], b["args"])
+            _TC(b["id"] or _synthetic_call_id(i, b), b["name"], b["args"])
             for i, b in sorted(tc_buf.items())
             if b["name"]
         ]
         if not tool_calls:
             tool_calls = None
     return _Msg(acc_text, tool_calls, acc_reason, finish)
+
+
+def _synthetic_call_id(index: int, buf: dict) -> str:
+    """Deterministic, turn-local, collision-resistant id for an id-less call.
+
+    Stable for the same (index, tool, args) so a retried turn reuses the id;
+    distinct across turns because the args differ.
+
+    `buf["args"]` is a raw JSON **string** at call time, not a parsed dict. An
+    earlier version of this function assumed a dict, so every id-less provider
+    hit an AttributeError and silently degraded to the non-streaming fallback —
+    the fix looked present but did nothing. Accept both shapes (#310).
+    """
+    import hashlib
+
+    args = buf.get("args")
+    if isinstance(args, dict):
+        args_repr = repr(sorted(args.items()))
+    else:
+        args_repr = str(args or "")
+    seed = f"{index}|{buf.get('name', '')}|{args_repr}"
+    digest = hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:16]
+    return f"call_{index}_{digest}"
 
 
 def estimate_tokens(text: str) -> int:
@@ -997,16 +1082,58 @@ def _as_role_content(msgs: list[dict]) -> list[dict]:
     return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in msgs]
 
 
+def _keep_index(msgs: list[dict], anchor: int, floor: int, cap: int) -> int:
+    """Index to split at: grow the verbatim tail backward to a token floor.
+
+    Never keeps a fixed *count* of messages regardless of size. The old code had
+    an `or ri > n - 2` escape hatch that unconditionally ate the last two
+    messages, which emptied the middle slice and made compaction a silent no-op
+    whenever the newest messages were large (#306).
+
+    Two invariants:
+    - never split a `tool` result away from the assistant message that requested
+      it, since an orphaned tool message is a hard API 400;
+    - grow until `floor` tokens AND at least `min_text` text-bearing messages
+      are retained, then stop at `cap`.
+    """
+    n = len(msgs)
+    idx = n
+    kept = 0
+    text_msgs = 0
+    min_text = min(5, n)
+    while idx > anchor:
+        idx -= 1
+        content = str(msgs[idx].get("content", ""))
+        kept += estimate_tokens(content)
+        if content.strip():
+            text_msgs += 1
+        # never leave a tool result without its assistant turn above it
+        if msgs[idx].get("role") == "tool" and idx > anchor:
+            idx -= 1
+            kept += estimate_tokens(str(msgs[idx].get("content", "")))
+        if kept >= cap:
+            break
+        if kept >= floor and text_msgs >= min_text:
+            break
+    return max(idx, anchor)
+
+
 def compact_history(
     prior: str, msgs: list[dict], budget_tokens: int, summarizer
-) -> tuple[list[dict], str | None]:
-    """Budget-bounded prompt view of oldest-first turns. Pure logic; summarizer
-    does the single model call. Returns (prompt_msgs, new_summary|None).
+) -> tuple[list[dict], str | None, int | None]:
+    """Budget-bounded prompt view of oldest-first turns. Pure logic.
 
-    Under budget: everything passes through, no summarizer call. Over budget:
-    task anchor + newest turns fitting half the budget stay verbatim, the
-    middle folds into the prior summary. Empty middle or summarizer failure
-    falls back to plain truncation (compaction must never break a turn).
+    Returns (prompt_msgs, new_summary | None, split_index | None).
+
+    `split_index` is the index of the first message that stayed VERBATIM — the
+    messages below it are the ones represented in `new_summary`. Returning it
+    alongside the summary is what makes the watermark correct: the caller cannot
+    derive it by arithmetic over the session, because the summarised prefix and
+    the retained tail are two disjoint lists handed back together (#307).
+
+    `new_summary is None` means compaction did not run — under budget, nothing
+    to fold, or the summarizer produced nothing. That is deliberately distinct
+    from "the summarizer failed", which raises (#306).
     """
     as_role = _as_role_content(msgs)
     base = (
@@ -1015,30 +1142,27 @@ def compact_history(
         else []
     )
     if estimate_tokens(_render_turns(base + as_role)) <= budget_tokens:
-        return (base + as_role, None)
+        return (base + as_role, None, None)
     n = len(msgs)
     if n == 0:
-        return (base, None)
+        return (base, None, None)
     ai = next((i for i, m in enumerate(msgs) if m.get("role") == "user"), 0)
     half = max(500, budget_tokens // 2)
-    acc, ri = 0, n
-    while ri > 0 and (acc + estimate_tokens(msgs[ri - 1].get("content", "")) <= half or ri > n - 2):
-        acc += estimate_tokens(msgs[ri - 1].get("content", ""))
-        ri -= 1
+    ri = _keep_index(msgs, ai, floor=half, cap=max(half * 4, half))
     anchor = [] if ai >= ri else [msgs[ai]]
     middle = msgs[ai + 1 : ri]
+    keep = _as_role_content(anchor + msgs[ri:])
     if not middle:
-        return (base + _as_role_content(anchor + msgs[ri:]), None)
+        # nothing foldable: pass everything through rather than silently
+        # reporting a summarizer failure that never happened
+        return (base + _as_role_content(msgs), None, None)
     context = (prior + "\n" if (prior or "").strip() else "") + _render_turns(middle)
-    try:
-        new_summary = summarizer(context).strip()
-    except Exception:
-        return (base + _as_role_content(anchor + msgs[ri:]), None)
+    new_summary = summarizer(context).strip()  # may raise: that IS a failure
     if not new_summary:
-        return (base + _as_role_content(anchor + msgs[ri:]), None)
+        return (base + keep, None, None)
     out = [{"role": "user", "content": f"[Session summary so far]:\n{new_summary}"}]
-    out += _as_role_content(anchor + msgs[ri:])
-    return (out, new_summary)
+    out += keep
+    return (out, new_summary, ri)
 
 
 def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> list[dict]:
@@ -1048,9 +1172,12 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
      the merged summary. Falls back to the passed history on any failure.
     DB history stays complete — compaction is a view, never destructive."""
     try:
-        budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        try:
+            budget = max(500, int(getattr(cfg, "history_budget_tokens", 3000) or 3000))
+        except Exception:
+            budget = 3000
         if not (session or "").strip():
-            prompt, _ = compact_history("", history, budget, summarize_fn)
+            prompt, _, _ = compact_history("", history, budget, summarize_fn)
             return prompt
         from .store import get_history_full, get_summary, save_summary
 
@@ -1060,16 +1187,34 @@ def prepare_history(session: str, history: list[dict], cfg, summarize_fn) -> lis
         prior, up_to = get_summary(session)
         uncovered = [m for m in full if m.get("id", 0) > up_to]
         if not uncovered:
+            # Nothing new to fold. Return the prior summary AND leave the
+            # watermark alone — the old code advanced past the retained tail,
+            # and this branch is also what discarded the summary itself (#307).
             if (prior or "").strip():
                 return [{"role": "user", "content": f"[Session summary so far]:\n{prior}"}]
             return history
-        prompt, new_summary = compact_history(prior, uncovered, budget, summarize_fn)
-        if new_summary is not None:
-            top = max([m.get("id", 0) for m in full] + [up_to])
+        prompt, new_summary, split = compact_history(prior, uncovered, budget, summarize_fn)
+        if new_summary is not None and split is not None:
+            # Watermark over the SUMMARISED PREFIX ONLY. Never max(id) over the
+            # whole session: compact_history deliberately keeps messages[split:]
+            # verbatim, and advancing past them discards them permanently.
+            summarised = uncovered[:split]
+            top = max([m.get("id", 0) for m in summarised] + [up_to])
             save_summary(session, new_summary, top)
         return prompt
-    except Exception:
+    except Exception as e:
+        _record_compact_failure(e)
         return history
+
+
+def _record_compact_failure(err: object) -> None:
+    """Compaction failed. Log it distinctly from "nothing to compact" (#306)."""
+    try:
+        from .store import log_compact_note
+
+        log_compact_note(f"compaction failed: {type(err).__name__}: {err}"[:300])
+    except Exception:
+        pass
 
 
 def make_summarizer(cfg):
@@ -1155,10 +1300,17 @@ def compact_session_now(session: str, cfg, hint: str = "") -> str:
         if estimate_tokens(_render_turns(base + as_role)) <= budget:
             return "_under budget — history kept verbatim_"
         before = estimate_tokens(_render_turns(uncovered))
-        prompt, new_summary = compact_history(prior, uncovered, budget, make_summarizer(cfg))
-        if new_summary is None:
-            return "_compaction failed (summarizer unreachable?) — history untouched_"
-        top = max([m.get("id", 0) for m in full] + [up_to])
+        try:
+            prompt, new_summary, split = compact_history(
+                prior, uncovered, budget, make_summarizer(cfg)
+            )
+        except Exception as e:
+            # The summarizer actually failed. Distinct from the branch below,
+            # which means there was nothing to fold (#306).
+            return f"_compaction failed ({type(e).__name__}: {e}) — history untouched_"
+        if new_summary is None or split is None:
+            return "_nothing foldable — history kept verbatim_"
+        top = max([m.get("id", 0) for m in uncovered[:split]] + [up_to])
         save_summary(session, new_summary, top)
         after = estimate_tokens(_render_turns(prompt))
         return (
@@ -1279,6 +1431,18 @@ def build_messages(
         smart_model = _TIERS.get("ollama", {}).get("smart", "qwen2.5-coder:7b")
     except Exception:
         smart_model = "qwen2.5-coder:7b"
+    # The live turn is persisted before run_agent is called (every surface does
+    # this, so `sk oops` and /rewind see it), and prepare_history re-reads the
+    # DB — so `history` can already end with this exact user message and
+    # appending it below would send every prompt twice (#299). Dedupe the tail
+    # here rather than relying on each caller's save/read ordering.
+    hist = list(history or [])
+    while (
+        hist
+        and str(hist[-1].get("role", "")) == "user"
+        and str(hist[-1].get("content", "")) == user_msg
+    ):
+        hist.pop()
     messages: list[dict] = [
         {
             "role": "system",
@@ -1297,7 +1461,7 @@ def build_messages(
                 smart_model=smart_model,
             ),
         },
-        *history[-20:],
+        *hist[-20:],
         {
             "role": "user",
             "content": (

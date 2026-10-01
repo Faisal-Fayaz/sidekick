@@ -60,11 +60,13 @@ def test_project_layers_over_profile(tmp_path, monkeypatch):
     _write_profile(cfgdir, "work", 'provider = "groq"\nmodel = "m-work"\n')
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / ".sidekick.toml").write_text('model = "m-proj"\n')
+    # project file sets only safe keys; provider/model are global-only (#295)
+    (proj / ".sidekick.toml").write_text('[project]\nmemory_namespace = "proj"\n')
     monkeypatch.chdir(proj)
     monkeypatch.setenv(PROFILE_ENV, "work")
     cfg = Config.load()
-    assert (cfg.provider, cfg.model) == ("groq", "m-proj")
+    assert (cfg.provider, cfg.model) == ("groq", "m-work")
+    assert cfg.memory_namespace == "proj"
 
 
 def test_missing_and_bad_profile_fail(tmp_path, monkeypatch):

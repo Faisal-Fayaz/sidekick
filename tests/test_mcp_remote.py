@@ -236,6 +236,7 @@ def test_config_url_headers_and_refusals(tmp_path, monkeypatch, http_server):
         monkeypatch,
         "[mcp_servers.web]\n"
         f"url = {_toml_str(url)}\n"
+        "trust = 'full'\n"
         '[mcp_servers.web.headers]\nAuthorization = "Bearer x"\n'
         '[mcp_servers.both]\ncommand = "x"\n'
         f"url = {_toml_str(url)}\n"
@@ -251,7 +252,11 @@ def test_config_url_headers_and_refusals(tmp_path, monkeypatch, http_server):
 
 def test_dispatch_end_to_end_url(tmp_path, monkeypatch, http_server):
     url = _url(http_server())
-    _write_config(tmp_path, monkeypatch, f"[mcp_servers.web]\nurl = {_toml_str(url)}\n")
+    _write_config(
+        tmp_path,
+        monkeypatch,
+        f"[mcp_servers.web]\nurl = {_toml_str(url)}\ntrust = 'full'\n",
+    )
     from sk.tools import approval_tools, dispatch_tool, tools_schema
 
     names = {e["function"]["name"] for e in tools_schema()}
@@ -262,7 +267,11 @@ def test_dispatch_end_to_end_url(tmp_path, monkeypatch, http_server):
 
 def test_cli_mcp_servers_url(tmp_path, monkeypatch, http_server):
     url = _url(http_server())
-    _write_config(tmp_path, monkeypatch, f"[mcp_servers.web]\nurl = {_toml_str(url)}\n")
+    _write_config(
+        tmp_path,
+        monkeypatch,
+        f"[mcp_servers.web]\nurl = {_toml_str(url)}\ntrust = 'full'\n",
+    )
     from typer.testing import CliRunner
 
     from sk.cli import app

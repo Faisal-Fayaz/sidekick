@@ -1,4 +1,6 @@
-export const VERSION = '0.26.0';
+// Injected from src/sk/__init__.py by vite.config.ts — never edit by hand (#323).
+declare const __SIDEKICK_VERSION__: string;
+export const VERSION = __SIDEKICK_VERSION__;
 export const PACKAGE_NAME = 'sidekick-agent';
 export const REPO_URL = 'https://github.com/Faisal-Fayaz/sidekick';
 export const PYPI_URL = 'https://pypi.org/project/sidekick-agent/';
@@ -261,7 +263,7 @@ export const COMPARISON: { label: string; sidekick: string; typical: string }[] 
   { label: 'Copy/paste that works in-terminal', sidekick: 'drag-select, ctrl+y, /copy', typical: 'varies' },
   { label: 'Answers grounded in your system', sidekick: 'deterministic grounding', typical: 'prompt-only' },
   { label: 'Readable skill packs (SKILL.md)', sidekick: 'yes', typical: 'varies' },
-  { label: '780-test suite incl. evals', sidekick: 'yes', typical: 'rare' },
+  { label: 'Offline test suite incl. prompt-regression evals', sidekick: 'yes', typical: 'rare' },
 ];
 
 export const TUI_KEYS = [

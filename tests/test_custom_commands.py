@@ -1,6 +1,7 @@
 """Custom slash commands tests (fixes #153): parse/render, precedence,
 builtin wins, slash dispatch, help, autocomplete. Fully offline."""
 
+import pytest
 import sk.custom_commands as cc
 import sk.slash as slash
 import sk.store as store
@@ -84,13 +85,46 @@ def test_missing_dirs_empty(tmp_path, monkeypatch):
 
 
 def test_project_beats_global(tmp_path, monkeypatch):
+    """Project commands only load when the user opted in (closes #287)."""
     cfgdir = _iso(tmp_path, monkeypatch)
     proj = tmp_path / "proj"
     (proj / ".sidekick" / "commands").mkdir(parents=True)
     monkeypatch.chdir(proj)
     _write(cfgdir / "commands", "d.md", "global version {{args}}")
     _write(proj / ".sidekick" / "commands", "d.md", "project version {{args}}")
+    # Untrusted repo: the project template is invisible, the global one loads.
+    monkeypatch.delenv(cc.TRUST_REPO_ENV, raising=False)
+    assert cc.render_custom_command("d", "go") == "global version go"
+    # Opted in from the outer environment: project template wins on name clash.
+    monkeypatch.setenv(cc.TRUST_REPO_ENV, "1")
     assert cc.render_custom_command("d", "go") == "project version go"
+
+
+def test_project_command_shell_needs_trust(tmp_path, monkeypatch):
+    """A repo-supplied !`cmd` must not reach sh -c without an explicit opt-in."""
+    _iso(tmp_path, monkeypatch)
+    proj = tmp_path / "proj"
+    (proj / ".sidekick" / "commands").mkdir(parents=True)
+    monkeypatch.chdir(proj)
+    marker = proj / "pwned"
+    _write(proj / ".sidekick" / "commands", "x.md", f"ok !`touch {marker}`")
+    monkeypatch.delenv(cc.TRUST_REPO_ENV, raising=False)
+    cc.render_custom_command("x", "")
+    assert not marker.exists(), "untrusted repo command executed"
+    monkeypatch.setenv(cc.TRUST_REPO_ENV, "1")
+    cc.render_custom_command("x", "")
+    assert marker.exists()
+
+
+@pytest.mark.parametrize("val", ["", "0", "true", "yes", "2"])
+def test_trust_repo_flag_is_exact(tmp_path, monkeypatch, val):
+    _iso(tmp_path, monkeypatch)
+    proj = tmp_path / "proj"
+    (proj / ".sidekick" / "commands").mkdir(parents=True)
+    monkeypatch.chdir(proj)
+    _write(proj / ".sidekick" / "commands", "y.md", "hi")
+    monkeypatch.setenv(cc.TRUST_REPO_ENV, val)
+    assert cc.list_custom_commands() == []
 
 
 def test_builtin_collision_excluded_and_warned(tmp_path, monkeypatch):
