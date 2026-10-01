@@ -93,9 +93,18 @@ def test_project_traffic_selectors_refused(tmp_path, monkeypatch):
     assert any("approved_commands" in w for w in cfg.project_warnings)
 
 
-def test_allowed_and_blocked_project_keys_disjoint():
-    """Structural guard: the two lists can never silently overlap."""
-    assert not set(config_mod.PROJECT_ALLOWED_KEYS) & set(config_mod.PROJECT_BLOCKED_KEYS)
+def test_project_top_level_consumes_nothing():
+    """A project file's top level contributes no settings at all (#349).
+
+    Structural guard, not a snapshot: PROJECT_ALLOWED_KEYS was an empty tuple
+    that was iterated and overlap-checked, which read like a live extension
+    point. Someone adding a key there would have believed project files honoured
+    it. Now any key consumed at the top level must be justified explicitly.
+    """
+    consumed = config_mod._PROJECT_CONSUMED
+    assert consumed == set(config_mod.PROJECT_BLOCKED_KEYS) | set(
+        config_mod.PROJECT_POLICY_KEYS
+    ) | {"project"}, "a project file must contribute nothing from its top level"
 
 
 def test_sensitive_keys_ignored_with_warning(tmp_path, monkeypatch):
@@ -244,3 +253,58 @@ def test_config_show_warnings(tmp_path, monkeypatch):
     res = CliRunner().invoke(app, ["config", "--show"])
     assert res.exit_code == 0, res.output
     assert "api_key" in res.output
+
+
+# --- ignored keys are reported, not dropped quietly (#349) ------------------
+
+
+def test_unrecognised_project_key_warns(tmp_path, monkeypatch):
+    """A typo must not look like a setting that took effect."""
+    _iso_home(tmp_path, monkeypatch)
+    (tmp_path / ".sidekick.toml").write_text("max_step = 10\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    cfg = config_mod.Config.load()
+    assert any("max_step" in w and "not a project-file setting" in w for w in cfg.project_warnings)
+
+
+def test_global_only_key_still_gets_the_specific_reason(tmp_path, monkeypatch):
+    """The existing, more useful message must not be replaced by the generic one."""
+    _iso_home(tmp_path, monkeypatch)
+    (tmp_path / ".sidekick.toml").write_text("provider = 'openai'\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    cfg = config_mod.Config.load()
+    assert any("provider" in w and "global config or env only" in w for w in cfg.project_warnings)
+    assert not any(
+        "provider" in w and "not a project-file setting" in w for w in cfg.project_warnings
+    )
+
+
+def test_honoured_project_table_never_warns(tmp_path, monkeypatch):
+    """[project].docs and memory_namespace are supported and must be quiet."""
+    _iso_home(tmp_path, monkeypatch)
+    (tmp_path / ".sidekick.toml").write_text(
+        "[project]\ndocs = ['README.md']\nmemory_namespace = 'ns'\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    cfg = config_mod.Config.load()
+    assert cfg.project_docs == ("README.md",) and cfg.memory_namespace == "ns"
+    assert not [w for w in cfg.project_warnings if "project" in w]
+
+
+def test_readme_does_not_claim_top_level_project_keys():
+    """The README and website once advertised provider/model/max_steps/temperature
+    as project-file settings; all four are refused (#349). Cheap guard against the
+    docs drifting back into lying about a security control."""
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for rel in ("README.md", "website/src/pages/Docs.tsx"):
+        text = (root / rel).read_text(encoding="utf-8")
+        # find the per-project config paragraph and assert it disclaims the top level
+        m = re.search(r"[Pp]er-project config.{0,600}", text, re.S)
+        assert m, f"per-project config section not found in {rel}"
+        para = m.group(0)
+        assert "project" in para.lower()
+        bad = re.search(r"may set[^.]*?(provider|model|max_steps|temperature)", para)
+        assert not bad, f"{rel} still claims a project file may set {bad.group(1) if bad else ''}"
