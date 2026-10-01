@@ -99,6 +99,7 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Memory & Todos', cmd: 'SIDEKICK.md · AGENTS.md auto-load', what: 'Repo conventions injected root-down; /init scaffolds them.' },
   { group: 'Memory & Todos', cmd: 'sk todo add / list / done / clear', what: 'Persistent todos surfaced in briefs.' },
   { group: 'Memory & Todos', cmd: 'sk search QUERY [--session S]', what: 'Full-text search across past transcripts.' },
+  { group: 'Memory & Todos', cmd: 'sk egress [list|allow HOST|deny HOST|test URL]', what: 'Egress policy: deny-by-default allowlist for what the model fetches.' },
   { group: 'Memory & Todos', cmd: 'sk audit [--session S] [--format md|json]', what: 'Compliance log: tool runs, approve/deny, local-vs-egress.' },
   { group: 'Memory & Todos', cmd: 'sk stats [--session S] [--format md|json]', what: 'Usage + cost estimates from audit rows.' },
   { group: 'Skills & Daemon', cmd: 'sk skills · skills-search · skills-install NAME', what: 'SKILL.md packs incl. registry + superpowers.' },
@@ -263,6 +264,7 @@ export const COMPARISON: { label: string; sidekick: string; typical: string }[] 
   { label: 'Copy/paste that works in-terminal', sidekick: 'drag-select, ctrl+y, /copy', typical: 'varies' },
   { label: 'Answers grounded in your system', sidekick: 'deterministic grounding', typical: 'prompt-only' },
   { label: 'Readable skill packs (SKILL.md)', sidekick: 'yes', typical: 'varies' },
+  { label: 'Deny-by-default egress for what the model fetches (sk egress, logged)', sidekick: 'yes', typical: 'no' },
   { label: 'Offline test suite incl. prompt-regression evals', sidekick: 'yes', typical: 'rare' },
 ];
 

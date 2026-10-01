@@ -64,6 +64,7 @@ PROJECT_BLOCKED_KEYS = (
     "max_steps",
     "temperature",
     "history_budget_tokens",
+    "egress_allow",
 )
 # Policy keys a project file may not set either (warned, not security-critical).
 PROJECT_POLICY_KEYS = ("spend_cap_usd",)
@@ -248,6 +249,29 @@ def _parse_mcp_servers(raw: object) -> tuple[dict, ...]:
                 "inherit_env": _parse_inherit_env(spec.get("inherit_env")),
             }
         )
+    return tuple(out)
+
+
+_EGRESS_BLOCKED_FORMS = ("*", "**", "0.0.0.0/0", "::/0")
+
+
+def _parse_egress_allow(raw: object) -> tuple[str, ...]:
+    """Normalise the egress allowlist. Drops unusable entries; never raises.
+
+    A bare `*` is refused rather than honoured: an allow-everything entry is a
+    footgun that looks exactly like a narrow rule in a config file, and it would
+    silently turn the whole control off. Hosts are lowercased; entries keep a
+    leading `*.` for suffix matching.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    out: list[str] = []
+    for item in raw:
+        host = str(item).strip().lower().rstrip(".")
+        if not host or host in _EGRESS_BLOCKED_FORMS:
+            continue
+        if host not in out:
+            out.append(host)
     return tuple(out)
 
 
@@ -585,6 +609,10 @@ class Config:
     project_docs: tuple[str, ...] = ()
     memory_namespace: str = ""
     approved_commands: tuple[str, ...] = ()
+    # Destinations the MODEL may cause us to fetch (read_url / web_search /
+    # image downloads). Empty = no network. Global/env only: a repo must not be
+    # able to widen its own egress (#328).
+    egress_allow: tuple[str, ...] = ()
     project_warnings: tuple[str, ...] = ()
     profile: str = ""  # active profile name (SIDEKICK_PROFILE / --profile), else ""
     mcp_servers: tuple[dict, ...] = ()  # global config file only; never from projects
@@ -692,6 +720,7 @@ class Config:
             project_docs=tuple(vals.get("project_docs", [])),  # type: ignore[arg-type]
             memory_namespace=str(vals.get("memory_namespace", "")),
             approved_commands=tuple(file_vals.get("approved_commands", []) or ()),  # type: ignore[arg-type]
+            egress_allow=_parse_egress_allow(file_vals.get("egress_allow", [])),
             project_warnings=tuple(project_warnings),
             mcp_servers=_parse_mcp_servers(file_vals.get("mcp_servers", {})),
             hooks=_parse_hooks(file_vals.get("hooks", {})),
@@ -756,6 +785,7 @@ class Config:
             "history_budget_tokens": self.history_budget_tokens,
             "spend_cap_usd": self.spend_cap_usd,
             "reasoning_effort": self.reasoning_effort,
+            "egress_allow": list(self.egress_allow),
         }
         if _HAS_TOMLI_W:
             with open(target, "wb") as f:
@@ -767,6 +797,9 @@ class Config:
                     return "true" if v else "false"
                 if isinstance(v, str):
                     return f'"{v}"'
+                if isinstance(v, (list, tuple)):
+                    # a bare `{v}` would emit Python repr — invalid TOML
+                    return "[" + ", ".join(_toml(x) for x in v) + "]"
                 return f"{v}"
 
             lines = [f"{k} = {_toml(v)}" for k, v in data.items()]

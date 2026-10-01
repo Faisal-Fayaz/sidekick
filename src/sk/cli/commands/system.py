@@ -8,6 +8,7 @@ import typer
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+import sk.store as store
 from sk.agent import run_agent
 from sk.config import Config
 from sk.store import get_history, save_message
@@ -1160,3 +1161,102 @@ def brief(
         )
         console.print()
         console.print("[dim]--- done ---[/dim]")
+
+
+# --- egress policy (#328) ----------------------------------------------------
+
+
+@app.command()
+def egress(
+    action: str = typer.Argument("list", help="list | allow HOST | deny HOST | test URL"),
+    host: str = typer.Argument("", help="Host (for allow/deny) or full URL (for test)"),
+):
+    """Egress policy: which destinations the model may make us fetch.
+
+    Deny by default. An empty allowlist means no network for `read_url`,
+    `web_search` or image downloads — the provider endpoint and your configured
+    MCP servers are unaffected, since you chose those yourself.
+    """
+    from sk.egress import check
+
+    cfg = Config.load()
+    allowed = list(cfg.egress_allow or ())
+    verb = (action or "list").strip().lower()
+
+    if verb == "allow":
+        h = (host or "").strip().lower()
+        if not h:
+            console.print("[red]Usage: sk egress allow example.com[/red]")
+            raise typer.Exit(1)
+        h = h.replace("https://", "").replace("http://", "").split("/")[0].strip().rstrip(".")
+        if h in ("*", "**"):
+            console.print(
+                "[red]Refusing a bare `*`.[/red] An allow-everything entry reads like a\n"
+                "  narrow rule in a config file but disables the control entirely.\n"
+                "  Add the specific hosts you trust, or `*.example.com` for a whole domain."
+            )
+            raise typer.Exit(1)
+        if h in allowed:
+            console.print(f"[dim]already allowed: {h}[/dim]")
+            return
+        allowed.append(h)
+        cfg.egress_allow = tuple(allowed)
+        cfg.save()
+        console.print(f"[green]allowed[/green] {h}  [dim]({len(allowed)} hosts)[/dim]")
+        return
+
+    if verb == "deny":
+        h = (host or "").strip().lower()
+        if h not in allowed:
+            console.print(f"[dim]not in the allowlist: {h or '(nothing given)'}[/dim]")
+            return
+        allowed.remove(h)
+        cfg.egress_allow = tuple(allowed)
+        cfg.save()
+        console.print(f"[red]denied[/red] {h}  [dim]({len(allowed)} hosts)[/dim]")
+        return
+
+    if verb == "test":
+        if not (host or "").strip():
+            console.print("[red]Usage: sk egress test https://example.com[/red]")
+            raise typer.Exit(1)
+        reason = check(host, tuple(allowed))
+        if reason:
+            console.print(f"[red]blocked[/red] {host} — {reason}")
+        else:
+            console.print(f"[green]allowed[/green] {host}")
+        return
+
+    if verb != "list":
+        console.print(f"[red]unknown action '{action}' — use list | allow | deny | test[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[bold]egress allowlist[/] — {len(allowed)} host(s). "
+        + (
+            "[green]network is open to these destinations[/green]"
+            if allowed
+            else "[red]EMPTY — read_url / web_search / image downloads are all blocked[/red]"
+        )
+    )
+    for h in allowed:
+        console.print(f"  [cyan]•[/cyan] {h}")
+    if not allowed:
+        console.print(
+            "\n[dim]Allow one when a fetch is refused:[/dim]\n"
+            "  sk egress allow example.com\n"
+            "  sk egress allow '*.example.com'"
+        )
+
+    rows = store.egress_summary()
+    if rows:
+        console.print("\n[bold]decisions in the ledger[/]")
+        for r in rows[:15]:
+            mark = "[red]deny [/red]" if r["denied"] else "[green]allow[/green]"
+            n_allow, n_deny = r["allowed"], r["denied"]
+            console.print(f"  {mark} {r['host']}  [dim]allow={n_allow} deny={n_deny}[/dim]")
+            for reason in r["reasons"][:2]:
+                console.print(f"         [dim]{reason}[/dim]")
+    console.print(
+        "\n[dim]Covers tool-mediated fetches only. A shell command running curl is not governed.[/dim]"
+    )

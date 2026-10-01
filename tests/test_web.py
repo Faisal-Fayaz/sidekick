@@ -1,7 +1,14 @@
 """Web fetch tests: guard rails offline + parsing; one live check is opt-in."""
 
+import pytest
+
 from sk.agent import _auto_web_context
 from sk.tools import _html_to_text, _url_blocked, dispatch_tool, tool_read_url, tool_web_search
+
+# These tests fake HTTP to exercise redirect/SSRF logic; they need the
+# egress policy to say yes to the public decoy hosts. Deny-by-default
+# (#328) would otherwise short-circuit every case here.
+pytestmark = pytest.mark.usefixtures("egress_test_hosts")
 
 
 def test_block_private():

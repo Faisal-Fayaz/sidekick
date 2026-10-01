@@ -259,14 +259,19 @@ def _fetch_with_redirects(
     params: dict | None = None,
     context: str = "fetching",
 ) -> tuple[Any, str]:
-    """GET with a manual redirect chain: initial URL + every hop re-validated
-    against the SSRF guard (httpx auto-follow would fetch targets unchecked).
+    """GET with a manual redirect chain. Every hop passes two gates:
 
-    Each hop is guard-checked twice in immediate succession (see
-    _url_blocked_twice): DNS must answer consistently or the fetch refuses.
+    1. the egress allowlist — deny by default, governs what the *model* may make
+       us fetch (#328);
+    2. the SSRF guard, asked twice in immediate succession
+       (`_url_blocked_twice`) so DNS must answer consistently.
 
-    Returns (response, "") or (None, error). params go on the first request
-    only; redirect hops carry their own URLs. Never raises.
+    Order matters: the allowlist runs first because it is free, needs no DNS, and
+    produces the actionable message a user actually needs. httpx auto-follow is
+    never used, so no hop escapes either gate.
+
+    Returns (response, "") or (None, error). params go on the first request only;
+    redirect hops carry their own URLs. Never raises.
     """
     from urllib.parse import urljoin
 
@@ -274,6 +279,21 @@ def _fetch_with_redirects(
         import httpx
     except Exception as e:
         return None, f"Error {context}: {e}"
+
+    # gate 1: egress policy
+    from ..egress import check as _egress_check
+    from ..egress import hint as _egress_hint
+    from ..egress import record as _egress_record
+
+    deny = _egress_check(url)
+    _egress_record(context, url, deny)
+    if deny:
+        return None, (
+            f"Error: egress blocked — {deny}. "
+            f"Allow it with `{_egress_hint(url)}` if you trust that destination."
+        )
+
+    # gate 2: SSRF
     blocked = _url_blocked_twice(url)
     if blocked:
         return None, blocked
@@ -299,6 +319,7 @@ def _fetch_with_redirects(
                 return None, "Error: too many redirects (max 3)."
         if r is None:
             return None, "Error: fetch failed."
+        _egress_record(context, current, None)
         return r, ""
     except Exception as e:
         return None, f"Error {context}: {str(e)[:300]}"

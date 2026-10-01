@@ -1,7 +1,15 @@
 """JS-capable extraction tests (fixes #182): JSON-LD, __NEXT_DATA__, meta
 fallbacks, pipeline wiring with mocked HTTP. Fully offline."""
 
+import pytest
+
 from sk.tools.web import extract_embedded_text, tool_read_url
+
+# These tests fake HTTP to exercise redirect/SSRF logic; they need the
+# egress policy to say yes to the public decoy hosts. Deny-by-default
+# (#328) would otherwise short-circuit every case here.
+pytestmark = pytest.mark.usefixtures("egress_test_hosts")
+
 
 NEXT_PAGE = """<html><head><title>Blog</title>
 <script id="__NEXT_DATA__" type="application/json">{"props": {"pageProps": {
