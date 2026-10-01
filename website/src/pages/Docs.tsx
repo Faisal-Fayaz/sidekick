@@ -208,11 +208,13 @@ export default function Docs() {
             {inline('sk run --plan')} plans one-shot.
           </p>
           <p>
-            <b>Per-project config:</b> a {inline('.sidekick.toml')} in any repo layers over the global file. It
-            may set {inline('provider')}, {inline('model')}, {inline('max_steps')}, {inline('temperature')},
-            plus a {inline('[project]')} table. {inline('api_key')}/{inline('base_url')} are{' '}
-            <i>never</i> read from project files — {inline('sk config --show')} prints the active project and any
-            ignored keys. {inline('sk --cwd PATH')} runs any command as if in that directory.
+            <b>Per-project config:</b> a {inline('.sidekick.toml')} in any repo layers over the global file.
+            It may carry a {inline('[project]')} table only — {inline('docs')} and {inline('memory_namespace')}.
+            {' '}<i>Nothing</i> at the top level is honoured, not {inline('provider')}, {inline('model')},{' '}
+            {inline('max_steps')} or {inline('temperature')}: a repo you just cloned must not be able to steer
+            the agent's model, budget, approvals or network. Ignored keys are reported by{' '}
+            {inline('sk config --show')}, so a reduced {inline('max_steps')} reads as a refusal, not tuning.{' '}
+            {inline('sk --cwd PATH')} runs any command as if in that directory.
           </p>
 
           <h2 id="safety">Safety</h2>

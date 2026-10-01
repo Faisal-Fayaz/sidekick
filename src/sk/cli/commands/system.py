@@ -590,7 +590,9 @@ def config(
         if cfg.project_note():
             console.print(f"[dim]{cfg.project_note()}[/dim]")
         for w in cfg.project_warnings:
-            console.print(f"[yellow]! {w}[/yellow]")
+            # `\[` escapes a literal bracket: warning text mentions `[project]`,
+            # which Rich would otherwise swallow as a style tag
+            console.print("[yellow]! " + w.replace("[", r"\[") + "[/yellow]")
 
 
 @app.command()

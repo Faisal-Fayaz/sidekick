@@ -71,13 +71,20 @@ PROJECT_POLICY_KEYS = ("spend_cap_usd",)
 # beyond entering the directory (closes #296). It now lives as a top-level
 # key in the global config only.
 PROJECT_BLOCKED_SUBKEYS = (("project", "approved_commands"),)
-# Top-level keys a project file may set. Empty by design: everything a project
-# file could previously set is either a trust-entering key or has moved under
-# `[project]` as `docs` / `memory_namespace`. Adding a non-trust-entering key
-# here is fine; adding one that grants authority is not.
-PROJECT_ALLOWED_KEYS: tuple[str, ...] = ()
-assert not set(PROJECT_ALLOWED_KEYS) & set(PROJECT_BLOCKED_KEYS), (
-    "PROJECT_ALLOWED_KEYS and PROJECT_BLOCKED_KEYS overlap"
+# A project file contributes nothing from its top level. Not a limitation left
+# over from #299 — it is the design: a repo must not be able to steer the agent's
+# model, budget, or network. Only the [project] table is honoured.
+#
+# This was previously an (empty) PROJECT_ALLOWED_KEYS tuple, iterated on load
+# and guarded by an assert against overlap. Dead scaffolding: it read like an
+# extension point, and the obvious next step was to add a key to it and believe
+# project files would honour it. The empty case is now stated directly. (#349)
+#
+# _PROJECT_CONSUMED is what the loader actually reads, used to warn about
+# everything else. If a key ever becomes genuinely safe for a repo to set, add
+# it here with a comment saying why a hostile repo cannot abuse it.
+_PROJECT_CONSUMED: frozenset[str] = frozenset(
+    set(PROJECT_BLOCKED_KEYS) | set(PROJECT_POLICY_KEYS) | {"project"}
 )
 
 
@@ -355,15 +362,23 @@ def load_project_values(path: str | Path | None) -> tuple[dict[str, object], lis
     if not isinstance(raw, dict):
         return ({}, [f"ignoring malformed {path}: top level must be a table"])
     vals: dict[str, object] = {}
-    for key in PROJECT_ALLOWED_KEYS:
-        if key in raw:
-            vals[key] = raw[key]
     for key in PROJECT_BLOCKED_KEYS:
         if key in raw:
             warnings.append(f"ignoring {key} in {path} (global config or env only)")
     for key in PROJECT_POLICY_KEYS:
         if key in raw:
             warnings.append(f"ignoring {key} in {path} (spend policy is global/env only)")
+    # Anything else at the top level is ignored too, and used to say nothing
+    # about it. Silence reads as "accepted", so a typo or a plausible-but-
+    # global-only key gave the user a project file that silently did nothing —
+    # with a reduced max_steps looking like deliberate tuning. Warn on all of it.
+    for key in raw:
+        if key in _PROJECT_CONSUMED:
+            continue
+        warnings.append(
+            f"ignoring {key} in {path} (not a project-file setting; "
+            f"project files only carry a [project] table)"
+        )
     proj = raw.get("project", {})
     if isinstance(proj, dict):
         for table, key in PROJECT_BLOCKED_SUBKEYS:

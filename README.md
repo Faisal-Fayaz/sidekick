@@ -246,7 +246,27 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 **History budget:** `history_budget_tokens` (default 3000) caps per-turn history; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
 
-**Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may set `provider`, `model`, `max_steps`, `temperature`, plus a `[project]` table (`docs` files injected into the prompt, `memory_namespace`, `approved_commands` for `shell`). `api_key`/`base_url` are *never* read from project files (global/env only) — `sk config --show` prints the active project and any ignored keys. `sk --cwd PATH` runs any command as if in that directory.
+**Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may carry a `[project]` table only:
+
+```toml
+[project]
+docs = ["CONTRIBUTING.md", "docs/architecture.md"]  # injected into the prompt
+memory_namespace = "my-repo"                        # scopes this repo's memory
+```
+
+**Nothing at the top level of a project file is honoured** — not `provider`, `model`, `max_steps`, `temperature`, `egress_allow`, or anything else. That is deliberate, not a gap: a repository you just cloned must not be able to steer the agent's model, budget, approvals, or network, so those keys live in `~/.sidekick/config.toml` or the environment only. The same applies to `[project].approved_commands` (shell approvals stay global).
+
+Every ignored key is reported rather than dropped quietly — a reduced `max_steps` in a project file is a *refusal*, not tuning, and it should not look otherwise:
+
+```console
+$ sk config --show
+provider=ollama
+project: /home/me/repo/.sidekick.toml
+  ignoring max_steps in .sidekick.toml (global config or env only)
+  ignoring max_step in .sidekick.toml (not a project-file setting; …)
+```
+
+`sk --cwd PATH` runs any command as if in that directory.
 
 **Project memory auto-discovery:** from the cwd upward, the first `SIDEKICK.md` / `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` found (root-down) is injected into the prompt automatically — no config needed for repos that already document themselves.
 
