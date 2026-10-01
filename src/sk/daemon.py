@@ -8,7 +8,12 @@ import subprocess
 import time
 from pathlib import Path
 
+from sk.atomic import atomic_write_text, quarantine
+
 STATE_PATH = Path.home() / ".sidekick" / "daemon.json"
+
+# Set by load_state() when the file existed but could not be read (#316).
+_LAST_STATE_ERROR = ""
 NUDGES_LOG = Path.home() / ".sidekick" / "nudges.log"
 
 UNIT_NAME = "sidekick-daemon.service"
@@ -497,15 +502,42 @@ def remove_unit(path: Path | None = None, timer: Path | None = None) -> str:
 
 
 def load_state() -> dict:
+    """Daemon state. Never raises.
+
+    A corrupt state file used to silently reset last_shell_id to 0, which
+    re-fires every nudge the daemon thinks it has already sent (#316). The file
+    is moved aside instead of discarded, and the reason recorded.
+    """
+    global _LAST_STATE_ERROR
+    default = {"last_shell_id": 0, "last_run": 0}
     try:
-        return json.loads(STATE_PATH.read_text())
-    except Exception:
-        return {"last_shell_id": 0, "last_run": 0}
+        data = json.loads(STATE_PATH.read_text())
+    except FileNotFoundError:
+        _LAST_STATE_ERROR = ""
+        return default
+    except Exception as e:
+        moved = quarantine(STATE_PATH, "daemon-state")
+        _LAST_STATE_ERROR = f"daemon state was unreadable ({e})" + (
+            f"; moved aside to {moved.name}" if moved else ""
+        )
+        return default
+    if not isinstance(data, dict):
+        moved = quarantine(STATE_PATH, "daemon-state")
+        _LAST_STATE_ERROR = "daemon state did not contain an object" + (
+            f"; moved aside to {moved.name}" if moved else ""
+        )
+        return default
+    _LAST_STATE_ERROR = ""
+    return data
+
+
+def last_state_error() -> str:
+    """Why the last load_state() fell back to defaults, if it was not absent."""
+    return _LAST_STATE_ERROR
 
 
 def save_state(state: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state))
+    atomic_write_text(STATE_PATH, json.dumps(state))
 
 
 def disk_use_pct() -> int | None:

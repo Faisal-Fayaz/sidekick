@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from sk.atomic import atomic_write_text
+
 try:
     import tomllib  # py3.11+
 except ImportError:  # pragma: no cover
@@ -650,12 +652,8 @@ def _merge_scalars(existing: str, managed: dict) -> str:
 
 
 def _write_toml_preserving(target: Path, existing: str, managed: dict) -> None:
-    """Write via a temp file and rename, so an interrupted save cannot truncate
-    the user's config (#347: losing mcp_servers/hooks was already bad enough)."""
-    text = _merge_scalars(existing, managed)
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(target)
+    """Merge, then write atomically (#316 shares the helper with every other sink)."""
+    atomic_write_text(target, _merge_scalars(existing, managed))
 
 
 DEFAULTS: dict[str, str | int | float] = {
