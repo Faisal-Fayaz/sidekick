@@ -6,6 +6,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from ..procutil import run_bounded
+
 ALLOWED_BINARIES = {
     "ls",
     "pwd",
@@ -154,14 +156,17 @@ def tool_exec(cmd: str, timeout: int = 15) -> str:
         return f"Error: {checked}"
     _, argv = checked
     try:
-        res = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        res = run_bounded(argv, timeout=timeout)
         out = (res.stdout or "") + (("\n[stderr]\n" + res.stderr) if res.stderr else "")
         out = out.strip() or "(no output)"
         if len(out) > 6000:
             out = out[:6000] + "\n... [truncated]"
+        if res.overflowed:
+            # killed, not merely cut off: say so, the exit code will be -9
+            out += "\n... [output cap reached — the process was killed]"
+        elif res.timed_out:
+            return f"Error: timed out after {timeout}s"
         return f"$ {cmd}\n[exit {res.returncode}]\n{out}"
-    except subprocess.TimeoutExpired:
-        return f"Error: timed out after {timeout}s"
     except Exception as e:
         return f"Error: {e}"
 

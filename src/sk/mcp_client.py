@@ -143,6 +143,64 @@ def _safe_env(explicit: dict | None = None, patterns: tuple | list = ()) -> dict
     return out
 
 
+_MAX_MCP_LINE_BYTES = 1 << 20  # 1 MiB; _content_text cuts to 8000 anyway
+
+
+def _iter_bounded_lines(stream, max_bytes: int, chunk: int = 65536):
+    """Yield newline-delimited **bytes**, buffering at most `max_bytes`.
+
+    Iterating a pipe with `for line in stream` is unbounded: readline keeps
+    accumulating until it finds a newline, so a server emitting one huge line
+    with no `\n` — or simply flooding — allocates until the process dies. The
+    8000-char cap in `_content_text` applies only *after* the line is fully
+    read, so it never bounded this (#315).
+
+    An oversized line is dropped and the rest of it skipped, so the stream
+    resynchronises at the next newline instead of staying wedged.
+
+    Uses read1(), not read(): on a live pipe `read(n)` blocks until it has n
+    bytes or EOF, so a server's short reply would not be seen until it hung up
+    — the server is waiting for our next request, so that is a deadlock rather
+    than a slow read.
+    """
+    buf = bytearray()
+    dropping = False
+    reader = getattr(stream, "read1", None) or stream.read
+    while True:
+        try:
+            data = reader(chunk)
+        except Exception:
+            break
+        if not data:
+            break
+        start = 0
+        while True:
+            nl = data.find(b"\n", start)
+            if nl < 0:
+                seg = data[start:]
+                if dropping:
+                    break
+                buf += seg
+                if len(buf) > max_bytes:
+                    buf.clear()
+                    dropping = True
+                break
+            if dropping:
+                # newline ends the oversized line: resync, do not emit it
+                dropping = False
+                start = nl + 1
+                continue
+            buf += data[start:nl]
+            start = nl + 1
+            if len(buf) > max_bytes:
+                buf.clear()
+                continue
+            yield bytes(buf)
+            buf.clear()
+    if buf and not dropping:
+        yield bytes(buf)
+
+
 class MCPClient:
     """One stdio MCP server process. Call via `with` or connect()/close()."""
 
@@ -193,8 +251,10 @@ class MCPClient:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 env=full_env,
-                text=True,
-                bufsize=1,
+                # Binary pipes, not text: a bounded reader needs read1(), and
+                # TextIOWrapper has no read1 — only the BufferedReader under it
+                # does. Text mode also forced `for line in stream`, which is
+                # the unbounded read this replaced (#315).
             )
         except Exception as e:
             raise RuntimeError(f"cannot spawn: {e}")
@@ -272,7 +332,7 @@ class MCPClient:
                 if proc is None or proc.stdin is None:
                     raise RuntimeError("not connected")
                 try:
-                    proc.stdin.write(json.dumps(payload) + "\n")
+                    proc.stdin.write((json.dumps(payload) + "\n").encode())
                     proc.stdin.flush()
                 except Exception as e:
                     raise RuntimeError(f"write failed: {e}")
@@ -290,8 +350,8 @@ class MCPClient:
             stream = proc.stdout if proc is not None else None
             if stream is None:
                 return
-            for line in stream:
-                line = line.strip()
+            for raw in _iter_bounded_lines(stream, _MAX_MCP_LINE_BYTES):
+                line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
                 try:
@@ -336,6 +396,31 @@ def _origin(url: str) -> tuple[str, str, int]:
 
 def _same_origin(a: str, b: str) -> bool:
     return _origin(a) == _origin(b)
+
+
+_MAX_HTTP_BYTES = 8 << 20  # 8 MiB for one JSON-RPC response
+
+
+def _guard_response_size(resp, limit: int = _MAX_HTTP_BYTES) -> None:
+    """Refuse an oversized MCP response instead of parsing it. Raises RuntimeError.
+
+    `client.post` buffers the whole body, so this is a ceiling on what the HTTP
+    client will accept rather than a streaming bound (#315). Content-Length is
+    checked first because that rejects before anything is buffered; the
+    post-hoc length check covers a chunked response, which httpx has already
+    read by the time we can see it — the read is bounded by the operator's own
+    URL and the request timeout, not by this limit.
+    """
+    raw = resp.headers.get("content-length", "")
+    if raw.strip().isdigit() and int(raw) > limit:
+        raise RuntimeError(f"response too large ({raw} bytes > {limit}) — refusing")
+    try:
+        if len(resp.content) > limit:
+            raise RuntimeError(f"response too large (>{limit} bytes) — refusing")
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
 
 
 class MCPHttpClient:
@@ -479,6 +564,7 @@ class MCPHttpClient:
             raise RuntimeError(f"timed out after {timeout:g}s")
         except Exception as e:
             raise RuntimeError(f"request failed: {e}")
+        _guard_response_size(resp)
         sid = resp.headers.get("mcp-session-id")
         if sid:
             self._session_id = sid
@@ -510,6 +596,7 @@ class MCPHttpClient:
                 )
             finally:
                 self.headers = saved
+            _guard_response_size(resp)
             sid = resp.headers.get("mcp-session-id")
             if sid:
                 self._session_id = sid
