@@ -18,15 +18,26 @@ def _ctx(tmp_path, monkeypatch):
 
 
 def test_config_file_untouched(tmp_path, monkeypatch):
-    from pathlib import Path
+    """/model writes the *isolated* config, never the user's real one.
 
-    real = Path.home() / ".sidekick" / "config.toml"
-    before = real.read_bytes() if real.exists() else None
+    Previously read `Path.home() / ".sidekick" / "config.toml"` — the live user
+    file. On a machine with no ~/.sidekick it silently passed as `None == None`,
+    and on a machine with one it depended on real local state (#321).
+    """
+    import sk.config as config_mod
+
+    # a decoy at the real HOME: if anything escapes the fixture it shows up here
+    decoy = tmp_path / "real-home" / ".sidekick" / "config.toml"
+    decoy.parent.mkdir(parents=True)
+    decoy.write_text("SENTINEL = 'untouched'")
+    monkeypatch.setenv("HOME", str(tmp_path / "real-home"))
+
     c = _ctx(tmp_path, monkeypatch)
     slash.handle("/model smart", session=c["session"], cfg=c["cfg"], state=c["state"])
-    after = real.read_bytes() if real.exists() else None
-    assert before == after
-    assert (tmp_path / ".sidekick" / "config.toml").exists()
+
+    assert decoy.read_text() == "SENTINEL = 'untouched'", "wrote to the real HOME"
+    assert config_mod.CONFIG_PATH.exists(), "did not write the isolated config"
+    assert config_mod.CONFIG_PATH != decoy
 
 
 def test_passthrough(tmp_path, monkeypatch):

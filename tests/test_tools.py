@@ -68,15 +68,35 @@ def test_parse_text_tool():
     assert _parse_text_tool("just a normal answer") is None
 
 
-def test_auto_context_injects(tmp_path):
-    d = tmp_path / "proj"
-    d.mkdir()
+def test_auto_context_injects(tmp_path, monkeypatch):
+    """Grounding actually injects, for both spellings it claims to handle.
+
+    Previously this asserted only `isinstance(..., str)`, which passes whatever
+    the function returns, and carried the author's home directory in a comment
+    (#321). Both spellings are exercised here against a monkeypatched HOME, so
+    the expectation does not depend on who runs the suite.
+    """
+    import sk.agent as agent_mod
+
+    home = tmp_path / "home"
+    d = home / "proj"
+    d.mkdir(parents=True)
     (d / "README.md").write_text("hello-scope")
-    ctx = _auto_local_context(f"check ~/{d.name} please")
-    # direct home path won't match tmp; use absolute fallback check
-    ctx2 = _auto_local_context(f"check {d} please")
-    # absolute /tmp not in regex (only ~ and /home/faisal), so empty is ok
-    assert isinstance(ctx, str) and isinstance(ctx2, str)
+    (d / "package.json").write_text('{"name":"scope-pkg"}')
+    monkeypatch.setattr(agent_mod.Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("HOME", str(home))
+
+    # ~/proj — tilde form
+    ctx = _auto_local_context("check ~/proj please")
+    assert "proj" in ctx, ctx
+    assert "hello-scope" in ctx or "README" in ctx, ctx
+
+    # $HOME/proj — absolute form, which the function matches separately
+    ctx2 = _auto_local_context(f"check {home}/proj please")
+    assert "proj" in ctx2, ctx2
+
+    # no path mentioned -> nothing injected
+    assert _auto_local_context("just a normal question") == ""
 
 
 def test_make_dir_roundtrip(tmp_path, monkeypatch):

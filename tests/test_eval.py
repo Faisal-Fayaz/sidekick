@@ -277,7 +277,7 @@ def test_today_in_system_prompt(tmp_path, monkeypatch):
     assert datetime.now().strftime("%Y-%m-%d") in system
 
 
-def test_repeat_tool_uses_cache():
+def test_repeat_tool_uses_cache(monkeypatch):
     from sk.agent import _run_tool_cached
 
     seen: dict[str, str] = {}
@@ -289,20 +289,16 @@ def test_repeat_tool_uses_cache():
 
     import sk.agent as agent
 
-    orig = agent.dispatch_tool
-    agent.dispatch_tool = fake_dispatch  # type: ignore
-    try:
-        r1, rep1 = _run_tool_cached(
-            "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
-        )
-        r2, rep2 = _run_tool_cached(
-            "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
-        )
-        r3, rep3 = _run_tool_cached(
-            "read_url", {"url": "https://x", "max_chars": 2000}, None, None, seen
-        )
-    finally:
-        agent.dispatch_tool = orig
+    monkeypatch.setattr(agent, "dispatch_tool", fake_dispatch)
+    r1, rep1 = _run_tool_cached(
+        "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
+    )
+    r2, rep2 = _run_tool_cached(
+        "read_url", {"url": "https://x", "max_chars": 400}, None, None, seen
+    )
+    r3, rep3 = _run_tool_cached(
+        "read_url", {"url": "https://x", "max_chars": 2000}, None, None, seen
+    )
     assert (r1, rep1) == ("RESULT", False)
     assert rep2 is True and "already ran" in r2  # identical call: cached
     assert rep3 is False and calls == ["read_url", "read_url"]  # new args: re-runs

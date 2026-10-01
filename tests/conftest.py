@@ -32,6 +32,28 @@ def _isolate_config(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_module_globals():
+    """Snapshot and restore process-wide module globals tests mutate.
+
+    `agent._tools_unsupported` and `hooks._started_sessions` are module-level
+    sets. Tests added to and cleared them without restoring, so the suite passed
+    only because of ordering: `test_eval.py:496` clearing the set is the only
+    reason later tests saw a clean one (#321).
+    """
+    import sk.agent as agent_mod
+    import sk.hooks as hooks_mod
+
+    saved = (set(agent_mod._tools_unsupported), set(hooks_mod._started_sessions))
+    try:
+        yield
+    finally:
+        agent_mod._tools_unsupported.clear()
+        agent_mod._tools_unsupported.update(saved[0])
+        hooks_mod._started_sessions.clear()
+        hooks_mod._started_sessions.update(saved[1])
+
+
+@pytest.fixture(autouse=True)
 def _isolate_history(tmp_path, monkeypatch):
     import sk.store as store_mod
 
