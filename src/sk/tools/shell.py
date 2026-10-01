@@ -18,6 +18,8 @@ import re
 import subprocess
 import threading
 
+from ..procutil import run_bounded
+
 
 def _normalize_shell(cmd: str) -> str:
     """Canonicalize quoting so block patterns can't be dodged.
@@ -79,15 +81,20 @@ def tool_shell(cmd: str, timeout: int = 30) -> str:
     if blocked:
         return blocked
     timeout = max(5, min(int(timeout or 30), 120))
+    # Bounded capture (#315): `yes` / `cat /dev/urandom` would otherwise buffer
+    # gigabytes in this process before the 6000-char cut below ever applies.
     try:
-        res = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=timeout)
+        res = run_bounded(["bash", "-c", cmd], timeout=timeout)
         out = (res.stdout or "") + (("\n[stderr]\n" + res.stderr) if res.stderr else "")
         out = out.strip() or "(no output)"
         if len(out) > 6000:
             out = out[:6000] + "\n... [truncated]"
+        if res.overflowed:
+            # killed, not merely cut off: say so, the exit code will be -9
+            out += "\n... [output cap reached — the process was killed]"
+        elif res.timed_out:
+            return f"Error: timed out after {timeout}s"
         return f"$ {cmd}\n[exit {res.returncode}]\n{out}"
-    except subprocess.TimeoutExpired:
-        return f"Error: timed out after {timeout}s"
     except Exception as e:
         return f"Error: {e}"
 
