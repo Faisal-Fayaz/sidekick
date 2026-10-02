@@ -39,10 +39,18 @@ def _isolate_module_globals():
     sets. Tests added to and cleared them without restoring, so the suite passed
     only because of ordering: `test_eval.py:496` clearing the set is the only
     reason later tests saw a clean one (#321).
+
+    `fsperm._repaired` is the same kind of one-shot flag and leaked the same way:
+    whichever test ran first consumed it, so `test_repair_once_only_sweeps_the_
+    first_time` passed alone and failed in the suite. Reset before every test
+    rather than only in the ones that know about it.
     """
     import sk.agent as agent_mod
     import sk.hooks as hooks_mod
 
+    import sk.fsperm as fsperm_mod
+
+    fsperm_mod.reset_repair_flag()
     saved = (set(agent_mod._tools_unsupported), set(hooks_mod._started_sessions))
     try:
         yield

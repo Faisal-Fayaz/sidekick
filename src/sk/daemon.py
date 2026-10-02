@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from sk.atomic import atomic_write_text, quarantine
+from sk.fsperm import PRIVATE_FILE, ensure_private_dir, private_open_append, tighten
 
 STATE_PATH = Path.home() / ".sidekick" / "daemon.json"
 
@@ -615,11 +616,15 @@ def check_once(
 def append_log(nudges: list[str]) -> None:
     if not nudges:
         return
-    NUDGES_LOG.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(NUDGES_LOG.parent)
     ts = time.strftime("%Y-%m-%d %H:%M")
-    with open(NUDGES_LOG, "a") as f:
+    # nudges.log records the shell commands the agent chose to run, and it grows
+    # forever, so it cannot be created 0600-then-renamed the way atomic writes
+    # do. Open the descriptor directly instead (#301).
+    with private_open_append(NUDGES_LOG) as f:
         for n in nudges:
             f.write(f"[{ts}] {n}\n")
+    tighten(NUDGES_LOG, want=PRIVATE_FILE)  # an existing file keeps its old mode
 
 
 def digest_text(

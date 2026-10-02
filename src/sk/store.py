@@ -7,6 +7,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from sk.fsperm import PRIVATE_FILE, ensure_private_dir, tighten
+
 DB_PATH = Path.home() / ".sidekick" / "history.db"
 
 # Schema version, stamped via PRAGMA user_version. Bump when adding tables or
@@ -186,8 +188,12 @@ def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
 
 
 def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # sqlite3.connect creates history.db at the umask default (0644), which
+    # leaves every transcript and tool result world-readable (#301). chmod on
+    # first open; it is a no-op afterwards, and cheap enough to do every time.
+    ensure_private_dir(DB_PATH.parent)
     conn = sqlite3.connect(str(DB_PATH))
+    tighten(DB_PATH, want=PRIVATE_FILE)
     _migrate(conn)
     conn.commit()
     return conn
