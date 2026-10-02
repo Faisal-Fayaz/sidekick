@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from sk.fsperm import PRIVATE_FILE, ensure_private_dir, tighten
+from sk.tokens import estimate_tokens
 
 DB_PATH = Path.home() / ".sidekick" / "history.db"
 
@@ -1100,16 +1101,39 @@ def cost_per_mtok(model: str) -> float | None:
 
 
 def _est_tokens(text: str) -> int:
-    """chars/4 heuristic for usage accounting (matches agent.estimate_tokens)."""
-    return max(0, len(text or "") // 4)
+    """Deprecated alias kept for callers; delegates to the shared estimator.
+
+    Was a second, disagreeing definition (floor division vs ceil, and its
+    docstring claimed to match agent.estimate_tokens). See sk.tokens (#313).
+    """
+    return estimate_tokens(text)
 
 
 def usage_stats(session: str = "", limit: int = 5000) -> dict:
     """Aggregate usage from audit rows + message contents. No new storage.
 
-    Tokens are chars/4 estimates; costs apply known input rates only and are
-    marked approximate. Session tokens attribute to that session's most-used
-    llm_call model (exact for the normal single-model case).
+    **Tokens are billed from conversation messages only** (#313). This used to
+    also add `_est_tokens(r["target"])` for *every* `tool_runs` row, so a session
+    was charged for model input it never sent:
+
+        write_file        target is `tool|path=…|content=<the file's bytes>`
+        egress:*          target is `host=… url=… decision=… reason=…`
+        llm_call          target is the model *name*
+
+    Only `llm_call`/`egress:*`/`write_file` rows exist, and not one of those
+    targets is model input. The cost scaled with how much text the agent wrote to
+    disk and how many fetches were refused, which is the opposite of usage — and
+    `_spend_blocked` reads `cost_usd` from here on *every* LLM call, so it could
+    trip a cap for work that cost nothing. Tool-row volume is still reported, as
+    `audit_target_chars`, explicitly not billed.
+
+    Messages are the right basis: only `user` and `assistant` rows are persisted
+    (tool results never reach this table), so their contents are the conversation
+    actually exchanged with the model.
+
+    Costs apply known input rates only and are marked approximate. Session tokens
+    attribute to that session's most-used llm_call model (exact for the normal
+    single-model case).
     """
     runs = list_tool_runs(session.strip(), limit=max(1, min(limit, 10000)))
     conn = _connect()
@@ -1141,10 +1165,13 @@ def usage_stats(session: str = "", limit: int = 5000) -> dict:
     for s, counts in model_counts.items():
         by_session.setdefault(s, {"tokens": 0, "model": ""})
         by_session[s]["model"] = max(counts, key=lambda m: counts[m])
+    # Tool-row targets are audit metadata, not model input — reported separately
+    # as audit_target_chars and never priced. See the docstring.
+    audit_target_chars = 0
     for r in runs:
-        s = r["session"]
-        by_session.setdefault(s, {"tokens": 0, "model": ""})
-        by_session[s]["tokens"] += _est_tokens(r["target"])
+        if r["tool"] == "llm_call":
+            continue
+        audit_target_chars += len(r["target"] or "")
 
     tool_counts: dict[str, int] = {}
     denied = failed = local = egress = 0
@@ -1162,6 +1189,7 @@ def usage_stats(session: str = "", limit: int = 5000) -> dict:
 
     per_model: dict[str, dict] = {}
     cost_known = 0.0
+    any_priced = False  # distinguishes "priced, total $0.00" from "unpriced"
     unknown_tokens = 0
     for s, info in by_session.items():
         model = info["model"] or "?"
@@ -1169,6 +1197,7 @@ def usage_stats(session: str = "", limit: int = 5000) -> dict:
         entry["tokens"] += info["tokens"]
         rate = cost_per_mtok(model)
         if rate is not None:
+            any_priced = True
             charged = round(info["tokens"] / 1_000_000 * rate, 4)
             entry["cost_usd"] = round((entry["cost_usd"] or 0.0) + charged, 4)
             cost_known = round(cost_known + charged, 4)
@@ -1189,6 +1218,11 @@ def usage_stats(session: str = "", limit: int = 5000) -> dict:
         "egress_runs": egress,
         "sessions": len(by_session),
         "per_model": per_model,
-        "cost_usd": round(cost_known, 4) if cost_known else None,
+        # A local model prices at $0.00 — that is a real measurement, so report it
+        # as 0.0. `None` now means only "no rate is known for any model seen".
+        # Previously `if cost_known` collapsed both, rendering every free local
+        # run as "n/a".
+        "cost_usd": round(cost_known, 4) if any_priced else None,
         "unpriced_tokens": unknown_tokens,
+        "audit_target_chars": audit_target_chars,
     }

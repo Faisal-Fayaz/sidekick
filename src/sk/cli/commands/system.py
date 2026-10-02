@@ -912,6 +912,14 @@ def stats(
             f"{k}×{v}" for k, v in sorted(stats["tools"].items(), key=lambda kv: -kv[1])[:8]
         )
         console.print(f"[dim]tools: {top}[/dim]")
+    # Reported so the audit volume is not lost, and labelled so it is not read as
+    # usage. These are tool *targets* — file paths and contents, request URLs and
+    # refusal reasons — never model input, so they are not billed (#313).
+    if stats.get("audit_target_chars"):
+        console.print(
+            f"[dim]audit volume: {stats['audit_target_chars']} chars in tool targets "
+            f"(not billed as model input)[/dim]"
+        )
     for model, info in sorted(stats["per_model"].items()):
         if model == "?":
             continue

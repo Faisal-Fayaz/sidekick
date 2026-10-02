@@ -30,10 +30,17 @@ def test_exact_numbers(tmp_path, monkeypatch):
     assert stats["denied"] == 1 and stats["failed"] == 0
     assert stats["local_runs"] == 0 and stats["egress_runs"] == 3
     assert stats["sessions"] == 1
-    # tokens: 100 + 50 message + targets (3 + 4 + 3)
-    assert stats["tokens"] == 100 + 50 + 3 + 4 + 3
+    # Tokens are conversation only: 100 + 50 from the two messages (#313).
+    #
+    # This assertion used to be `100 + 50 + 3 + 4 + 3`, with the comment
+    # "targets (3 + 4 + 3)" — it counted `claude-sonnet-5` (the model *name*),
+    # `list_dir|path=/tmp` and `shell|cmd=zzz` as model input. None of those were
+    # ever sent to a model, so the test was locking in the accounting bug rather
+    # than the intent. Tool targets are now reported as audit_target_chars.
+    assert stats["tokens"] == 100 + 50
+    assert stats["audit_target_chars"] == len("list_dir|path=/tmp") + len("shell|cmd=zzz")
     assert stats["per_model"]["claude-sonnet-5"]["turns"] == 1
-    assert stats["per_model"]["claude-sonnet-5"]["cost_usd"] == round(160 / 1_000_000 * 2.0, 4)
+    assert stats["per_model"]["claude-sonnet-5"]["cost_usd"] == round(150 / 1_000_000 * 2.0, 4)
     assert stats["cost_usd"] == stats["per_model"]["claude-sonnet-5"]["cost_usd"]
 
 

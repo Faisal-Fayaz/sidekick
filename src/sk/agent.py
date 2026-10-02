@@ -12,6 +12,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
+from .tokens import estimate_tokens as tokens_estimate
 from .tools import (
     approval_tools,
     dispatch_tool,
@@ -1067,9 +1068,12 @@ def _synthetic_call_id(index: int, buf: dict) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    """~4 chars/token. Documented approximation: exact tokenizers are
-    model-specific new deps, and the codebase already budgets by chars."""
-    return max(1, (len(text or "") + 3) // 4)
+    """~4 chars/token for context budgeting. Delegates to the shared estimator
+    with floor=1, because every entry in a prompt costs something to serialise
+    and an empty one is not free here (#313: this used to be a second,
+    disagreeing definition).
+    """
+    return tokens_estimate(text, floor=1)
 
 
 _SUMMARY_PROMPT = (
