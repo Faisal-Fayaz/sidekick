@@ -1012,6 +1012,19 @@ class SidekickTUI(App):
         _role(log, "", f"heard> {text[:200]} (edit + Enter to send)")
 
     def _sub(self) -> None:
+        """Refresh the subtitle/status strip. Best effort, never raises.
+
+        Unguarded, this was able to break whichever caller happened to be
+        updating chrome — including _finish, which calls it *after* clearing
+        the live box and *before* writing the answer, so a failure here cost the
+        user the reply. A status line must never be load-bearing.
+        """
+        try:
+            self._sub_unguarded()
+        except Exception as e:
+            log_error("sub", e)
+
+    def _sub_unguarded(self) -> None:
         from sk.config import Config
 
         from .theme import normalize_theme_name, set_theme
@@ -1693,14 +1706,38 @@ class SidekickTUI(App):
             pass
 
     def _finish(self, answer: str, stats: str) -> None:
+        """Post the turn's answer to chat. The answer is the whole point of this
+        method, so it is written before any chrome is touched and every later
+        step is independently guarded.
 
+        It used to run _hide_live() -> _sub() -> query_one() -> write() with
+        nothing guarded after the first line. _hide_live() clears the live box
+        immediately, so any raise after it destroyed the streamed text *and*
+        skipped the post — the user saw the answer appear, then vanish, with no
+        error anywhere. history.db kept it (save_message runs before this), which
+        is why the transcript showed a complete reply that was never rendered.
+        """
         self._hide_live()
         self._stats = stats
-        self._sub()
-        log = self.query_one("#chat-log", RichLog)
-        _role(log, "sidekick", "")
+        text = answer or "(empty)"
         try:
-            log.write(Markdown(answer or "(empty)"))
-        except Exception:
-            _role(log, "sidekick", answer or "(empty)")
-        _rule(log)
+            log = self.query_one("#chat-log", RichLog)
+        except Exception as e:
+            log_error("finish", e)
+            return
+        try:
+            _role(log, "sidekick", "")
+            try:
+                log.write(Markdown(text))
+            except Exception:
+                _role(log, "sidekick", text)
+        except Exception as e:
+            log_error("finish", e)
+        try:
+            self._sub()
+        except Exception as e:
+            log_error("finish", e)
+        try:
+            _rule(log)
+        except Exception as e:
+            log_error("finish", e)

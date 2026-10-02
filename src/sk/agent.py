@@ -1625,11 +1625,21 @@ def _synthesize_exhaustion(
     max_tokens: int,
     extra: dict,
     on_token,
+    on_reasoning=None,
 ) -> str:
     """One final no-tools call to report progress + blockers when the step
     budget dies without a final answer. Bounded (<=400 tokens), streams via
     on_token like a normal turn. Never raises; returns "" on any failure so
-    callers keep the "(max steps reached)" fallback."""
+    callers keep the "(max steps reached)" fallback.
+
+    on_reasoning must be threaded through. It used to be hardcoded None, and
+    _stream_chat falls back to on_token when there is no reasoning sink, so the
+    model's raw reasoning was delivered to on_token — the TUI accumulated it in
+    _live_parts and rendered it in the live box *as the answer*. _hide_live then
+    cleared it and only the report reached chat, so the user watched reasoning
+    scroll past, saw it vanish, and got three terse lines instead (#205
+    follow-up). A caller with no reasoning sink gets the old fallback, which is
+    why the parameter is optional rather than required."""
     try:
         recap = list(messages) + [
             {
@@ -1652,7 +1662,7 @@ def _synthesize_exhaustion(
             min(int(max_tokens or 400), 400),
             extra,
             on_token,
-            None,
+            on_reasoning,
         )
         # Content only. Reasoning was already streamed live via on_reasoning and
         # must not be posted as chat (same invariant as the normal path at
@@ -2083,7 +2093,14 @@ def run_agent(
                     on_token,
                     on_reasoning,
                 )
-                final_text = m2.content or m2.reasoning or ""
+                # Content only. `or m2.reasoning` promoted a raw reasoning trace
+                # to the chat answer whenever this peek came back with empty
+                # content — the same leak #358 fixed in the exhaustion recap,
+                # one path over. With reasoning dropped, an empty peek simply
+                # fails the `.strip()` test below, so control falls out of the
+                # loop to `for ... else` and the user gets the progress report
+                # instead of a trace, or of a bare "(empty)".
+                final_text = m2.content or ""
             except Exception:
                 final_text = ""
             messages.append({"role": "assistant", "content": final_text})
@@ -2094,7 +2111,14 @@ def run_agent(
         # report progress + blockers instead of the bare sentinel. Never raises.
         final_text = (
             _synthesize_exhaustion(
-                client, cfg.model, messages, cfg.temperature, max_tokens, extra, on_token
+                client,
+                cfg.model,
+                messages,
+                cfg.temperature,
+                max_tokens,
+                extra,
+                on_token,
+                on_reasoning,
             )
             or "(max steps reached)"
         )

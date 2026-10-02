@@ -1597,3 +1597,80 @@ async def _pilot_turn_sends_message_once(monkeypatch):
 
 def test_turn_sends_message_once(monkeypatch):
     _run(_pilot_turn_sends_message_once(monkeypatch))
+
+
+async def _pilot_finish_posts_answer_despite_sub_failure(monkeypatch):
+    """The answer must survive a status-bar failure.
+
+    _finish used to run _hide_live() -> _sub() -> query_one() -> write() with
+    nothing guarded after the first line. _hide_live() clears the live box
+    immediately, so any raise after it destroyed the streamed text *and* skipped
+    the post: the user watched the answer appear, then vanish, with no error
+    anywhere. history.db kept it, because save_message runs before _finish — so
+    the transcript showed a complete reply that was never rendered.
+    """
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._prime_live()
+        await pilot.pause()
+        app._live_parts = ["the answer text"]
+
+        def _boom():
+            raise RuntimeError("theme rendering exploded")
+
+        monkeypatch.setattr(app, "_sub_unguarded", _boom)
+
+        app._finish("the answer text", "1s")
+        await pilot.pause()
+
+        log = app.query_one("#chat-log", RichLog)
+        blob = "\n".join(str(ln) for ln in log.lines)
+        assert "the answer text" in blob, "answer lost because a status bar failed"
+
+
+async def _pilot_finish_posts_empty_marker(monkeypatch):
+    from textual.widgets import RichLog
+
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._prime_live()
+        app._finish("", "1s")
+        await pilot.pause()
+        log = app.query_one("#chat-log", RichLog)
+        blob = "\n".join(str(ln) for ln in log.lines)
+        assert "(empty)" in blob, "an empty answer posted nothing at all"
+
+
+async def _pilot_sub_never_raises(monkeypatch):
+    """_sub is called from four unguarded sites; it must swallow its own errors."""
+    from sk.tui import SidekickTUI as _T
+
+    app = _T()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        def _boom():
+            raise RuntimeError("nope")
+
+        monkeypatch.setattr(app, "_sub_unguarded", _boom)
+        app._sub()  # must not raise
+
+
+def test_finish_posts_answer_despite_sub_failure(monkeypatch):
+    _run(_pilot_finish_posts_answer_despite_sub_failure(monkeypatch))
+
+
+def test_finish_posts_empty_marker(monkeypatch):
+    _run(_pilot_finish_posts_empty_marker(monkeypatch))
+
+
+def test_sub_never_raises(monkeypatch):
+    _run(_pilot_sub_never_raises(monkeypatch))
