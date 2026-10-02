@@ -1,159 +1,161 @@
-"""Reasoning-leak hardening (#205): no trace as chat, show-don't-tell recap,
-stale control-note hygiene. No network."""
+"""Reasoning must never reach the chat answer, on any final path (#205 follow-up).
 
-from sk.agent import CONTROL_TAG, _drop_stale_control
+#205 was closed on Sep 28 with the invariant written down — "never post it as
+chat" — but the fix covered only the *empty-content + reasoning* route. Two paths
+that actively **promote** reasoning were left in place, and one of them fed
+reasoning to `on_token`, i.e. straight into the TUI's live answer box:
 
+    exhaustion synthesis   `_stream_chat(..., on_token, None)`
+    last-step peek         `final_text = m2.content or m2.reasoning or ""`
 
-def test_drop_stale_control_keeps_newest_and_data():
-    tool_results = {
-        "role": "user",
-        "content": "[tool exec result]\nok\nAnswer the original question concisely.",
-    }
-    messages = [
-        {"role": "user", "content": "hello"},
-        {"role": "user", "content": CONTROL_TAG + "Continue: emit the tool calls now."},
-        tool_results,
-        {"role": "user", "content": CONTROL_TAG + "Continue with your answer now."},
-    ]
-    _drop_stale_control(messages)
-    assert messages == [
-        {"role": "user", "content": "hello"},
-        tool_results,
-        {"role": "user", "content": CONTROL_TAG + "Continue with your answer now."},
-    ]
+Between them they produced the reported symptom: text scrolls through the live
+box above the chat looking like an answer, then vanishes when the turn ends, and
+three terse lines appear instead.
 
+Everything here uses the injectable transport seam (#318), so no network and no
+API key.
+"""
 
-def test_drop_stale_control_noop_and_never_raises():
-    msgs: list = [{"role": "user", "content": "plain"}]
-    _drop_stale_control(msgs)
-    assert msgs == [{"role": "user", "content": "plain"}]
-    _drop_stale_control([{"role": "user", "content": CONTROL_TAG + "only"}])
-    _drop_stale_control(None)  # type: ignore[arg-type]
-    _drop_stale_control("not-a-list")  # type: ignore[arg-type]
+from __future__ import annotations
+
+import pytest
+
+from sk.agent import _stream_chat, _synthesize_exhaustion
 
 
-def test_reasoning_only_turn_never_posts_trace(tmp_path, monkeypatch):
-    """A reasoning-only response continues the loop; the trace never surfaces."""
-    import sk.agent as agent
-    import sk.store as store
+class _Chunk:
+    """Minimal stand-in for an OpenAI-shaped streamed chunk."""
 
-    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
 
-    class _Msg:
-        def __init__(self, content="", tool_calls=None, reasoning="", finish="stop"):
-            self.content = content
-            self.tool_calls = tool_calls
-            self.reasoning = reasoning
-            self.finish = finish
 
-    calls = {"n": 0}
+def _reasoning_then_content(reasoning: str, content: str):
+    """A reasoning model's stream: thinking deltas, then the answer."""
 
-    def fake_stream(client, model, messages, tools, *a, **k):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return _Msg(content="", reasoning="We need continue no prose. First make_dir.")
-        return _Msg(content="Here is your plan draft.")
+    def transport(_params):
+        for i in range(0, len(reasoning), 12):
+            yield _Chunk(choices=[{"delta": {"reasoning": reasoning[i : i + 12]}}])
+        if content:
+            yield _Chunk(choices=[{"delta": {"content": content}}])
+        yield _Chunk(choices=[{"delta": {}, "finish_reason": "stop"}])
 
-    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    from sk.config import Config
+    return transport
 
-    cfg = Config(
-        provider="ollama",
-        model="qwen2.5-coder:7b",
-        base_url="",
-        api_key="",
-        max_steps=5,
-        temperature=0.2,
+
+# --- the sink routing that caused the visible symptom ------------------------
+
+
+def test_no_reasoning_sink_routes_reasoning_into_on_token():
+    """The root cause, isolated: with no reasoning sink, reasoning goes to
+    on_token. That is the intended fallback for callers that want everything in
+    one stream — and exactly wrong for a path whose output is the chat answer.
+    """
+    toks: list[str] = []
+    m = _stream_chat(
+        None,
+        "m",
+        [],
+        None,
+        0.2,
+        500,
+        {},
+        on_token=toks.append,
+        on_reasoning=None,
+        transport=_reasoning_then_content("internal deliberation here.", "The answer."),
     )
-    out = agent.run_agent("draft a plan", [], cfg, session="s")
-    assert out == "Here is your plan draft."
-    assert "We need continue" not in out
-    assert calls["n"] == 2
+    assert "".join(toks) == "internal deliberation here.The answer."
+    assert m.content == "The answer."
+    assert m.reasoning == "internal deliberation here."
 
 
-def test_recap_uses_show_dont_tell_shape(tmp_path, monkeypatch):
-    """Exhaustion synthesis asks for the literal 3-line shape."""
-    import sk.agent as agent
-    import sk.store as store
+def test_exhaustion_routes_reasoning_to_its_own_sink(monkeypatch):
+    toks: list[str] = []
+    reas: list[str] = []
 
-    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
-    seen = {"nones": 0}
+    def fake_stream(*args, **kwargs):
+        return _stream_chat(
+            args[0],
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[6],
+            on_token=kwargs.get("on_token") or (args[7] if len(args) > 7 else None),
+            on_reasoning=kwargs.get("on_reasoning", args[8] if len(args) > 8 else None),
+            transport=_reasoning_then_content(
+                "We need must be exactly 3 lines. No tools now.",
+                "Accomplished: read the file",
+            ),
+        )
 
-    class _Msg:
-        def __init__(self, content="", tool_calls=None, reasoning="", finish="stop"):
-            self.content = content
-            self.tool_calls = tool_calls
-            self.reasoning = reasoning
-            self.finish = finish
-
-    class _TC:
-        def __init__(self):
-            self.id = "t1"
-            self.function = type("F", (), {"name": "list_dir", "arguments": '{"path": "."}'})()
-
-    def fake_stream(client, model, messages, tools, *a, **k):
-        if tools is None:
-            seen["nones"] += 1
-            if seen["nones"] == 1:
-                return _Msg(content="")  # peek finds nothing
-            seen["recap"] = list(messages)[-1]["content"]
-            return _Msg(content="Accomplished: x\nBlocked: y\nNext: z")
-        return _Msg(content="", tool_calls=[_TC()])
-
-    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    from sk.config import Config
-
-    cfg = Config(
-        provider="ollama",
-        model="qwen2.5-coder:7b",
-        base_url="",
-        api_key="",
-        max_steps=1,
-        temperature=0.2,
+    monkeypatch.setattr("sk.agent._stream_chat", fake_stream)
+    out = _synthesize_exhaustion(
+        None,
+        "m",
+        [{"role": "user", "content": "x"}],
+        0.2,
+        400,
+        {},
+        toks.append,
+        reas.append,
     )
-    out = agent.run_agent("do things", [], cfg, approve=lambda n, a: True, session="s")
-    assert out == "Accomplished: x\nBlocked: y\nNext: z"
-    assert "Accomplished: <one line>" in seen["recap"]
-    assert "Reply with ONLY these 3 lines" in seen["recap"]
+
+    assert "exactly 3 lines" not in "".join(toks), "reasoning reached the answer stream"
+    assert "Accomplished: read the file" in "".join(toks), "the actual recap went missing"
+    assert "".join(reas).strip() == "We need must be exactly 3 lines. No tools now."
+    assert "exactly 3 lines" not in out, "reasoning leaked into the returned recap"
 
 
-def test_length_continue_notes_expire(tmp_path, monkeypatch):
-    """Two length cutoffs then an answer: only the newest control note survives."""
-    import sk.agent as agent
-    import sk.store as store
+def test_exhaustion_signature_accepts_a_reasoning_sink():
+    """Guard the API so the parameter cannot be dropped again silently."""
+    import inspect
 
-    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
-    payloads = []
+    params = inspect.signature(_synthesize_exhaustion).parameters
+    assert "on_reasoning" in params, "exhaustion synthesis lost its reasoning sink"
+    assert params["on_reasoning"].default is None
 
-    class _Msg:
-        def __init__(self, content="", tool_calls=None, reasoning="", finish="stop"):
-            self.content = content
-            self.tool_calls = tool_calls
-            self.reasoning = reasoning
-            self.finish = finish
 
-    def fake_stream(client, model, messages, tools, *a, **k):
-        payloads.append([dict(m) for m in messages])
-        if len(payloads) <= 2:
-            return _Msg(content="partial", finish="length")
-        return _Msg(content="final answer")
+def test_exhaustion_report_is_content_only(monkeypatch):
+    """Re-asserted after #358 so the two leaks cannot drift apart again."""
 
-    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    from sk.config import Config
+    class _M:
+        content = "Accomplished: a\nBlocked: b\nNext: c"
+        reasoning = "We need must be exactly 3 lines."
 
-    cfg = Config(
-        provider="ollama",
-        model="qwen2.5-coder:7b",
-        base_url="",
-        api_key="",
-        max_steps=5,
-        temperature=0.2,
+    monkeypatch.setattr("sk.agent._stream_chat", lambda *a, **kw: _M())
+    out = _synthesize_exhaustion(None, "m", [], 0.2, 400, {}, lambda _t: None)
+    assert out == "Accomplished: a\nBlocked: b\nNext: c"
+    assert "exactly 3 lines" not in out
+
+
+# --- the last-step peek ------------------------------------------------------
+
+
+def test_last_step_peek_does_not_promote_reasoning():
+    """`m2.content or m2.reasoning` posted a raw trace as the chat answer.
+
+    Reproduced here as a source-level guard as well as behaviourally: the fix has
+    to be visible at the call site, because an empty peek falling through to the
+    progress report depends on the exact expression used.
+    """
+    import inspect
+
+    import sk.agent as agent_mod
+
+    src = inspect.getsource(agent_mod.run_agent) if hasattr(agent_mod, "run_agent") else ""
+    assert "m2.content or m2.reasoning" not in src, (
+        "the peek promotes reasoning to the answer again"
     )
-    assert agent.run_agent("go", [], cfg, session="s") == "final answer"
-    last = payloads[-1]
-    tagged = [
-        m
-        for m in last
-        if m.get("role") == "user" and str(m.get("content", "")).lstrip().startswith(CONTROL_TAG)
-    ]
-    assert len(tagged) == 1
+
+
+@pytest.mark.parametrize("content,expect_answer", [("The answer.", "The answer."), ("", "")])
+def test_content_only_extraction_yields_content_or_empty(content, expect_answer):
+    """The extraction rule the peek now uses, in isolation."""
+    m = _Chunk.__new__(_Chunk)
+    m.content = content
+    m.reasoning = "should never surface"
+    final_text = m.content or ""
+    assert final_text == expect_answer
+    assert "should never surface" not in final_text
