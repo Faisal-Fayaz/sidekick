@@ -27,6 +27,7 @@ from sk.fsperm import (
     ensure_private_dir,
     private_open_append,
     repair_once,
+    reset_repair_flag,
     tighten,
     tighten_home,
 )
@@ -306,3 +307,46 @@ def test_mode_assertions_are_meaningful(tmp_path):
     os.chmod(p, 0o666)
     assert _mode(p) == 0o666
     assert _mode(p) != PRIVATE_FILE
+
+
+def test_config_load_repairs_home_so_the_tui_is_covered(tmp_path, monkeypatch):
+    """Regression: the migration only ran from ensure_created(), which the TUI
+    never calls — it calls Config.load() directly. So it reached `sk <command>`
+    users and nobody else, and the primary interface kept its world-readable
+    transcript (#301 follow-up). Proven against the real usage path.
+    """
+    import sk.config as config_mod
+
+    home = tmp_path / ".sidekick"
+    home.mkdir()
+    for name, mode in (("history.db", 0o644), ("nudges.log", 0o664)):
+        p = home / name
+        p.write_text("{}")
+        os.chmod(p, mode)
+    os.chmod(home, 0o755)
+
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", home / "config.toml")
+    reset_repair_flag()
+
+    config_mod.Config.load()  # what the TUI does; ensure_created is never reached
+
+    assert _mode(home) == PRIVATE_DIR
+    for name in ("history.db", "nudges.log"):
+        assert _mode(home / name) == PRIVATE_FILE, name
+
+
+def test_load_is_cheap_in_steady_state(tmp_path, monkeypatch):
+    """Repair runs once per process, so repeat loads must not re-walk the tree."""
+    import sk.config as config_mod
+
+    home = _home(tmp_path, monkeypatch)
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", home / "config.toml")
+    reset_repair_flag()
+
+    config_mod.Config.load()
+    os.chmod(home, 0o777)
+    config_mod.Config.load()
+
+    assert _mode(home) == PRIVATE_DIR  # repaired before the second load, not after

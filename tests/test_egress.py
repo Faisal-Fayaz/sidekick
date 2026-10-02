@@ -304,3 +304,62 @@ def test_save_round_trips_allowlist(tmp_path, monkeypatch):
     cfg.egress_allow = ("example.com", "*.github.com")
     cfg.save()
     assert config_mod.Config.load().egress_allow == ("example.com", "*.github.com")
+
+
+# --- step-budget synthesis must not leak reasoning (#328-era agent path) ----
+
+
+class _FakeMsg:
+    def __init__(self, content="", reasoning=""):
+        self.content = content
+        self.reasoning = reasoning
+        self.tool_calls = None
+        self.finish_reason = "stop"
+
+
+def test_exhaustion_report_never_includes_reasoning(monkeypatch):
+    """The 3-line budget report leaked raw chain-of-thought into the transcript.
+
+    A real turn came back with the three requested lines *plus* the model
+    narrating its own instructions ("We need must exactly 3 lines. … No tools
+    now."), because the synthesis appended `msg.reasoning` to the visible text.
+    The normal path already had the right invariant stated in a comment —
+    "never post it as chat" — so this was the single place violating it.
+    """
+    from sk import agent as agent_mod
+
+    reasoning = (
+        "We need must exactly 3 lines. Accomplished grounded tool. "
+        "Blocked exec plan mode. Next maybe ask switch? No tools now."
+    )
+    monkeypatch.setattr(
+        agent_mod,
+        "_stream_chat",
+        lambda *a, **kw: _FakeMsg(
+            content="Accomplished: a\nBlocked: b\nNext: c", reasoning=reasoning
+        ),
+    )
+    out = agent_mod._synthesize_exhaustion(
+        None, "m", [{"role": "user", "content": "x"}], 0.2, 400, {}, None
+    )
+    assert out == "Accomplished: a\nBlocked: b\nNext: c"
+    assert "exactly 3 lines" not in out
+    assert "No tools now" not in out
+
+
+def test_exhaustion_report_survives_a_reasoning_only_model(monkeypatch):
+    """Dropping reasoning must not blank the report when content is empty.
+
+    The old concatenation happened to return *something* for a reasoning-only
+    response. An empty report falls back to "(max steps reached)", which is
+    honest, but the reasoning must still never be shown.
+    """
+    from sk import agent as agent_mod
+
+    monkeypatch.setattr(
+        agent_mod,
+        "_stream_chat",
+        lambda *a, **kw: _FakeMsg(content="", reasoning="secret thoughts"),
+    )
+    out = agent_mod._synthesize_exhaustion(None, "m", [], 0.2, 400, {}, None)
+    assert "secret thoughts" not in out

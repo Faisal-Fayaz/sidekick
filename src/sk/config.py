@@ -735,7 +735,16 @@ class Config:
         Sensitive keys (api_key, base_url) never come from project files.
         spend_cap_usd is global/env only: repos must not set their own limits.
         Also publishes the memory namespace for store scoping (see store docs).
+
+        Tightens ~/.sidekick on the way past. It has to be here rather than in
+        ensure_created(): that is only called by `sk <command>`, and the TUI —
+        the primary interface — calls load() directly, so a migration placed
+        there never reached TUI users at all (#301 follow-up). repair_once()
+        makes the walk happen at most once per process, so this costs a stat and
+        a flag check in steady state.
         """
+        ensure_private_dir(CONFIG_DIR)
+        repair_once(CONFIG_DIR)
         provider = os.getenv("SIDEKICK_PROVIDER", "")
         model = os.getenv("SIDEKICK_MODEL", "")
         base_url = os.getenv("SIDEKICK_BASE_URL", "")
@@ -832,10 +841,6 @@ class Config:
         # and checkpoint lives under here. Tightens a directory created by an
         # older version rather than only fixing new installs.
         ensure_private_dir(CONFIG_DIR)
-        # Repair an existing install: files created by earlier versions are at the
-        # umask default and nothing tightens them until they are next written.
-        # Once per process — ensure_created() sits on the CLI's hot path.
-        repair_once(CONFIG_DIR)
         if not CONFIG_PATH.exists():
             self.save()
         return CONFIG_PATH

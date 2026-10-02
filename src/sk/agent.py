@@ -1654,7 +1654,14 @@ def _synthesize_exhaustion(
             on_token,
             None,
         )
-        return ((msg.content or "") + "\n" + (getattr(msg, "reasoning", "") or "")).strip()
+        # Content only. Reasoning was already streamed live via on_reasoning and
+        # must not be posted as chat (same invariant as the normal path at
+        # `msg_text = (msg.content or "").strip()`). Appending it here leaked raw
+        # chain-of-thought into the transcript: a turn that hit the step budget
+        # came back with the three requested lines *plus* the model narrating its
+        # own instructions — "We need must exactly 3 lines. … No tools now." — and
+        # that text was persisted to history.db and displayed.
+        return (msg.content or "").strip()
     except Exception:
         return ""
 
