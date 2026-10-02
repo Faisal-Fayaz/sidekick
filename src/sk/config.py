@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sk.atomic import atomic_write_text
+from sk.fsperm import PRIVATE_FILE, ensure_private_dir, repair_once, tighten
 
 try:
     import tomllib  # py3.11+
@@ -25,7 +26,9 @@ PROFILE_ENV = "SIDEKICK_PROFILE"
 
 
 def profiles_dir() -> Path:
-    return CONFIG_DIR / "profiles"
+    # Profiles hold provider settings and are only written by save(), which
+    # tightens the file — but the directory itself was umask-default (#301).
+    return ensure_private_dir(CONFIG_DIR / "profiles")
 
 
 def profile_path(name: str) -> Path:
@@ -825,7 +828,14 @@ class Config:
         return f"project: {self.project_root} ({PROJECT_FILENAME})"
 
     def ensure_created(self) -> Path:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        # 0700, not the umask default (#301): every conversation, shell command
+        # and checkpoint lives under here. Tightens a directory created by an
+        # older version rather than only fixing new installs.
+        ensure_private_dir(CONFIG_DIR)
+        # Repair an existing install: files created by earlier versions are at the
+        # umask default and nothing tightens them until they are next written.
+        # Once per process — ensure_created() sits on the CLI's hot path.
+        repair_once(CONFIG_DIR)
         if not CONFIG_PATH.exists():
             self.save()
         return CONFIG_PATH
@@ -857,7 +867,6 @@ class Config:
         key set silently deleted those tables on every `sk config` call (#347).
         """
         self.normalize_model_alias()
-        import os as _os
 
         target = (
             Path(path) if path else (profile_path(self.profile) if self.profile else CONFIG_PATH)
@@ -883,11 +892,11 @@ class Config:
         }
         _write_toml_preserving(target, existing, managed)
 
-        if self.api_key.strip():
-            try:
-                _os.chmod(target, 0o600)
-            except Exception:
-                pass
+        # Not conditional on api_key. Every file under ~/.sidekick is private
+        # now (#301), and a chmod that only ran when a key was set read like the
+        # guarantee was conditional when it never was — atomic_write_text
+        # creates at 0600 via mkstemp regardless.
+        tighten(target, want=PRIVATE_FILE)
 
     @staticmethod
     def mask(key: str) -> str:

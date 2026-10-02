@@ -7,6 +7,8 @@ import time
 from rich.text import Text
 from textual.widgets import RichLog
 
+from sk.fsperm import ensure_private_dir, private_open_append
+
 from .theme import active_roles
 
 
@@ -26,8 +28,10 @@ def log_error(where: str, exc: BaseException) -> None:
     from sk.config import CONFIG_DIR
 
     try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_DIR / "tui-errors.log", "a") as f:
+        ensure_private_dir(CONFIG_DIR)
+        # tui-errors.log holds tracebacks, which include paths and sometimes
+        # prompt text (#301).
+        with private_open_append(CONFIG_DIR / "tui-errors.log") as f:
             f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {where}: {exc!r}\n")
             f.write(traceback.format_exc()[-2000:] + "\n")
     except Exception:

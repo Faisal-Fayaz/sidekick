@@ -232,6 +232,8 @@ be a network boundary. That is why shell still needs approval, and why
 sandboxing) is the real answer rather than another pattern list. See
 [`docs/egress.md`](docs/egress.md). API keys chmod 600, masked in output.
 
+**Your data is private to your account.** `~/.sidekick` is `0700` and everything inside it is `0600` — the full transcript, shell commands the agent ran, checkpoints, and the last 100 prompts. It was created with the umask default before, which left `history.db` world-readable and two files world-*writable*; an existing install is tightened the first time you run any `sk` command. This is a local filesystem control: it does not protect against root, and it does not stop anything the agent itself can read.
+
 ## Tests
 
 ```bash

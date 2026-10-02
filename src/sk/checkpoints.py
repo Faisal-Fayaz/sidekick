@@ -15,6 +15,9 @@ import re
 import time
 from pathlib import Path
 
+from sk.atomic import atomic_write_text
+from sk.fsperm import ensure_private_dir
+
 CHECKPOINT_TOOLS = ("write_file", "edit_file", "delete_file", "generate_image")
 MAX_CHECKPOINTS = 20
 MAX_FILE_BYTES = 1_000_000
@@ -23,9 +26,9 @@ MAX_FILE_BYTES = 1_000_000
 def _dir() -> Path:
     from .config import CONFIG_DIR
 
-    d = CONFIG_DIR / "checkpoints"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    # base64 of pre-edit file bytes: this directory and its contents must not be
+    # group/other readable (#301)
+    return ensure_private_dir(CONFIG_DIR / "checkpoints")
 
 
 def _path_for(session: str) -> Path:
@@ -46,7 +49,7 @@ def _load(session: str) -> list[dict]:
 
 def _save(session: str, recs: list[dict]) -> None:
     try:
-        _path_for(session).write_text(json.dumps(recs[-MAX_CHECKPOINTS:]))
+        atomic_write_text(_path_for(session), json.dumps(recs[-MAX_CHECKPOINTS:]))
     except Exception:
         pass
 
@@ -70,7 +73,7 @@ def _rload(session: str) -> list[dict]:
 
 def _rsave(session: str, recs: list[dict]) -> None:
     try:
-        _rpath_for(session).write_text(json.dumps(recs[-MAX_CHECKPOINTS:]))
+        atomic_write_text(_rpath_for(session), json.dumps(recs[-MAX_CHECKPOINTS:]))
     except Exception:
         pass
 

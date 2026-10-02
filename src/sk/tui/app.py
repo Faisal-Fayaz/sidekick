@@ -12,6 +12,8 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Input, Label, ListItem, ListView, RichLog, Static, TextArea
 
+from sk.fsperm import ensure_private_dir, private_open_append
+
 from .helpers import _load_history, _now, _role, _rule, _w, is_affirmative, log_error
 from .theme import install_sidekick_theme
 from .widgets import ChatArea, ChatLog
@@ -1136,8 +1138,10 @@ class SidekickTUI(App):
 
                 from sk.config import CONFIG_DIR
 
-                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-                with open(CONFIG_DIR / "tui-errors.log", "a") as f:
+                ensure_private_dir(CONFIG_DIR)
+                # second writer of this file; it records approval outcomes and
+                # the paths involved (#301)
+                with private_open_append(CONFIG_DIR / "tui-errors.log") as f:
                     f.write(
                         f"[{_dt.datetime.now():%Y-%m-%d %H:%M:%S}] approve: {name} -> {path} = {result} ({_t.monotonic() - asked_at:.0f}s)\n"
                     )
