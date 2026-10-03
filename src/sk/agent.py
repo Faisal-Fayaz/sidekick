@@ -562,6 +562,7 @@ def _run_tools_batch(
     max_workers: int = 4,
     read_only: bool = False,
     plan_mode: bool = False,
+    cancel=None,
 ) -> list[tuple[str, bool]]:
     """Run one turn's tool calls, returning [(result, repeated)] in input order.
 
@@ -571,7 +572,18 @@ def _run_tools_batch(
     immediately without executing. on_tool notifications replay serially in
     input order (they are display-only). Worker crashes become Error strings,
     never exceptions: one tool failing must not kill its siblings.
+
+    `cancel` is the cooperative stop signal from run_agent. Checked before each
+    call so a cancelled turn stops dispatching mid-batch rather than finishing
+    everything it had queued (#311).
     """
+
+    def _cancelled() -> bool:
+        try:
+            return bool(cancel is not None and cancel.is_set())
+        except Exception:
+            return False
+
     from concurrent.futures import ThreadPoolExecutor
 
     provider = getattr(cfg, "provider", "") if cfg is not None else ""
@@ -609,6 +621,10 @@ def _run_tools_batch(
         except Exception as e:
             return f"Error: tool '{name}' crashed: {e}"
 
+    if _cancelled():
+        # Cancelled before dispatch: do not start a single queued call.
+        return [(CANCELLED_TEXT, False) for _ in calls]
+
     gated = [i for i in fresh if needs_gate(i)]
     free = [i for i in fresh if not needs_gate(i)]
     if free:
@@ -616,8 +632,18 @@ def _run_tools_batch(
             for i, result in zip(free, pool.map(run_one, free)):
                 results[i] = (result, False)
     for i in gated:
+        # Gated calls run serially and each one can block on a human for up to
+        # five minutes, so a cancel is most likely to land here. Stop and mark the
+        # remainder rather than queueing more prompts nobody will answer (#311).
+        if _cancelled():
+            for j in gated[gated.index(i) :]:
+                if results[j] is None:
+                    results[j] = (CANCELLED_TEXT, False)
+            break
         results[i] = (run_one(i), False)
     for i in fresh:
+        if results[i] is None:
+            results[i] = (CANCELLED_TEXT, False)
         seen[keys[i]] = results[i][0]  # type: ignore[index]
         if on_tool is not None:
             try:
@@ -1772,6 +1798,10 @@ def _synthesize_exhaustion(
         return ""
 
 
+# Returned when a turn is cancelled cooperatively. Not an error: the caller
+# asked for it, and the TUI drops the text rather than posting it as an answer.
+CANCELLED_TEXT = "(cancelled)"
+
 # Prefix marking loop-machinery instructions (tool-protocol notes, continue
 # prompts). They steer the immediate next call only; _drop_stale_control
 # removes older copies so dead instructions stop haunting later turns.
@@ -1873,6 +1903,7 @@ def run_agent(
     review_plan=None,
     read_only: bool = False,
     plan_mode: bool = False,
+    cancel=None,
 ) -> str:
     """One agent turn with up to the effective step budget (explicit user
     config wins, else the model profile, else the configured default).
@@ -1893,8 +1924,25 @@ def run_agent(
     back to the audit_session context var (used by the TUI worker path).
     review_plan(plan_text, calls) -> bool: one confirmation for multi-tool
     turns with destructive actions (skipped when None or auto_approve).
+    cancel is a cooperative stop signal — anything with `.is_set()` — checked
+    between steps and inside the tool batch. The TUI needs it because
+    `asyncio.to_thread` runs this on a plain executor thread that `Task.cancel()`
+    cannot interrupt: cancelling the awaiting task raises at the await and leaves
+    this loop running, still dispatching tools and still calling back into the
+    approval prompt. A thread cannot be killed, only asked. (#311)
     """
     session = session or audit_session.get()
+
+    def _cancelled() -> bool:
+        """True once the caller has asked us to stop. Never raises."""
+        try:
+            return bool(cancel is not None and cancel.is_set())
+        except Exception:
+            return False
+
+    if _cancelled():
+        return CANCELLED_TEXT
+
     from .hooks import session_start as _session_start
 
     _session_start(session)  # once per session per process; never raises
@@ -1995,6 +2043,10 @@ def run_agent(
             }
         )
     for _ in range(max_steps):
+        if _cancelled():
+            # Stop before spending a step or emitting another token, so a
+            # cancelled turn goes quiet within one step (#311).
+            return CANCELLED_TEXT
         _drop_stale_control(messages)
         try:
             msg = _stream_chat(
@@ -2069,6 +2121,7 @@ def run_agent(
                 max_workers=max_parallel,
                 read_only=read_only,
                 plan_mode=plan_mode,
+                cancel=cancel,
             )
             for p in _edited_paths(batch):
                 if p not in edited:

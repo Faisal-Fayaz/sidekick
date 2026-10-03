@@ -29,6 +29,7 @@ def _approval_fake(calls):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         ok = approve("write_file", {"path": "/tmp/x", "content": "hi"})
         calls.append(ok)
@@ -114,7 +115,12 @@ async def _pilot_late_answer_stays_denied(monkeypatch, tmp_path):
             "deadline": _t.monotonic() + 300,
         }
         assert app._answer_pending("y") == "too-late"
-        assert not event.is_set()  # worker never woken: denial stands
+        # The denial stands — `answer` stays False — but the waiter is now woken.
+        # This asserted `not event.is_set()` with the comment "worker never woken",
+        # which is the defect #311 describes: the blocked turn thread stayed in
+        # event.wait() for the full timeout (up to five minutes) and accumulated.
+        # Waking it cannot approve anything, because the verdict was already False.
+        assert event.is_set(), "the late-answer path must release the blocked worker"
         assert app._pending_approval is None
         await pilot.pause()
         assert "too late — already denied" in _blob(app)

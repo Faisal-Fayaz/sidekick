@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 from rich.markdown import Markdown
@@ -101,7 +102,20 @@ class SidekickTUI(App):
         self._live_rendered_at: float = 0.0
         self._stats: str = ""
         self._pending_approval: dict[str, object] | None = None
-        self._plan_approved: frozenset[str] | None = None
+        # Plan approvals were session state, so a plan approved in one turn
+        # auto-passed the same writes in the next. Turn-scoped now: every
+        # approval records the turn that granted it and _approve ignores stale
+        # ones (#311).
+        self._plan_approved: dict | None = None
+        # Monotonic turn id. Bumped by every _answer, so an orphaned turn can
+        # detect that it is no longer current and keep its hands off state that
+        # now belongs to its replacement.
+        self._turn_seq: int = 0
+        self._turn_id: int = 0
+        # Cooperative stop signal for the running turn. `asyncio.to_thread`
+        # cannot be interrupted, so a new turn asks the old one to stop rather
+        # than abandoning it mid-flight.
+        self._turn_cancel: threading.Event | None = None
         self._drawer_sessions: list[str] = []
         self._drawer_models: list[tuple[str | None, str]] = []
         self._drawer_themes: list[str] = []
@@ -971,7 +985,11 @@ class SidekickTUI(App):
             return
         self._transcribing = True
         _role(log, "", "transcribing locally...")
-        self.run_worker(self._do_transcribe(self._rec_wav), exclusive=True)
+        # Own group: transcription used to share Textual's "default" group with
+        # turns, so `exclusive=True` cancelled a running agent turn (or was
+        # cancelled by it) even though the two have nothing to do with each other
+        # (#311).
+        self.run_worker(self._do_transcribe(self._rec_wav), group="voice", exclusive=True)
 
     async def _do_transcribe(self, wav: str) -> None:
         import asyncio
@@ -1091,11 +1109,15 @@ class SidekickTUI(App):
                 return True
             if is_session_allowed(name, args, tuple(self.state.get("allow", ()) or ())):
                 return True
+        # Turn-scoped: a plan approval from a superseded turn must not auto-pass
+        # a write in this one. An orphan used to set this after the cancelled
+        # task's `finally` had already cleared it, so turn N's approval leaked
+        # into turn N+1 (#311).
         plan = getattr(self, "_plan_approved", None)
-        if plan:
+        if plan and plan.get("turn") == getattr(self, "_turn_id", 0):
             from sk.agent import _tool_target
 
-            if _tool_target(name, args) in plan:
+            if _tool_target(name, args) in (plan.get("targets") or frozenset()):
                 return True
         path = args.get("path", args.get("cmd", "?"))
         preview = str(args.get("content", ""))[:200] if name == "write_file" else ""
@@ -1133,6 +1155,7 @@ class SidekickTUI(App):
         owner = threading.get_ident()
         deadline = _t.monotonic() + timeout + 30
         asked_at = _t.monotonic()
+        turn = getattr(self, "_turn_id", 0)
         self._pending_approval = {
             "question": f"{name} -> {path}",
             "event": event,
@@ -1143,6 +1166,7 @@ class SidekickTUI(App):
             "token": token,
             "owner": owner,
             "deadline": deadline,
+            "turn": turn,
         }
 
         def _log_outcome(result: str) -> None:
@@ -1184,6 +1208,13 @@ class SidekickTUI(App):
             _log_outcome("slot-stolen-denied")
             self._mark_resolved(name, path, "denied", "superseded by a newer prompt")
             return False  # slot stolen/cleared concurrently: fail closed
+        if pending.get("turn") != turn:
+            # Our own turn was superseded while this card sat unanswered. Fail
+            # closed: an orphan must not consume an answer meant for the turn the
+            # user can actually see (#311).
+            _log_outcome("turn-superseded-denied")
+            self._mark_resolved(name, path, "denied", "turn was cancelled")
+            return False
         approved = bool(pending.get("answer", False))
         _log_outcome("approved" if approved else f"denied reply={pending.get('reply', '')[:20]!r}")
         if approved:
@@ -1213,8 +1244,14 @@ class SidekickTUI(App):
                 return False
 
         approved = frozenset({_tool_target(n, a) for n, a in calls})
+        turn = getattr(self, "_turn_id", 0)
         ok = self._wait_slot("plan", f"{len(calls)} tools", plan_text)
-        self._plan_approved = approved if ok else None
+        if getattr(self, "_turn_id", 0) != turn:
+            # We were superseded while the human was looking at the card. Record
+            # nothing — writing here is exactly how an orphan used to hand its
+            # approval to the next turn (#311).
+            return False
+        self._plan_approved = {"turn": turn, "targets": approved} if ok else None
         return ok
 
     def _live_pending(self):
@@ -1407,6 +1444,13 @@ class SidekickTUI(App):
         except Exception:
             expired = False
         if expired:
+            # Release the waiter. It used to be cleared here but never woken, so
+            # the cancelled turn's thread stayed blocked in event.wait() for the
+            # full timeout — up to five minutes — and accumulated (#311).
+            try:
+                pending["event"].set()
+            except Exception:
+                pass
             self._pending_approval = None
             if log is not None:
                 try:
@@ -1542,10 +1586,16 @@ class SidekickTUI(App):
             self._sub()
             if out.agent_prompt:
                 self._prime_live()
-                self.run_worker(self._answer(out.agent_prompt, show_as="oops"), exclusive=True)
+                self.run_worker(
+                    self._answer(out.agent_prompt, show_as="oops"), group="turn", exclusive=True
+                )
             return
         self._prime_live()
-        self.run_worker(self._answer(text), exclusive=True)
+        # Group "turn" is still exclusive — a new message *should* supersede the
+        # previous turn — but it now scopes to turns only, and superseding is
+        # cooperative: _answer asks the old turn to stop, which it can actually
+        # honour, instead of abandoning the thread to keep running (#311).
+        self.run_worker(self._answer(text), group="turn", exclusive=True)
 
     def _prime_live(self) -> None:
         self._live_parts = []
@@ -1621,6 +1671,22 @@ class SidekickTUI(App):
         from sk.store import get_history, save_message
 
         log = self.query_one("#chat-log", RichLog)
+
+        # Open a turn and stand the previous one down. `run_worker(exclusive=True)`
+        # only cancelled the awaiting task; the agent thread kept running on the
+        # executor, still dispatching tools and still posting approval cards that
+        # fought the new turn for one shared slot. A thread cannot be killed, so
+        # we ask instead (#311).
+        self._turn_seq = int(getattr(self, "_turn_seq", 0)) + 1
+        turn = self._turn_seq
+        self._turn_id = turn
+        cancel = threading.Event()
+        prev = getattr(self, "_turn_cancel", None)
+        if prev is not None:
+            prev.set()
+        self._turn_cancel = cancel
+        self._plan_approved = None  # ours now; the old turn's was never ours
+
         cfg = Config.load()
         if self.model_override:
             cfg.model = self.model_override
@@ -1670,10 +1736,21 @@ class SidekickTUI(App):
                     review_plan=self._review_plan,
                     read_only=bool(self.state.get("readonly")),
                     plan_mode=bool(self.state.get("plan")),
+                    cancel=cancel,
                 )
             finally:
                 audit_session.reset(token)
-                self._plan_approved = None  # turn-scoped: never leak into next turn
+                # Only clear state while this is still the current turn. An
+                # orphan clearing _plan_approved on its way out would wipe the
+                # approval the *new* turn just granted (#311).
+                if getattr(self, "_turn_id", 0) == turn:
+                    self._plan_approved = None
+                # _turn_cancel is deliberately NOT cleared here. Textual cancels
+                # the superseded worker and runs this `finally` to completion
+                # before the replacement's _answer starts, so clearing it lost the
+                # token the new turn needs to signal — and the orphan carried on.
+                # A finished turn's token is never set, so signalling it is a
+                # harmless no-op; the next turn overwrites the field anyway.
         except Exception as e:
             log_error("answer", e)
             try:
@@ -1685,6 +1762,15 @@ class SidekickTUI(App):
             except Exception:
                 pass
             return
+        if cancel.is_set() and getattr(self, "_turn_id", 0) != turn:
+            # Superseded while running: drop the answer rather than posting a
+            # reply to a question the user has already moved on from (#311).
+            try:
+                self.call_from_thread(self._hide_live)
+            except Exception:
+                pass
+            return
+
         secs = time.monotonic() - self._turn_start
         toks = max(1, len("".join(self._live_parts)) // 4)
         save_message(self.session, "assistant", answer)

@@ -195,13 +195,21 @@ def test_cli_reviewer_yolo_and_prompt(monkeypatch, capsys):
 
 
 def test_tui_review_plan_sets_turn_scope(monkeypatch):
+    """Plan approvals carry the turn that granted them.
+
+    `_plan_approved` was a bare frozenset, so it was session state and turn N's
+    approval auto-passed the same writes in turn N+1 (#311). It now records the
+    granting turn alongside the targets.
+    """
     from sk.agent import _tool_target
     from sk.tui.app import SidekickTUI
 
     app = SidekickTUI()
+    app._turn_id = 4
+    target = _tool_target("shell", {"cmd": "x"})
     monkeypatch.setattr(app, "_wait_slot", lambda *a, **k: True)
     assert app._review_plan("1. shell -> x", [("shell", {"cmd": "x"})]) is True
-    assert app._plan_approved == {_tool_target("shell", {"cmd": "x"})}
+    assert app._plan_approved == {"turn": 4, "targets": frozenset({target})}
     monkeypatch.setattr(app, "_wait_slot", lambda *a, **k: False)
     assert app._review_plan("1. shell -> x", [("shell", {"cmd": "x"})]) is False
     assert app._plan_approved is None
