@@ -52,9 +52,11 @@ def test_all_presets_have_urls():
 
 
 def test_mask():
+    # Set-versus-unset is the only distinction any call site relies on. The third
+    # assertion used to be `== "sk-…3456"`, i.e. it asserted the leak (#269).
     assert Config.mask("") == "(none)"
     assert Config.mask("short") == "****"
-    assert Config.mask("sk-abcdef123456") == "sk-…3456"
+    assert Config.mask("sk-abcdef123456") == "****"
 
 
 def test_client_uses_effective_values():
