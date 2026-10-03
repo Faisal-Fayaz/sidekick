@@ -688,18 +688,34 @@ def _gated_dispatch(
         return (reason, False)
     from .tools import PLAN_DENIED_TOOLS, READONLY_DENIED_TOOLS
 
+    # With no mode gate active, clear any stale count for this tool. Otherwise a
+    # session that probed exec under /plan would stay blocked for the rest of its
+    # life after the user did exactly what the denial message asked and ran
+    # /build — the count would never be consulted again, so nothing else could
+    # retire it.
+    if not (read_only or plan_mode):
+        _note_policy_denial(session, name, "off")
+
     if read_only and name in READONLY_DENIED_TOOLS:
-        msg = (
-            f"Denied: '{name}' is disabled in read-only mode "
-            f"(research and explain only — no writes). Switch modes to proceed."
-        )
+        _note_policy_denial(session, name, "readonly")
+        if _policy_denied(session, name):
+            msg = _policy_deny_stop_message(name, "read-only", "/readonly")
+        else:
+            msg = (
+                f"Denied: '{name}' is disabled in read-only mode "
+                f"(research and explain only — no writes). Switch modes to proceed."
+            )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
     if plan_mode and name in PLAN_DENIED_TOOLS:
-        msg = (
-            f"Denied: '{name}' is disabled in plan mode "
-            f"(propose the plan first — file writes need /build). Switch modes to proceed."
-        )
+        _note_policy_denial(session, name, "plan")
+        if _policy_denied(session, name):
+            msg = _policy_deny_stop_message(name, "plan mode", "/build")
+        else:
+            msg = (
+                f"Denied: '{name}' is disabled in plan mode "
+                f"(propose the plan first — file writes need /build). Switch modes to proceed."
+            )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
     missing = missing_required(name, args)
@@ -758,6 +774,28 @@ def _gated_dispatch(
 # skipping work). Never raises by construction (all access guarded).
 _fail_counts: dict[tuple[str, str, str], int] = {}
 
+# Consecutive *policy* denials, keyed (session, tool) — deliberately NOT keyed by
+# target, and deliberately separate from _fail_counts, because the two mean
+# opposite things:
+#
+#   _fail_counts          a runtime failure. "Change the arguments" may help, so
+#                         the per-target key is right and retrying is reasonable.
+#   _policy_deny_counts   a mode gate. `if plan_mode and name in PLAN_DENIED_
+#                         TOOLS` never inspects the arguments, so no command can
+#                         ever succeed. Retrying is futile by construction.
+#
+# Keying these by target (or folding them into _fail_counts) hid the problem:
+# a real session issued six *different* `exec` commands under plan mode, each a
+# distinct key, so the breaker never saw a repeat — and because policy denials
+# return before _record_tool_outcome is reached, they were not counted at all.
+# The turn burned its whole step budget and answered with a recap instead of a
+# result. Trips at 2 rather than 3: the first denial already explains the mode,
+# so a second attempt is unambiguous flailing, and there is no escape hatch to
+# suggest. In-memory per process, like _fail_counts. Never raises.
+_policy_deny_counts: dict[tuple[str, str], int] = {}
+
+POLICY_DENY_TRIPS_AT = 2
+
 BREAKER_TRIPS_AT = 3
 
 
@@ -780,6 +818,60 @@ def _breaker_tripped(session: str, name: str, target: str) -> int:
         return int(_fail_counts.get((session or "", name, target), 0))
     except Exception:
         return 0
+
+
+def _policy_denied(session: str, name: str) -> bool:
+    """True once this session has hit the mode gate on `name` too many times.
+
+    Ignores the arguments on purpose — a mode gate cannot be satisfied by a
+    different command, so counting per-target is what let the retries through.
+    """
+    try:
+        return int(_policy_deny_counts.get((session or "", name), 0)) >= POLICY_DENY_TRIPS_AT
+    except Exception:
+        return False
+
+
+def _policy_deny_stop_message(name: str, mode: str, switch: str) -> str:
+    """Guidance for a terminal mode denial.
+
+    The runtime breaker's advice — "change the arguments (smaller content,
+    different path/command) or fix the underlying cause" — is *wrong* for a mode
+    gate, because no argument can satisfy one. Emitting it here taught the retry
+    loop: a session was observed probing `exec` with six different commands under
+    plan mode, each denied, until the step budget was gone and the user got a
+    three-line recap instead of an answer.
+
+    So: state that the gate is not a failure, that arguments are irrelevant, and
+    give the two moves that actually work.
+    """
+    return (
+        f"Stopped: '{name}' has been denied {POLICY_DENY_TRIPS_AT}+ times in {mode}. "
+        f"That is a mode gate, not a failure — no arguments will change it, so "
+        f"trying another command cannot work. Do not retry it. Either answer now "
+        f"with what you already have, or tell the user to run `{switch}` to switch "
+        f"modes and continue."
+    )
+
+
+def _note_policy_denial(session: str, name: str, mode: str) -> None:
+    """Count a mode-gate denial, or clear the count when no gate is active.
+
+    Clearing matters: plan and read-only are per-turn flags, so the same session
+    can leave the mode via `/build` or `/readonly`. Without the reset, exec
+    would stay blocked for the rest of the session after the user did exactly
+    what the message asked.
+    """
+    try:
+        key = (session or "", name)
+        if mode == "plan":
+            _policy_deny_counts[key] = _policy_deny_counts.get(key, 0) + 1
+        elif mode == "readonly":
+            _policy_deny_counts[key] = _policy_deny_counts.get(key, 0) + 1
+        else:
+            _policy_deny_counts.pop(key, None)
+    except Exception:
+        pass
 
 
 class _TC:

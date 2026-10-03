@@ -279,3 +279,164 @@ def test_system_prompt_has_edit_first_doctrine():
 
     assert "EDIT FIRST" in SYSTEM_PROMPT
     assert "skeleton" in SYSTEM_PROMPT
+
+
+# --- mode-gate denials are terminal, not retryable failures -----------------
+#
+# Observed in a real session: one question asked three times, each turn ending in
+# a step-budget recap instead of an answer. Cause was 16 tool calls of which 6
+# were `exec` under /plan — six *different* commands, so the per-target breaker
+# never saw a repeat, and the policy denials were not counted at all because they
+# return before _record_tool_outcome.
+
+
+def _reset_breakers(monkeypatch):
+    import sk.agent as agent
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", "/nonexistent/h.db")
+    monkeypatch.setattr(agent, "_fail_counts", {})
+    monkeypatch.setattr(agent, "_policy_deny_counts", {})
+
+
+def test_policy_denial_counts_per_tool_not_per_target(tmp_path, monkeypatch):
+    """Different arguments are a different key for _fail_counts and must be a
+    different key here too — a mode gate cannot be satisfied by a new command."""
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    for cmd in ("wc -l src/*", "ls -R src", "git log --oneline -5"):
+        agent._gated_dispatch(
+            "exec", {"cmd": cmd}, approve=lambda n, a: True, session="t", plan_mode=True
+        )
+    out, ok = agent._gated_dispatch(
+        "exec", {"cmd": "du -sh ."}, approve=lambda n, a: True, session="t", plan_mode=True
+    )
+    assert ok is False and "Stopped" in out
+
+
+def test_first_policy_denial_still_explains_the_mode(tmp_path, monkeypatch):
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    out, ok = agent._gated_dispatch(
+        "exec", {"cmd": "wc -l src/*"}, approve=lambda n, a: True, session="t", plan_mode=True
+    )
+    assert ok is False
+    assert "disabled in plan mode" in out and "/build" in out
+    assert "Stopped" not in out, "tripped on the first denial"
+
+
+def test_policy_denial_message_never_suggests_changing_arguments(tmp_path, monkeypatch):
+    """The runtime breaker's advice is wrong for a mode gate, and saying it is
+    what taught the retry loop in the first place."""
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    msgs = []
+    for cmd in ("a", "b"):
+        out, _ = agent._gated_dispatch(
+            "exec", {"cmd": cmd}, approve=lambda n, ar: True, session="t", plan_mode=True
+        )
+        msgs.append(out)
+    stop = msgs[-1]
+    assert "Stopped" in stop
+    assert "change the arguments" not in stop
+    assert "no arguments will change it" in stop
+    assert "Do not retry" in stop
+    assert "/build" in stop
+
+
+def test_policy_denial_is_isolated_per_tool(tmp_path, monkeypatch):
+    """Blaming `exec` must not stop a different denied tool being reported."""
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    for _ in range(3):
+        agent._gated_dispatch(
+            "exec", {"cmd": "x"}, approve=lambda n, a: True, session="t", plan_mode=True
+        )
+    out, _ = agent._gated_dispatch(
+        "write_file",
+        {"path": "/tmp/x", "content": "y"},
+        approve=lambda n, a: True,
+        session="t",
+        plan_mode=True,
+    )
+    assert "disabled in plan mode" in out, "write_file inherited exec's count"
+    assert "Stopped" not in out
+
+
+def test_leaving_plan_mode_clears_the_denial(tmp_path, monkeypatch):
+    """Re-entering /plan must start from a clean count.
+
+    My first version of this test asserted only that exec *runs* after /build,
+    which passes whether or not the reset exists — the gate is keyed on the mode
+    flag, so it is simply not consulted when no gate is active. Sabotaging the
+    reset did not fail it. Asserting the obvious thing hid the actual defect.
+
+    The reset exists for the round trip: probe under /plan, switch to /build,
+    switch back. Without clearing, the first denial of the second /plan reports
+    "Stopped" with no explanation, because the count is still at the threshold
+    from the previous visit.
+    """
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    for _ in range(3):
+        agent._gated_dispatch(
+            "exec", {"cmd": "x"}, approve=lambda n, a: True, session="t", plan_mode=True
+        )
+    _, ok = agent._gated_dispatch(
+        "exec", {"cmd": "echo hi"}, approve=lambda n, a: True, session="t"
+    )
+    assert ok is True, "exec blocked after leaving plan mode"
+
+    out, _ = agent._gated_dispatch(
+        "exec", {"cmd": "y"}, approve=lambda n, a: True, session="t", plan_mode=True
+    )
+    assert "disabled in plan mode" in out, f"count survived the round trip: {out[:80]}"
+    assert "Stopped" not in out
+
+
+def test_read_only_mode_behaves_the_same(tmp_path, monkeypatch):
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    outs = [
+        agent._gated_dispatch(
+            "exec", {"cmd": c}, approve=lambda n, a: True, session="t", read_only=True
+        )[0]
+        for c in ("a", "b")
+    ]
+    assert "disabled in read-only mode" in outs[0]
+    assert "Stopped" in outs[1]
+    assert "/readonly" in outs[1]
+    assert "change the arguments" not in outs[1]
+
+
+def test_runtime_breaker_is_untouched_by_policy_counts(tmp_path, monkeypatch):
+    """The per-target runtime breaker keeps its own message and keying."""
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    args = {"path": "~/.ssh/evil", "content": "hi"}
+    for _ in range(3):
+        agent._gated_dispatch("write_file", args, approve=lambda n, a: True, session="t")
+    out, ok = agent._gated_dispatch("write_file", args, approve=lambda n, a: True, session="t")
+    assert ok is False and "Stopped" in out and "3 times" in out
+    assert "change the arguments" in out, "runtime guidance regressed"
+
+
+def test_policy_count_is_scoped_to_the_session(tmp_path, monkeypatch):
+    _reset_breakers(monkeypatch)
+    import sk.agent as agent
+
+    for _ in range(3):
+        agent._gated_dispatch(
+            "exec", {"cmd": "x"}, approve=lambda n, a: True, session="noisy", plan_mode=True
+        )
+    out, _ = agent._gated_dispatch(
+        "exec", {"cmd": "x"}, approve=lambda n, a: True, session="quiet", plan_mode=True
+    )
+    assert "Stopped" not in out, "one session's probing blocked another"
