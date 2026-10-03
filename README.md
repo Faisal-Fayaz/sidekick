@@ -246,7 +246,9 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 `~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`, `SIDEKICK_SPEND_CAP` (per-session USD cap, `0` = unlimited). Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
 
-**History budget:** `history_budget_tokens` (default 3000) caps per-turn history; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
+**History budget:** the prompt budget bounds the **whole assembled prompt**, not just history — system prompt, auto-context, tool schemas, and a reservation for the reply are all measured and subtracted, then history gets what is left (#308). `history_budget_tokens` (default 3000) caps that share; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
+
+**Context window:** `context_window` (0 = take it from the model profile) sets the total window, and the same number is sent to Ollama as `num_ctx`, so the budget and the server cannot disagree. Local models default to 16k, frontier to 200k. The fixed cost alone — system prompt plus tool schemas — measures ~3,700 tokens, so a window below ~8k leaves no usable conversation. Raise it if you have VRAM to spare; the KV cache grows with it. Run `/context` to see where a turn's tokens actually go.
 
 **Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may carry a `[project]` table only:
 

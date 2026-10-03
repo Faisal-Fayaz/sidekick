@@ -32,12 +32,25 @@ CLOUD_TOKENS = 800
 FRONTIER_TOKENS = 2000
 FRONTIER_STEPS = 15
 
+# Total prompt window per class. Local is deliberately small: the KV cache is
+# VRAM, and these run on machines where the model itself is CPU-offloaded.
+#
+# Measured on a real build with no auto-context and two tiny history messages:
+# system prompt ~1970 tok + tool schemas ~1699 tok = ~3670 tok before the model
+# has read anything. Against the old hardcoded num_ctx of 4096 that left ~324
+# tokens for the entire conversation, so the budget could not be honoured at any
+# setting (#308).
+LOCAL_WINDOW = 16384
+CLOUD_WINDOW = 128000
+FRONTIER_WINDOW = 200000
+
 DEFAULT_PROFILE: dict[str, object] = {
     "native_tools": True,
     "json_discipline": "high",
     "max_parallel": 4,
     "max_tokens": None,  # None → provider default (no behavior change)
     "max_steps": None,  # None → user config (no behavior change)
+    "context_window": None,  # None → class default (no behavior change)
     "note": "unprofiled model: current heuristics apply",
 }
 
@@ -48,6 +61,7 @@ PROFILES: dict[str, dict[str, object]] = {
         "max_parallel": 2,
         "max_tokens": LOCAL_TOKENS,
         "max_steps": 5,
+        "context_window": LOCAL_WINDOW,
         "note": "3B class: text-JSON only, keep batches small",
     },
     "qwen2.5-coder:7b": {
@@ -56,6 +70,7 @@ PROFILES: dict[str, dict[str, object]] = {
         "max_parallel": 4,
         "max_tokens": LOCAL_TOKENS,
         "max_steps": 5,
+        "context_window": LOCAL_WINDOW,
         "note": "reliable native tools + clean JSON fallback",
     },
     "gpt-4o": {
@@ -64,6 +79,7 @@ PROFILES: dict[str, dict[str, object]] = {
         "max_parallel": 4,
         "max_tokens": FRONTIER_TOKENS,
         "max_steps": FRONTIER_STEPS,
+        "context_window": FRONTIER_WINDOW,
         "note": "frontier class: whole-file turns fit",
     },
     "claude-sonnet-5": {
@@ -72,6 +88,7 @@ PROFILES: dict[str, dict[str, object]] = {
         "max_parallel": 4,
         "max_tokens": FRONTIER_TOKENS,
         "max_steps": FRONTIER_STEPS,
+        "context_window": FRONTIER_WINDOW,
         "note": "frontier class: whole-file turns fit",
     },
     "deepseek-chat": {
@@ -80,6 +97,7 @@ PROFILES: dict[str, dict[str, object]] = {
         "max_parallel": 4,
         "max_tokens": FRONTIER_TOKENS,
         "max_steps": FRONTIER_STEPS,
+        "context_window": FRONTIER_WINDOW,
         "note": "frontier class: whole-file turns fit",
     },
 }
@@ -125,6 +143,28 @@ def max_tokens_for(model_id: str, provider: str = "") -> int:
     except Exception:
         pass
     return LOCAL_TOKENS if (provider or "") in ("ollama", "lmstudio") else CLOUD_TOKENS
+
+
+def context_window_for(model_id: str, provider: str = "", override: int = 0) -> int:
+    """Total prompt window (input + output) for a model. Never raises.
+
+    Precedence: explicit user override, then the profile, then a class default.
+    The same number feeds Ollama's `num_ctx` and the prompt budget (#308), so
+    the two cannot drift apart the way the old hardcoded 4096 did.
+    """
+    try:
+        v = int(override or 0)
+        if v > 0:
+            return max(2048, v)
+    except Exception:
+        pass
+    try:
+        profiled = match_profile(model_id).get("context_window", None)
+        if profiled is not None:
+            return max(2048, int(str(profiled)))
+    except Exception:
+        pass
+    return LOCAL_WINDOW if (provider or "") in ("ollama", "lmstudio") else CLOUD_WINDOW
 
 
 def max_steps_for(model_id: str) -> int | None:

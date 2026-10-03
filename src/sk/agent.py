@@ -12,6 +12,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
+from .model_profiles import context_window_for, max_tokens_for
 from .tokens import estimate_tokens as tokens_estimate
 from .tools import (
     approval_tools,
@@ -400,6 +401,19 @@ def _effort_level(cfg: Config, plan_mode: bool = False) -> str:
         return "low"
 
 
+def _window_override(cfg) -> int:
+    """User-set context window, 0 when unset. Never raises."""
+    try:
+        return max(0, int(getattr(cfg, "context_window", 0) or 0))
+    except Exception:
+        return 0
+
+
+def resolved_window(cfg) -> int:
+    """The one number that bounds this turn: profile or user override."""
+    return context_window_for(cfg.model, cfg.provider, _window_override(cfg))
+
+
 def _extra_body(cfg: Config, plan_mode: bool = False) -> dict:
     """Provider-specific request params (sent as OpenAI extra_body). Never raises.
 
@@ -414,7 +428,16 @@ def _extra_body(cfg: Config, plan_mode: bool = False) -> dict:
     """
     level = _effort_level(cfg, plan_mode)
     if cfg.provider in ("ollama", "lmstudio"):
-        body: dict = {"options": {"num_ctx": 4096, "num_predict": 350}}
+        # num_ctx was hardcoded to 4096 while the budget counted only history, so
+        # the two disagreed by construction: system prompt + tool schemas alone
+        # measure ~3670 tokens, leaving ~324 for the entire conversation (#308).
+        # Both now come from one resolver, so they cannot drift again.
+        body: dict = {
+            "options": {
+                "num_ctx": context_window_for(cfg.model, cfg.provider, _window_override(cfg)),
+                "num_predict": 350,
+            }
+        }
         # think toggle is Ollama-only (LM Studio may 400 on unfamiliar keys).
         if cfg.provider == "ollama":
             if level == "off":
@@ -1487,6 +1510,143 @@ def deliberation_nudge(user_msg: str) -> str:
     return ""
 
 
+# Output has to be reserved inside the window, not spent from history. Without
+# this the prompt can fill the entire context and leave nothing to answer in,
+# which is a truncation at best and a 400 at worst (#308).
+SAFETY_MARGIN_FRACTION = 0.08
+MIN_RESERVED_OUTPUT = 512
+
+
+def _tool_schema_tokens() -> int:
+    """Token cost of the tool schemas. Measured, not estimated from a constant.
+
+    These ship on every request and are pure overhead as far as the conversation
+    is concerned: ~1700 tokens, which is 40% of a small window before the model
+    reads a single word of the conversation.
+    """
+    try:
+        from .tools.registry import TOOLS_SCHEMA
+
+        return tokens_estimate(json.dumps(TOOLS_SCHEMA))
+    except Exception:
+        return 0
+
+
+def context_budget(cfg, fixed_tokens: int, max_output: int) -> dict:
+    """How this turn's prompt is allowed to be spent. Never raises.
+
+        window            the model's total context
+      - fixed              system prompt + auto-context + tool schemas
+      - reserved_output    room for the reply
+      - safety_margin      provider slack (and the summariser's own headroom)
+
+    = room for history.
+
+    `fixed_tokens` is measured by the caller from the parts it has already
+    assembled, so this cannot drift from reality the way a hardcoded per-component
+    allowance did (#308).
+    """
+    window = resolved_window(cfg)
+    try:
+        out = max(MIN_RESERVED_OUTPUT, int(max_output or 0))
+    except Exception:
+        out = MIN_RESERVED_OUTPUT
+    margin = int(window * SAFETY_MARGIN_FRACTION)
+    room = window - int(fixed_tokens or 0) - out - margin
+    over = room < 0
+
+    # history_budget_tokens stays meaningful by capping what the physics allows,
+    # rather than being replaced by it. The user asks for a smaller history (so
+    # compaction runs earlier); the window imposes a hard ceiling nobody can ask
+    # past. min() of the two, so raising the knob helps right up to the ceiling
+    # and lowering it still compacts sooner. Previously the knob set a
+    # summarisation target that a separate 20-message cap then ignored (#308).
+    try:
+        want = int(getattr(cfg, "history_budget_tokens", 0) or 0)
+    except Exception:
+        want = 0
+    if want > 0:
+        room = min(room, want)
+
+    return {
+        "window": window,
+        "fixed": int(fixed_tokens or 0),
+        "reserved_output": out,
+        "safety_margin": margin,
+        "room": max(0, room),
+        "over_budget": over,
+        "requested": want,
+    }
+
+
+def fit_history(history: list[dict], room: int, floor: int = 2) -> tuple[list[dict], int]:
+    """Drop oldest turns until the rendered history fits `room`.
+
+    Lossless: this is a per-turn view trim, not compaction, and it never rewrites
+    the stored session. A `floor` keeps at least the newest few exchanges so a
+    starved window degrades to "very short memory" rather than "no memory".
+
+    Returns (kept, dropped_count). Never raises.
+    """
+    try:
+        msgs = list(history or [])
+        if not msgs or room <= 0:
+            return (msgs[-floor:] if msgs and floor > 0 else [], max(0, len(msgs) - max(floor, 0)))
+        kept = list(msgs)
+        while len(kept) > floor and tokens_estimate(_render_turns(kept)) > room:
+            kept.pop(0)
+        return (kept, len(msgs) - len(kept))
+    except Exception:
+        return (list(history or []), 0)
+
+
+def context_report(cfg, history: list | None = None) -> str:
+    """Human breakdown of what this turn's prompt is spending.
+
+    Assembles the real thing rather than adding up constants, so it cannot drift
+    from `build_messages` (#308). Cheap enough to run on demand.
+    """
+    try:
+        msgs = build_messages("(breakdown)", list(history or []), cfg)
+        from .model_profiles import max_tokens_for as _mt
+
+        system = str(msgs[0].get("content", ""))
+        auto = str(msgs[1].get("content", "")) if len(msgs) > 1 else ""
+        if str(msgs[1].get("role", "")) != "user":
+            auto = ""
+        hist_tok = sum(
+            tokens_estimate(str(m.get("content"))) for m in msgs if m.get("role") != "system"
+        )
+        b = context_budget(
+            cfg, tokens_estimate(system) + tokens_estimate(auto), _mt(cfg.model, cfg.provider)
+        )
+        window = b["window"]
+        rows = [
+            ("system prompt", tokens_estimate(system)),
+            ("auto-context", tokens_estimate(auto)),
+            ("tool schemas", _tool_schema_tokens()),
+            ("history", hist_tok),
+            ("reserved output", b["reserved_output"]),
+            ("safety margin", b["safety_margin"]),
+        ]
+        out = [f"**context budget** — window {window:,} tokens"]
+        for name, n in rows:
+            bar = "#" * max(0, min(30, int(n * 30 / max(1, window))))
+            out.append(f"  {name:<17} {n:>7,}  {bar}")
+        used = sum(n for name, n in rows if name not in ("reserved output", "safety margin"))
+        out.append(f"  {'used / window':<17} {used:>7,} / {window:,}")
+        if b["over_budget"]:
+            out.append(
+                "  **over budget** — the fixed parts alone exceed this window. "
+                "Raise it with `context_window`, or use a model with a bigger one."
+            )
+        if b.get("requested"):
+            out.append(f"  (history_budget_tokens caps history at {b['requested']:,})")
+        return "\n".join(out)
+    except Exception as e:
+        return f"_context breakdown failed: {e}_"
+
+
 def build_messages(
     user_msg: str,
     history: list[dict],
@@ -1635,14 +1795,51 @@ def build_messages(
         # Placed before history so the prompt-cache prefix (system + this block)
         # stays stable for a session (#299, refs #276).
         *([{"role": "user", "content": untrusted_message}] if untrusted_message else []),
-        *hist[-20:],
-        {
-            "role": "user",
-            "content": (
-                [{"type": "text", "text": user_msg}, *image_parts] if image_parts else user_msg
-            ),
-        },
     ]
+
+    # Budget the *assembled prompt*, not history in isolation (#308).
+    #
+    # `hist[-20:]` used to cap history at 20 messages regardless of size or of how
+    # much room was actually left, while the system prompt, the auto-context
+    # blocks and ~1700 tokens of tool schema were never counted anywhere. Raising
+    # history_budget_tokens therefore did nothing past ~19 turns, and the real
+    # prompt could exceed the window while sk reported healthy.
+    #
+    # The fixed parts are already assembled above, so they are measured rather
+    # than estimated, and history takes what is genuinely left.
+    system_text = str(messages[0].get("content", ""))
+    fixed = (
+        tokens_estimate(system_text)
+        + tokens_estimate(untrusted_message)
+        + _tool_schema_tokens()
+        + tokens_estimate(user_msg)
+    )
+    b = context_budget(cfg, fixed, max_tokens_for(cfg.model, cfg.provider))
+    kept, dropped = fit_history(hist, b["room"])
+
+    messages.extend(
+        [
+            *kept,
+            {
+                "role": "user",
+                "content": (
+                    [{"type": "text", "text": user_msg}, *image_parts] if image_parts else user_msg
+                ),
+            },
+        ]
+    )
+    messages[0]["content"] = system_text
+    try:
+        _last_budget = {
+            **{k: int(v) for k, v in b.items() if k != "over_budget"},
+            "over_budget": bool(b["over_budget"]),
+            "dropped": int(dropped),
+            "history_kept": len(kept),
+            "history_offered": len(hist),
+        }
+        globals()["LAST_BUDGET"] = _last_budget
+    except Exception:
+        pass
     return messages
 
 

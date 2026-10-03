@@ -19,6 +19,7 @@ class SlashOut:
 
 COMMANDS: list[tuple[str, str]] = [
     ("help", "this list"),
+    ("context", "where this turn's prompt tokens are going (window / system / tools / history)"),
     ("model [fast|smart|name]", "show or switch model (`sk model` for guided picker)"),
     ("provider [name]", "show or switch provider (keys via `sk auth add`, never pasted here)"),
     ("models", "list models on the current provider"),
@@ -124,6 +125,20 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
     if cmd in ("help", "h", "?"):
         return SlashOut(handled=True, text=help_text())
+
+    if cmd in ("context", "ctx"):
+        # Why this exists: the budget used to count history only, so `sk` reported
+        # healthy while the assembled prompt — system prompt plus auto-context plus
+        # ~1700 tokens of tool schema — overran the window (#308). Now you can see
+        # where the tokens actually go.
+        from .agent import context_report
+        from .store import get_history
+
+        try:
+            hist = get_history(session)
+        except Exception:
+            hist = []
+        return SlashOut(handled=True, text=context_report(cfg, hist))
 
     if cmd == "model":
         from .config import PRESETS as _PRESETS
