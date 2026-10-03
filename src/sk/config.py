@@ -905,7 +905,27 @@ class Config:
 
     @staticmethod
     def mask(key: str) -> str:
+        """Redacted key for display. Reveals nothing about the secret.
+
+        Was `first3…last4` — so `sk config --show`, `sk auth`, `sk doctor`, the
+        status line and every report carried 7 characters of a live credential.
+        Those characters are *confirmatory*, not decorative: an attacker holding a
+        suspected key can test a guess against them, so prefix/suffix shortened an
+        otherwise high-entropy secret's search space in exchange for nothing. It
+        also looked silly on a uniform key, where it printed `xxx…xxxx`.
+
+        The diagnostic value was thinner than it looked. `cfg.provider` already
+        says which provider a key belongs to, so a `sk-` prefix adds nothing; and
+        `sk auth` separately prints `key_source(...)`, which answers the question
+        people actually ask — *where* did this key come from.
+
+        So `(none)` when unset, `****` when set. Set-versus-unset survives, which
+        is the only property any call site depended on.
+
+        Deliberately no opt-in flag to reveal more. A "show me my key" flag gets
+        pasted into logs, scrollback and bug reports, which is where this leak
+        came from in the first place. To see the key, read your own config file.
+        (#269)
+        """
         key = (key or "").strip()
-        if len(key) <= 8:
-            return "****" if key else "(none)"
-        return f"{key[:3]}…{key[-4:]}"
+        return "****" if key else "(none)"
