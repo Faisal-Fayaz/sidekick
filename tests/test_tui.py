@@ -227,6 +227,7 @@ async def _pilot_streaming(monkeypatch):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         if on_reasoning:
             on_reasoning("hmm ")
@@ -682,6 +683,7 @@ def _approval_fake(store):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         ok = approve("write_file", {"path": "/tmp/x", "content": "hi"})
         store.append(ok)
@@ -846,6 +848,7 @@ async def _pilot_stale_pending_ignored(monkeypatch):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         agent_calls.append(text)
         return "agent heard you"
@@ -935,6 +938,7 @@ async def _pilot_slash_bypasses_pending(monkeypatch):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         agent_calls.append(text)
         return "done"
@@ -1378,6 +1382,7 @@ async def _pilot_reasoning_stays_display_only(monkeypatch):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         if on_reasoning:
             on_reasoning("secret deliberation")
@@ -1456,7 +1461,12 @@ def test_answer_pending_accepts_fresh(monkeypatch):
 
 
 def test_answer_pending_rejects_stale(monkeypatch):
-    """Late 'y' to an expired card: rejected, worker NOT woken, denial stands."""
+    """Late 'y' to an expired card: rejected, worker woken, denial stands.
+
+    The docstring used to say "worker NOT woken" and the test asserted as much.
+    That was the bug in #311: the waiter blocked for the full timeout instead of
+    unwinding. The verdict is unchanged — still denied — so waking it is safe.
+    """
     import threading as _th
     import time as _t
 
@@ -1472,7 +1482,7 @@ def test_answer_pending_rejects_stale(monkeypatch):
         event=event,
     )
     assert app._answer_pending("y") == "too-late"
-    assert not event.is_set()
+    assert event.is_set(), "a late answer must release the blocked worker (#311)"
     assert app._pending_approval is None
     assert any("too late" in p for p in posted)
 
@@ -1523,6 +1533,7 @@ async def _pilot_long_answer_renders_inline(monkeypatch):
         review_plan=None,
         read_only=False,
         plan_mode=False,
+        cancel=None,
     ):
         return body
 
