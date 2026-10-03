@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -341,6 +342,103 @@ def _match_tool_obj(obj: dict, allowed: set[str]) -> tuple[str, dict] | None:
                         return (fn["name"], args)
             return (fn["name"], {})
     return None
+
+
+# --- unparsed tool-call residue -------------------------------------------
+#
+# A model whose tool calls arrive in a chat-template format we do not parse
+# (observed: MiniMax's `<invoke name="...">` markup via an OpenRouter free model)
+# used to have its markup posted verbatim as the assistant's answer. Two things
+# went wrong at once: the user saw model internals, and the calls the model meant
+# to make were silently dropped, so the turn ended having done none of them.
+#
+# `_parse_text_tools` only finds JSON, so nothing downstream could catch it — and
+# the "emit tools as ```json blocks" note only fires when native tools are OFF,
+# which is not the case for a model that usually calls tools natively. There was
+# no path at all.
+#
+# These markers appear nowhere in SYSTEM_PROMPT or TOOLS_SCHEMA (asserted in
+# tests), so anchoring on a literal `<` plus a tag name cannot false-positive on
+# prose that merely mentions tool_call.
+#
+# Kept deliberately narrow. `parameter` and `function` were tried and dropped:
+# "A <parameter> is a placeholder in some frameworks" is ordinary prose, and a
+# detector that eats legitimate answers is worse than none.
+_TOOL_RESIDUE_TAGS = ("tool_call", "toolcall", "invoke")
+_TAG_RESIDUE = re.compile(r"<\s*/?\s*(?:" + "|".join(_TOOL_RESIDUE_TAGS) + r")\b[^>]*>", re.I)
+# Some providers wrap the template in its own delimiters, e.g. `<]minimax[>[<`.
+_TEMPLATE_ARTIFACT = re.compile(r"<\]?\s*[\w.-]{2,20}\s*\[>\s*\[<", re.I)
+# The `<invoke name="X">` form is residue only when X is a tool we actually have;
+# otherwise the model is quoting some *other* system's markup.
+_INVOKE_NAME = re.compile(r"<\s*invoke\s+name\s*=\s*[\"']([A-Za-z_][\w.]*)[\"']", re.I)
+
+KNOWN_TOOL_NAMES = frozenset(
+    {
+        "sysinfo",
+        "list_dir",
+        "read_file",
+        "exec",
+        "shell",
+        "delete_file",
+        "write_file",
+        "edit_file",
+        "make_dir",
+        "remember",
+        "recall",
+        "todo_add",
+        "todo_list",
+        "todo_done",
+        "read_url",
+        "web_search",
+        "skill",
+    }
+)
+
+
+def _tool_residue(text: str) -> bool:
+    """True when `text` carries an unparsed tool-call attempt. Never raises.
+
+    Conservative by design: a false positive would eat a legitimate answer, so
+    this only fires on markup that cannot plausibly be prose.
+    """
+    try:
+        t = text or ""
+        if not t:
+            return False
+        names = {m.group(1) for m in _INVOKE_NAME.finditer(t)}
+        if names & KNOWN_TOOL_NAMES:
+            return True
+        if names:
+            # Some other system's markup. Only our template wrapper counts.
+            return bool(_TEMPLATE_ARTIFACT.search(t))
+        return bool(_TAG_RESIDUE.search(t) or _TEMPLATE_ARTIFACT.search(t))
+    except Exception:
+        return False
+
+
+def _strip_tool_residue(text: str) -> str:
+    """The prose that preceded any residue. Never raises, always returns a str."""
+    try:
+        t = text or ""
+        if not _tool_residue(t):
+            return t
+        # cut from the first marker; keep whatever came before it
+        starts = []
+        m = _INVOKE_NAME.search(t)
+        if m:
+            starts.append(m.start())
+        for rx in (_TAG_RESIDUE, _TEMPLATE_ARTIFACT):
+            g = rx.search(t)
+            if g:
+                starts.append(g.start())
+        if not starts:
+            return t
+        # Trim the delimiter debris too: the real markup often starts with the
+        # template's own bracket, which would otherwise be left sitting in front
+        # of the error we report.
+        return t[: min(starts)].strip().strip("[]<>").strip()
+    except Exception:
+        return (text or "").strip()
 
 
 def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
@@ -1847,6 +1945,27 @@ def build_messages(
 # model rounds per turn are spent fixing verify failures. Never raises.
 VERIFY_REPAIR_BUDGET = 2
 
+# How many times one turn may retry after the model emits an unparseable tool
+# call before giving up and saying so. Two is enough to catch a one-off slip and a
+# model that needed telling; beyond that the format is not going to change, and
+# spending the rest of the budget on it would end the turn with less than
+# saying plainly that nothing ran.
+MAX_RESIDUE_RETRIES = 2
+
+
+def _record_residue_failure(model: str, attempts: int) -> None:
+    """Note a repeated unparsed tool-call format, so it is visible without
+    having to read the transcript. Never raises."""
+    try:
+        from .store import log_compact_note
+
+        log_compact_note(
+            f"tool-call residue: {model} emitted an unparseable tool-call format "
+            f"{attempts}x in one turn; nothing executed"
+        )
+    except Exception:
+        pass
+
 
 def _edited_paths(batch: list[tuple[str, dict]]) -> list[str]:
     """Paths touched by write_file/edit_file calls in a tool batch.
@@ -2239,6 +2358,7 @@ def run_agent(
                 + "[model does not support native tool calling — emit tools as ```json blocks only]\n",
             }
         )
+    residue_attempts = 0  # consecutive unparsed tool-call attempts, this turn
     for _ in range(max_steps):
         if _cancelled():
             # Stop before spending a step or emitting another token, so a
@@ -2294,6 +2414,38 @@ def run_agent(
         # NOTE: falsy check (not `is None`) — some providers return [] instead
         # of null, and [] must take the fallback path, never post as chat.
         text_tools = _parse_text_tools(msg_text)
+        if not getattr(msg, "tool_calls", None) and not text_tools and _tool_residue(msg_text):
+            # The model tried to call tools in a chat-template format we cannot
+            # parse. Previously the raw markup was posted as the answer: the user
+            # saw model internals, the intended calls were dropped, and the turn
+            # ended having done none of them.
+            #
+            # So: keep the prose, drop the markup, keep history clean, and spend a
+            # step telling the model what to do instead. Bounded, because a model
+            # that keeps doing this must not loop until the budget dies.
+            residue_attempts += 1
+            clean = _strip_tool_residue(msg_text)
+            messages.append({"role": "assistant", "content": clean or "(tool call not understood)"})
+            if residue_attempts > MAX_RESIDUE_RETRIES:
+                note = (
+                    f"Error: the model ({cfg.model}) emitted tool calls in a format "
+                    f"sidekick cannot parse, {residue_attempts} times in a row, so nothing "
+                    f"was executed. Try a model that calls tools natively."
+                )
+                messages.append({"role": "user", "content": CONTROL_TAG + note})
+                _record_residue_failure(cfg.model, residue_attempts)
+                return clean + "\n\n" + note if clean else note
+            messages.append(
+                {
+                    "role": "user",
+                    "content": CONTROL_TAG
+                    + "[tool call was not understood — it arrived as markup, not as a call. "
+                    "Use the native tool-calling interface, or emit the call as a ```json "
+                    "block with the tool name and arguments. Do not describe the call.]",
+                }
+            )
+            continue
+
         if not getattr(msg, "tool_calls", None) and text_tools:
             batch = list(text_tools[:4])  # cap 4 per turn
             proceed, turn_approve = _maybe_review_plan(
