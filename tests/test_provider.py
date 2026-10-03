@@ -73,7 +73,14 @@ def test_extra_body_local_only():
     ollama = Config(
         provider="ollama", model="m", base_url="", api_key="", max_steps=5, temperature=0.2
     )
-    assert _extra_body(ollama) == {"options": {"num_ctx": 4096, "num_predict": 350}}
+    # num_ctx was hardcoded to 4096 while the budget counted history only, so the
+    # two disagreed by construction and the window had ~324 tokens spare after the
+    # system prompt and tool schemas. It now comes from the model profile (#308).
+    from sk.model_profiles import context_window_for
+
+    want = context_window_for("m", "ollama")
+    assert _extra_body(ollama) == {"options": {"num_ctx": want, "num_predict": 350}}
+    assert want >= 8192, "a local window below 8k cannot hold the fixed overhead"
     for prov in ("groq", "together", "deepseek", "custom"):
         cfg = Config(
             provider=prov, model="m", base_url="", api_key="k", max_steps=5, temperature=0.2

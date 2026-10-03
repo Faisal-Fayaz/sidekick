@@ -668,6 +668,10 @@ DEFAULTS: dict[str, str | int | float] = {
     "temperature": 0.2,
     "theme": "dark",
     "history_budget_tokens": 3000,
+    # Total prompt window, 0 = take it from the model profile (#308). Raise this
+    # on a local model with VRAM to spare: the KV cache grows with it, and the
+    # prompt budget is derived from whatever this resolves to.
+    "context_window": 0,
     "spend_cap_usd": 0.0,
     "reasoning_effort": "low",
 }
@@ -688,6 +692,7 @@ class Config:
     temperature: float = float(DEFAULTS["temperature"])
     theme: str = str(DEFAULTS["theme"])
     history_budget_tokens: int = int(DEFAULTS["history_budget_tokens"])
+    context_window: int = int(DEFAULTS["context_window"])
     spend_cap_usd: float = float(DEFAULTS["spend_cap_usd"])  # 0 = unlimited; global/env only
     reasoning_effort: str = str(DEFAULTS["reasoning_effort"])  # off|minimal|low|medium|high|max
     # project layer (from .sidekick.toml; empty when outside a project)
@@ -799,6 +804,11 @@ class Config:
                 float(DEFAULTS["temperature"]),
                 "temperature",
             ),
+            context_window=_parse_int_default(
+                vals.get("context_window", DEFAULTS["context_window"]),
+                int(DEFAULTS["context_window"]),
+                "context_window",
+            ),
             history_budget_tokens=_parse_int_default(
                 vals.get("history_budget_tokens", DEFAULTS["history_budget_tokens"]),
                 int(DEFAULTS["history_budget_tokens"]),
@@ -891,6 +901,7 @@ class Config:
             "temperature": self.temperature,
             "theme": self.theme,
             "history_budget_tokens": self.history_budget_tokens,
+            "context_window": self.context_window,
             "spend_cap_usd": self.spend_cap_usd,
             "reasoning_effort": self.reasoning_effort,
             "egress_allow": list(self.egress_allow),

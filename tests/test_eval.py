@@ -170,17 +170,62 @@ def test_build_injects_memory_and_todos(tmp_path, monkeypatch):
     assert "eval harness todo" in msgs[0]["content"]
 
 
-def test_history_trimmed_to_20(tmp_path, monkeypatch):
+def test_history_is_not_capped_at_20_messages(tmp_path, monkeypatch):
+    """The old rule was `hist[-20:]`, which capped history by *count* while the
+    system prompt, auto-context and ~1700 tokens of tool schema were never
+    counted anywhere (#308). Raising history_budget_tokens did nothing past ~19
+    turns. This asserted `len(msgs) == 22`, i.e. it locked the defect in."""
     _iso(tmp_path, monkeypatch)
     hist = [{"role": "user", "content": f"m{i}"} for i in range(50)]
     msgs = build_messages("hi", hist, _cfg())
-    assert len(msgs) == 22  # system + 20 + user
+    # every tiny message now fits, because the limit is tokens, not messages
+    assert len(msgs) == 52  # system + 50 + user
+
+
+def test_assembled_prompt_fits_the_model_window(tmp_path, monkeypatch):
+    """The headline acceptance criterion: what we send fits what the model takes.
+
+    Includes the tool schemas, which are not in `messages` but are sent on every
+    request.
+    """
+    from sk.agent import _tool_schema_tokens, resolved_window
+    from sk.tokens import estimate_tokens as tok
+
+    _iso(tmp_path, monkeypatch)
+    hist = [{"role": "user", "content": "x" * 4000} for _ in range(200)]
+    cfg = _cfg()
+    msgs = build_messages("hi", hist, cfg)
+    sent = sum(tok(str(m.get("content"))) for m in msgs) + _tool_schema_tokens()
+    assert sent <= resolved_window(cfg), f"sent {sent} > window {resolved_window(cfg)}"
+
+
+def test_large_history_is_trimmed_to_fit(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    hist = [{"role": "user", "content": "y" * 8000} for _ in range(400)]
+    msgs = build_messages("hi", hist, _cfg())
+    assert len(msgs) < len(hist) + 2, "an oversized history was not trimmed at all"
+    assert msgs[-1]["content"] == "hi", "the live user turn must always survive"
+
+
+def test_raising_history_budget_admits_more_history(tmp_path, monkeypatch):
+    """Acceptance: the budget knob has to actually move the window."""
+    _iso(tmp_path, monkeypatch)
+    hist = [{"role": "user", "content": "z" * 2000} for _ in range(60)]
+    tight = _cfg()
+    tight.history_budget_tokens = 800
+    loose = _cfg()
+    loose.history_budget_tokens = 120000
+
+    n_tight = sum(1 for m in build_messages("hi", hist, tight) if m["role"] != "system") - 1
+    n_loose = sum(1 for m in build_messages("hi", hist, loose) if m["role"] != "system") - 1
+    assert n_loose > n_tight, f"budget had no effect: tight={n_tight} loose={n_loose}"
 
 
 # --- golden prompt-to-reply lock (top-traffic /help turn) ---
 
 HELP_GOLDEN = """**slash commands**
 - `/help` — this list
+- `/context` — where this turn's prompt tokens are going (window / system / tools / history)
 - `/model [fast|smart|name]` — show or switch model (`sk model` for guided picker)
 - `/provider [name]` — show or switch provider (keys via `sk auth add`, never pasted here)
 - `/models` — list models on the current provider
@@ -230,7 +275,7 @@ def test_golden_help_reply(tmp_path, monkeypatch):
 
     _iso(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)  # no project .sidekick/commands leak in
-    assert len(COMMANDS) == 36  # trip-wire: new command ⇒ update HELP_GOLDEN
+    assert len(COMMANDS) == 37  # trip-wire: new command ⇒ update HELP_GOLDEN
     for prompt in ("/help", "/h", "/", "  /help  ".strip()):
         out = handle(prompt, session="s", cfg=_cfg(), state={})
         assert out.handled is True and not out.agent_prompt, prompt
