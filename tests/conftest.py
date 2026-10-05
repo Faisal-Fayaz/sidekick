@@ -47,14 +47,21 @@ def _isolate_module_globals():
     """
     import sk.agent as agent_mod
     import sk.hooks as hooks_mod
+    import sk.mcp_client as mcp_mod
 
     import sk.fsperm as fsperm_mod
 
     fsperm_mod.reset_repair_flag()
+    # #314 made the MCP tool list a per-connection memo on the client, so a
+    # cached list survives across tests that reuse a stubbed server. Same
+    # leak class as fsperm._repaired: reset before every test rather than only
+    # in the ones that know about it.
+    mcp_mod.close_all()
     saved = (set(agent_mod._tools_unsupported), set(hooks_mod._started_sessions))
     try:
         yield
     finally:
+        mcp_mod.close_all()
         agent_mod._tools_unsupported.clear()
         agent_mod._tools_unsupported.update(saved[0])
         hooks_mod._started_sessions.clear()
