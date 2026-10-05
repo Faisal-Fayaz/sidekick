@@ -201,7 +201,58 @@ def _iter_bounded_lines(stream, max_bytes: int, chunk: int = 65536):
         yield bytes(buf)
 
 
-class MCPClient:
+class _ToolListCache:
+    """Memoize tools/list for the life of one connection (#314).
+
+    approval_tools() is consulted once per gated call in a batch and
+    tools_schema() once per step, so a turn with a few gated calls re-ran
+    tools/list against every configured server every time. The connection was
+    already cached in `_clients`; only the tool list was not. Two servers and
+    four gated calls meant eight round trips where one would do.
+
+    Scope is the connection, so a reconnect re-reads: both connect() methods
+    early-return when the server is already up, and get_client() replaces a
+    dead client with a fresh instance whose cache is empty.
+
+    Callers get their own list, so appending or sorting cannot corrupt what the
+    next caller sees. The tool dicts inside it are shared and read-only by
+    contract; deep-copying them per call would cost more than the round trip this
+    removes, and no caller in the tree mutates them.
+
+    Failures are never cached. mcp_schema_extra() depends on list_tools()
+    raising in order to skip a dead server, and memoizing an error would turn
+    one transient failure into a permanently absent one.
+    """
+
+    _tools_cache: list[dict] | None = None
+    # Set by each transport's __init__: the stdio client already holds _wlock for
+    # the pipe and the http client _lock for the session, and _request needs one
+    # of those while holding it. Reusing either would mean taking two locks in a
+    # fixed order across every fetch, so the cache gets its own.
+    _tools_lock: threading.Lock
+
+    def _fetch_tools(self) -> list[dict]:
+        raise NotImplementedError
+
+    def list_tools(self) -> list[dict]:
+        """Normalized [{name, description, inputSchema}]. Raises RuntimeError."""
+        cached = self._tools_cache
+        if cached is not None:
+            return list(cached)
+        with self._tools_lock:
+            # Re-checked inside the lock: approval_tools() can be reached from
+            # a tool batch running on more than one thread, and a second
+            # thread must not publish a half-built list.
+            if self._tools_cache is None:
+                self._tools_cache = self._fetch_tools()
+            return list(self._tools_cache)
+
+    def invalidate_tools(self) -> None:
+        """Forget the memoized tool list. Never raises."""
+        self._tools_cache = None
+
+
+class MCPClient(_ToolListCache):
     """One stdio MCP server process. Call via `with` or connect()/close()."""
 
     def __init__(
@@ -226,6 +277,7 @@ class MCPClient:
         self._ids = itertools.count(1)
         self._pending: dict[int, queue.Queue] = {}
         self._wlock = threading.Lock()
+        self._tools_lock = threading.Lock()
 
     def __enter__(self) -> MCPClient:
         self.connect()
@@ -269,8 +321,7 @@ class MCPClient:
             self.close()
             raise
 
-    def list_tools(self) -> list[dict]:
-        """Normalized [{name, description, inputSchema}]. Raises RuntimeError."""
+    def _fetch_tools(self) -> list[dict]:
         return _normalize_tools(self._request("tools/list", {}, self.timeout))
 
     def call_tool(self, tool: str, arguments: dict | None = None) -> str:
@@ -288,6 +339,7 @@ class MCPClient:
     def close(self) -> None:
         """Terminate the server. Never raises."""
         try:
+            self.invalidate_tools()
             proc, self._proc = self._proc, None
             if proc is not None:
                 try:
@@ -423,7 +475,7 @@ def _guard_response_size(resp, limit: int = _MAX_HTTP_BYTES) -> None:
         pass
 
 
-class MCPHttpClient:
+class MCPHttpClient(_ToolListCache):
     """Streamable HTTP MCP server. Same interface as MCPClient.
 
     POSTs JSON-RPC; honors Mcp-Session-Id (re-initializes once on 404) and
@@ -446,6 +498,7 @@ class MCPHttpClient:
         self._session_id: str | None = None
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
+        self._tools_lock = threading.Lock()
 
     def __enter__(self) -> MCPHttpClient:
         self.connect()
@@ -489,8 +542,7 @@ class MCPHttpClient:
             self.close()
             raise
 
-    def list_tools(self) -> list[dict]:
-        """Normalized [{name, description, inputSchema}]. Raises RuntimeError."""
+    def _fetch_tools(self) -> list[dict]:
         return _normalize_tools(self._request("tools/list", {}, self.timeout))
 
     def call_tool(self, tool: str, arguments: dict | None = None) -> str:
@@ -508,6 +560,7 @@ class MCPHttpClient:
     def close(self) -> None:
         """Drop the session. Never raises."""
         try:
+            self.invalidate_tools()
             client, self._client = self._client, None
             self._session_id = None
             if client is not None:
