@@ -78,6 +78,12 @@ def check(url: str, allow: tuple[str, ...] | None = None) -> str | None:
             allow = _current_allow()
         if not allow:
             return REASON_NO_ALLOWLIST
+        # A bare `*` / `**` is refused at parse time and never honoured by
+        # host_allowed, so without this the user was told the host "is not in the
+        # egress allowlist" while their allowlist held exactly that entry. Name
+        # the actual problem instead.
+        if any(str(a).strip().lower().rstrip(".") in ("*", "**") for a in allow):
+            return REASON_BAD_ENTRY
         if host_allowed(host, allow):
             return None
         return f"{REASON_NOT_ALLOWED} ({host})"

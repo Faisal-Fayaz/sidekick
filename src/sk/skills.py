@@ -11,7 +11,6 @@ import re
 from pathlib import Path
 
 SKILLS_DIR = Path.home() / ".sidekick" / "skills"
-MAX_FILES = 10
 MAX_CHARS = 1500
 MAX_BODY_CHARS = 8000
 

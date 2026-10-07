@@ -18,7 +18,13 @@ import threading
 import time
 from urllib.parse import urljoin
 
-PROTOCOL_VERSION = "2024-11-05"
+from .mcp_server import PROTOCOL_VERSION as _PROTOCOL_VERSION
+
+# One definition, not two. `PROTOCOL_VERSION` was a bare literal in both this
+# file and mcp_server.py, so a bump that missed one produced a client that
+# silently failed to initialize against our own server -- no error pointing at
+# the version. mcp_server imports nothing from here, so this direction is safe.
+PROTOCOL_VERSION = _PROTOCOL_VERSION
 PREFIX = "mcp__"
 FAILED_COOLDOWN_S = 60.0
 
@@ -224,15 +230,24 @@ class _ToolListCache:
     one transient failure into a permanently absent one.
     """
 
+    # The transport contract this mixin relies on. Declared here because
+    # `call_tool` moved down from both transports and mypy needs to see that the
+    # attributes it uses are guaranteed by the concrete subclasses.
+    name: str
+    timeout: float
+
+    def _request(self, method: str, params: dict, timeout: float) -> dict:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
     _tools_cache: list[dict] | None = None
     # Set by each transport's __init__: the stdio client already holds _wlock for
     # the pipe and the http client _lock for the session, and _request needs one
     # of those while holding it. Reusing either would mean taking two locks in a
     # fixed order across every fetch, so the cache gets its own.
     _tools_lock: threading.Lock
-
-    def _fetch_tools(self) -> list[dict]:
-        raise NotImplementedError
 
     def list_tools(self) -> list[dict]:
         """Normalized [{name, description, inputSchema}]. Raises RuntimeError."""
@@ -250,6 +265,29 @@ class _ToolListCache:
     def invalidate_tools(self) -> None:
         """Forget the memoized tool list. Never raises."""
         self._tools_cache = None
+
+    def _fetch_tools(self) -> list[dict]:
+        raise NotImplementedError
+
+    def call_tool(self, tool: str, arguments: dict | None = None) -> str:
+        """Call a tool. Returns text (or an 'Error: ...' string). Never raises.
+
+        Identical for both transports -- the only thing that differs is how
+        `_request` moves bytes. It lived in each class, so a fix had to be made
+        twice and a miss was silent.
+        """
+        try:
+            result = self._request(
+                "tools/call",
+                {"name": tool, "arguments": dict(arguments or {})},
+                self.timeout,
+            )
+        except Exception as e:
+            return f"Error: mcp {self.name}.{tool}: {e}"
+        return _content_text(result, self.name, tool)
+
+    def __exit__(self, *a: object) -> None:
+        self.close()
 
 
 class MCPClient(_ToolListCache):
@@ -282,9 +320,6 @@ class MCPClient(_ToolListCache):
     def __enter__(self) -> MCPClient:
         self.connect()
         return self
-
-    def __exit__(self, *a: object) -> None:
-        self.close()
 
     def is_alive(self) -> bool:
         p = self._proc
@@ -323,18 +358,6 @@ class MCPClient(_ToolListCache):
 
     def _fetch_tools(self) -> list[dict]:
         return _normalize_tools(self._request("tools/list", {}, self.timeout))
-
-    def call_tool(self, tool: str, arguments: dict | None = None) -> str:
-        """Call a tool. Returns text (or an 'Error: ...' string). Never raises."""
-        try:
-            result = self._request(
-                "tools/call",
-                {"name": tool, "arguments": dict(arguments or {})},
-                self.timeout,
-            )
-        except Exception as e:
-            return f"Error: mcp {self.name}.{tool}: {e}"
-        return _content_text(result, self.name, tool)
 
     def close(self) -> None:
         """Terminate the server. Never raises."""
@@ -504,9 +527,6 @@ class MCPHttpClient(_ToolListCache):
         self.connect()
         return self
 
-    def __exit__(self, *a: object) -> None:
-        self.close()
-
     def is_alive(self) -> bool:
         return self._client is not None
 
@@ -544,18 +564,6 @@ class MCPHttpClient(_ToolListCache):
 
     def _fetch_tools(self) -> list[dict]:
         return _normalize_tools(self._request("tools/list", {}, self.timeout))
-
-    def call_tool(self, tool: str, arguments: dict | None = None) -> str:
-        """Call a tool. Returns text (or an 'Error: ...' string). Never raises."""
-        try:
-            result = self._request(
-                "tools/call",
-                {"name": tool, "arguments": dict(arguments or {})},
-                self.timeout,
-            )
-        except Exception as e:
-            return f"Error: mcp {self.name}.{tool}: {e}"
-        return _content_text(result, self.name, tool)
 
     def close(self) -> None:
         """Drop the session. Never raises."""

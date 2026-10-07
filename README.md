@@ -174,7 +174,7 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
-| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
+| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` (removes the launchd agent; on Linux disable the systemd unit) / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (19 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see `docs/mcp-client.md`) |
 | `sk doctor [--fix]` / `sk report` / `sk models [list \| pull <id> \| prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
