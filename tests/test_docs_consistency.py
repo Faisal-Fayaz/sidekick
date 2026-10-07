@@ -73,15 +73,30 @@ def test_website_next_matches_roadmap_next():
     )
 
 
-def test_aur_pkgver_is_not_behind_the_source(version):
+def test_aur_pkgver_tracks_the_source(version):
     """A stale `pkgver` means `yay -Syu` keeps serving an old package, and the
-    hardcoded sdist hash pins a URL that only matches the old version."""
+    hardcoded sdist URL + sha256 pin a specific artifact that only matches its own
+    version. It was three releases behind with the 0.26.0 hash.
+
+    Strict equality is not the right invariant: the pinned sdist has to exist on
+    PyPI, and a release bump necessarily lands before AUR is repinned. So the
+    rule is one-sided and bounded -- AUR may not point at a version that does not
+    exist yet, and may not lag by more than one minor.
+    """
     aur = _read("packaging/aur/PKGBUILD")
     m = re.search(r"^pkgver=(\S+)", aur, re.M)
     assert m, "PKGBUILD has no pkgver"
-    assert m.group(1) == version, (
-        f"PKGBUILD pins {m.group(1)} but the source is {version}; refresh it and the "
-        f"sdist sha256 from https://pypi.org/pypi/sidekick-agent/{version}/json"
+    pinned = tuple(int(x) for x in m.group(1).split("."))
+    current = tuple(int(x) for x in version.split("."))
+
+    assert pinned <= current, (
+        f"PKGBUILD pins {m.group(1)}, ahead of the source version {version}; that "
+        f"sdist does not exist on PyPI yet, so the package cannot build"
+    )
+    assert current[1] - pinned[1] <= 1, (
+        f"PKGBUILD pins {m.group(1)} but the source is {version} -- AUR has fallen "
+        f"more than one minor release behind. Refresh pkgver, the sdist URL and "
+        f"the sha256 from https://pypi.org/pypi/sidekick-agent/<version>/json"
     )
 
 
