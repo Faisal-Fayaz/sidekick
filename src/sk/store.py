@@ -316,6 +316,30 @@ def latest_session(prefix: str = "") -> str:
         conn.close()
 
 
+# One-shot keys for best-effort-write warnings.
+_warned: set[str] = set()
+
+
+def _warn_once(key: str, msg: str) -> None:
+    """Warn on stderr the first time a best-effort write fails.
+
+    The FTS index is a convenience layer over `messages`/`memories` -- a row that
+    fails to index is still stored, and search degrades to the substring
+    fallback. But "search silently misses old turns" is indistinguishable from
+    "the content was never saved", so it gets said out loud, once. stderr keeps
+    `--json` output clean.
+    """
+    if key in _warned:
+        return
+    _warned.add(key)
+    try:
+        import sys
+
+        print(f"[sidekick] warning: {msg}", file=sys.stderr)
+    except Exception:
+        pass
+
+
 def save_message(session: str, role: str, content: str) -> None:
     conn = _connect()
     try:
@@ -329,8 +353,12 @@ def save_message(session: str, role: str, content: str) -> None:
                 "INSERT INTO messages_fts(rowid, content) VALUES (last_insert_rowid(), ?)",
                 (content,),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            _warn_once(
+                "messages_fts",
+                f"a message was stored but not indexed for search "
+                f"({type(e).__name__}): `sk search` may miss older turns",
+            )
         conn.commit()
     finally:
         conn.close()
@@ -509,8 +537,12 @@ def save_memory(content: str, namespace: str | None = None) -> str:
                     "INSERT INTO memories_fts(rowid, content) VALUES (last_insert_rowid(), ?)",
                     (content,),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                _warn_once(
+                    "memories_fts",
+                    f"a memory was stored but not indexed for search "
+                    f"({type(e).__name__}): `sk recall` may miss it",
+                )
         conn.commit()
         cur = conn.execute("SELECT COUNT(*) FROM memories")
         n = cur.fetchone()[0]
