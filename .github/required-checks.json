@@ -15,13 +15,13 @@
   "strict": false,
   "enforce_admins": false,
   "excluded": {
-    "coverage": "informational by its own job comment; never a gate",
     "release-guard": "`if: github.event_name == 'pull_request'`, so it reports as `skipped` on every push to main. Requiring it either blocks main permanently or leans on GitHub's ambiguous skipped-is-passing behaviour."
   },
   "contexts": [
     "lint",
     "test-count",
     "build",
+    "coverage",
     "website",
     "test (ubuntu-latest, 3.12)",
     "test (ubuntu-latest, 3.13)",

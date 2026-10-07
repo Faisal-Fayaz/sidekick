@@ -104,6 +104,28 @@ ignore = ["UP035", "E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "F401", "I001"]
 
+# Coverage is gated. It was 79% and reported but never enforced: the CI job
+# piped pytest into `tail -n 40` without `pipefail`, so the pipeline returned
+# tail's status and the job could not fail on a failing test, let alone on lost
+# coverage. The floor is the current measurement, so it can only ratchet up —
+# raise it as tests are added, not lower it to unblock a PR. It applies whenever
+# --cov is passed, so measuring coverage on a single file trips it; that is the
+# point (a subset's coverage says nothing about the project). Plain
+# `pytest tests/one_file.py` is unaffected.
+[tool.coverage.run]
+source = ["sk"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 79
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
+
 # The mypy gate path list is repeated in three files (pyproject comment,
 # .pre-commit-config.yaml, .github/workflows/ci.yml). That is a maintenance tax
 # and has already drifted once. tests/test_ci_config.py asserts they agree.
