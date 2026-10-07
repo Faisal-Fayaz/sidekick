@@ -150,16 +150,16 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 
 | Command | What |
 |---|---|
-| `sk` / `sk tui [--continue]` | Fullscreen chat, fresh session each launch |
-| `sk chat [--continue]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
-| `sk talk [-d SECS] [--stt-model base] [--device hw:2,0]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop) |
+| `sk` / `sk tui [--continue] [--model M] [--allow LIST] [--deny LIST]` | Fullscreen chat, fresh session each launch. `sk --version` prints the version and exits; `--cwd DIR` and `--profile NAME` work on every command |
+| `sk chat [--continue] [--session S] [-y|--yes] [--model M] [--allow LIST] [--deny LIST] [--no-stream]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
+| `sk talk [-d SECS] [--stt-model base] [--device hw:2,0] [--session S] [-y] [--install]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop; `--install` skips the install prompt) |
 | `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
 | `/yolo`, `/confirm`, `/readonly` | Approval modes: auto-approve writes / ask every time / block all file writes (research mode) |
 | `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it from inside a session |
 | `/plan`, `/build` | Plan mode: propose without writing (blocked writes) / back to build mode |
 | `/rewind [n]` | Undo an agent file edit — snapshots write/edit/delete targets (`shell` mutations are not tracked, use git for those) |
-| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools; `--plan` proposes without writing) |
+| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools; `--plan` proposes without writing) |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
 | `sk digest [--force]` | Teammate pilot: brief + overnight failures, desktop nudge or log |
@@ -167,10 +167,10 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 | `sk search QUERY [--session S]` | Full-text search across past transcripts |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
-| `sk imagine "prompt" [--out f.png]` | Generate an image via the provider images endpoint |
-| `sk export [SESSION] [--out f.md]` | Session transcript as Markdown (turns + tool calls) |
+| `sk imagine "prompt" [--out f.png] [--size WxH] [--model M]` | Generate an image via the provider images endpoint |
+| `sk export [SESSION] [--out f.md] [--force]` | Session transcript as Markdown (turns + tool calls). **Refuses to overwrite an existing `--out` unless `--force`** |
 | `sk egress [list\|allow HOST\|deny HOST\|test URL]` | Egress policy: what the model may fetch, and what it was blocked from ([docs](docs/egress.md)) |
-| `sk audit [--session S] [--format md\|json]` | Compliance log: tool runs, approve/deny, local-vs-egress |
+| `sk audit [--session S] [--format md\|json] [-n N]` | Compliance log: tool runs, approve/deny, local-vs-egress (`-n` clamped 1–1000) |
 | `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
@@ -219,11 +219,18 @@ sk egress test https://example.com/x   # check a URL without fetching it
 ```
 
 This covers every destination the *model* can cause a fetch of: `read_url`,
-`web_search` (including each search hit), and provider-supplied image URLs. With
-an empty allowlist, all three are refused. Your model API endpoint and the MCP
-servers you configured are unaffected — you chose those, they are not something
-a prompt can talk the agent into adding. Every allow and deny is written to the
-ledger with the host and reason, visible via `sk egress` and `sk audit`.
+`web_search`, and provider-supplied image URLs. With an empty allowlist, all
+three are refused. The allowlist is checked on the initial URL **and on every
+redirect hop**, so an allowlisted host cannot redirect the agent somewhere
+unlisted. `web_search` itself only requests `html.duckduckgo.com` and returns
+result URLs as text — it never fetches a hit, so following one is `read_url`,
+which is governed on its own.
+
+Your model API endpoint and the MCP servers you configured are unaffected — you
+chose those, they are not something a prompt can talk the agent into adding.
+Fetch decisions are written to the ledger with the host and reason, visible via
+`sk egress` and `sk audit`. (Adding or removing an allowlist entry is a config
+change, not a fetch, so it is not itself a ledger row.)
 
 **The ceiling, stated plainly:** this governs fetches made *through the agent's
 tools*. A `shell` command running `curl` is not covered — no string denylist can
@@ -244,7 +251,24 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 
 ## Config
 
-`~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Env overrides: `SIDEKICK_PROVIDER`, `SIDEKICK_MODEL`, `SIDEKICK_BASE_URL`, `SIDEKICK_API_KEY`, `SIDEKICK_SPEND_CAP` (per-session USD cap, `0` = unlimited). Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
+`~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
+
+| Env var | Effect |
+|---|---|
+| `SIDEKICK_PROVIDER` / `SIDEKICK_MODEL` | override the configured provider/model |
+| `SIDEKICK_BASE_URL` / `SIDEKICK_API_KEY` | override the endpoint / key for this process |
+| `SIDEKICK_SPEND_CAP` | per-session USD cap, `0` = unlimited |
+| `SIDEKICK_REASONING_EFFORT` | reasoning effort for backends that support it |
+| `SIDEKICK_PROFILE` | load a named config profile (see `sk config --profiles`) |
+| `OPENCODE_API_KEY` | key for the `opencode` provider |
+| `SIDEKICK_TRUST_REPO=1` | **opt in to repo-supplied slash commands** |
+
+> **`SIDEKICK_TRUST_REPO` — why your repo's commands do nothing.** A cloned repo
+> ships its own `.sidekick/commands/*.md`, and a `!`cmd`` expansion inside one
+> reaches `sh -c` with no approval prompt. Those templates are therefore ignored
+> unless you set `SIDEKICK_TRUST_REPO=1` in your own shell. It is read from the
+> environment and never from repo config, so a repository cannot self-authorize
+> (#287). Commands in `~/.sidekick/commands/` are always loaded.
 
 **History budget:** the prompt budget bounds the **whole assembled prompt**, not just history — system prompt, auto-context, tool schemas, and a reservation for the reply are all measured and subtracted, then history gets what is left (#308). `history_budget_tokens` (default 3000) caps that share; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
 

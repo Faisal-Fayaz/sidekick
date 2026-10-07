@@ -7,7 +7,7 @@ How to pick up work and get it merged. The shared plan lives in
 
 1. Browse [open issues](https://github.com/Faisal-Fayaz/sidekick/issues) —
    they're grouped by [milestones](https://github.com/Faisal-Fayaz/sidekick/milestones)
-   (`v0.3.0` = now; later work parks as bullets in `ROADMAP.md`).
+   (later work parks as bullets in `ROADMAP.md`).
 2. Comment on the issue so we don't duplicate effort, then work from a
    branch (`feature/<what>` or `fix/<what>`).
 3. Starting work? Assign the issue to yourself *before* coding — the
@@ -126,7 +126,9 @@ GitHub auto-generates release notes from merge subjects, so write them as
 
 - [ ] Version bumped on a `release/*` branch only (CI enforces this).
 - [ ] `ROADMAP.md` `Done` records the release, `Next` points past it.
-- [ ] Test-count badge in `README.md` matches `pytest --collect-only`.
-- [ ] Full CI green on the release PR (lint, mypy, tests × 6, badge, build).
+- [ ] Full CI green on the release PR: `lint`, `test-count`, `build`, `coverage`,
+      `website`, tests × 6. (`coverage` is required and gated at the `fail_under`
+      floor in `pyproject.toml`; the old test-count *badge* gate was removed
+      deliberately in #319 — the count is reported, not asserted.)
 - [ ] After merge: release workflow success, PyPI shows the version,
       GitHub Release exists with artifacts.

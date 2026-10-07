@@ -24,7 +24,7 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.28.0 (unplanned — propose by PR)
+## Next — v0.30.0 (unplanned — propose by PR)
 
 ## Later
 
@@ -74,6 +74,8 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.29.0` — unparsed tool-call markup is no longer posted as an answer (#367/#368): the prose is kept, the markup is dropped, and the turn is bounded at 2 corrective retries before a plain error. Alongside it on main but **not yet published**: the `~/.sidekick` 0700/0600 fix (#301) and API-key masking (#269).
+- `v0.28.0` — **burned.** Existed in `src/sk/__init__.py` for three minutes and was superseded before tagging, so the number can never be published. Listed in `BURNED_VERSIONS` in `tests/test_release_integrity.py`; a new gap now fails that test.
 - `v0.27.0` — **security release.** Hostile-repo RCE chain closed: project files can no longer redirect traffic (`provider`/`model`) or self-approve shell (`[project].approved_commands`), and repo-supplied commands need `SIDEKICK_TRUST_REPO=1`. Irreversible shell commands are refused *before* approval (#298), so `--yes`/`/yolo`/`--allow-writes` no longer bypass the blocklist — **behaviour change**. Protected write paths (shell rc, credential dirs, `.git/hooks`, the agent's own config) are denied (#305). Credentials redacted from the audit trail, shell log and notifications (#300). MCP gets an environment allowlist, URL validation, a fail-closed trust tier and cross-origin header protection (#302, #303). One SSRF chokepoint for every outbound fetch, closing the CGNAT/cloud-metadata gap (#304). Compaction no longer silently no-ops and no longer discards its own retained tail (#306, #307). TUI prompt no longer sent twice; no more duplicate `tool_call_id`s (#309, #310). Fixed an order-dependent test failure (#317). Tests 828 → 981; layered on #264/#265/#266 rather than duplicating them.
 - `v0.26.0` — security + robustness fix batch (#220–#229), QA regression suite (#231), retry breaker (#230), tester skill (#236), session-deny + edit-first (#237, #238), research delegate (#239), partial-output errors (#240), empty-toollist fallback, folding removal.
 - `v0.25.0` — image input (#178), JS extraction (#182), profiles (#189), TUI forgiveness batch (#161, #163–#168), dispatch write-block (#208), reasoning/control hygiene (#206).
