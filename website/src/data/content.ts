@@ -312,6 +312,9 @@ export const FAQS = [
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [];
 
 export const ROADMAP_DONE = [
+  'v0.29.0 — unparsed tool-call markup no longer posted as an answer (#367); MCP tool lists cached per connection (#314)',
+  'v0.28.0 — burned: bumped then superseded before tagging, never publishable',
+  'v0.27.0 — security release: hostile-repo RCE chain closed (#298), protected write paths (#305), credential redaction (#300), MCP trust tier (#302/#303), SSRF chokepoint (#304)',
   'v0.21.0 — cross-provider picker (#139), theme pack: opencode/dracula/tokyonight + F2 picker (#138)',
   'v0.20.0 — build/plan modes (#131), TUI model picker (#130)',
   'v0.19.0 — agent-capability batch: read-only mode (#98), session slash parity (#100), checkpoints + /rewind (#103), project memory (#105), MCP client (#107)',

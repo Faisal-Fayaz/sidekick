@@ -53,8 +53,15 @@ Rules:
 | Path | Tool |
 |---|---|
 | A page the model asks to read | `read_url` |
-| The search backend, and every hit it follows | `web_search` |
+| The search backend, and every redirect hop it follows | `web_search` |
 | A URL a provider returns for an image | image download |
+
+> **`web_search` fetches exactly one host.** It requests only
+> `html.duckduckgo.com` and returns result titles and URLs *as text*. It never
+> fetches a search hit, so a result pointing anywhere is not a governed
+> destination — following one is `read_url`, which is governed on its own and on
+> every redirect hop. An earlier version of this table said "every hit it
+> follows", which described the threat model rather than the code.
 
 **Not governed** — traffic you configured yourself:
 

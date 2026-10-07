@@ -33,12 +33,47 @@ env = { SQLITE_MCP_RO = "1" }
 | `env`     | no       | `{}`    | extra env vars (stdio only, merged over the process env) |
 | `headers` | no       | `{}`    | extra HTTP headers (url only)              |
 | `timeout` | no       | `30`    | seconds per request, clamped to 1–300      |
+| `trust`   | no       | `untrusted` | `untrusted` or `full` — see below      |
+| `inherit_env` | no    | `[]`    | glob patterns of extra env vars a stdio server may also read from the parent process (#302) |
 
 \*Exactly one of `command`/`url`. Setting both refuses the entry (fail fast —
 fix the config instead of guessing).
 
 Server names must match `[A-Za-z0-9_-]+` (no `__`); invalid entries are
 skipped. Check wiring with `sk mcp-servers` (live tool count or the error).
+
+## `trust`: why your tools are refused
+
+This is the gate most people hit first, and it was previously undocumented —
+so the error named a config key that appeared nowhere in this file.
+
+There are **three** gates on an MCP tool call, and the first one is not
+approval:
+
+1. **`trust`** (config, default `untrusted`, fail closed)
+2. **`readOnlyHint`** (tool annotation, fail closed)
+3. **approval** (`--allow`, `--read-only`, `sk chat`)
+
+On an `untrusted` server, a tool is available only if it declares a **literal**
+`readOnlyHint: true`. Anything else — a missing annotation, `readOnlyHint: "true"`,
+a string, an empty annotations dict — is refused, and the error tells you to set
+`trust = "full"`.
+
+```toml
+[mcp_servers.db]
+command = "/usr/local/bin/sqlite-mcp"
+args = ["--db", "/home/you/app.db"]
+trust = "full"        # tools no longer need readOnlyHint: true
+```
+
+`untrusted` is the default and the right one: a spawned server inherits the
+ability to do whatever the model asks of it, and only a server you wrote should
+opt out of per-tool annotation. `inherit_env` has the same shape of risk —
+patterns like `AWS_*` hand a stdio server credentials from your shell — so it is
+also opt-in per server.
+
+Only `full` and `untrusted` are accepted; **anything else silently normalises to
+`untrusted`** rather than erroring, so a typo fails closed.
 
 ## How tools appear
 
