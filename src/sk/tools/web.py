@@ -312,6 +312,20 @@ def _fetch_with_redirects(
                 if not loc:
                     break
                 current = urljoin(current, loc)
+                # Both gates again, per hop. Checking egress only on the
+                # original URL left the allowlist bypassable: allowlist a host
+                # you trust, let it 302 anywhere, and the agent fetches the
+                # target and hands the content to the model. That is the exact
+                # threat #328 exists to stop — an attacker choosing a
+                # destination — and docs/egress.md already claimed otherwise.
+                deny = _egress_check(current)
+                if deny:
+                    _egress_record(context, current, deny)
+                    return None, (
+                        f"Error: egress blocked on redirect — {deny}. "
+                        f"Allow it with `{_egress_hint(current)}` if you trust "
+                        f"that destination."
+                    )
                 blocked = _url_blocked_twice(current)
                 if blocked:
                     return None, f"Error: redirect to blocked URL: {current}"

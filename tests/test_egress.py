@@ -8,6 +8,8 @@ through the real tool entry points.
 
 from __future__ import annotations
 
+import socket
+
 import sk.config as config_mod
 import sk.store as store
 from sk.egress import REASON_BAD_URL, REASON_NO_ALLOWLIST, check, host_allowed, hint
@@ -127,6 +129,15 @@ class _Chain:
             if url == "https://ok.example/start":
                 return _Resp(302, location="https://evil.test/payload")
             raise AssertionError(f"must never fetch {url}")
+        if _Chain.mode == "chain-to-unlisted":
+            # allowlisted -> allowlisted -> unlisted: the third hop is the only
+            # one the policy can catch, so the chain has to be walked to prove
+            # the check is not short-circuited after the first hop.
+            if url == "https://ok.example/start":
+                return _Resp(302, location="https://news.example/mid")
+            if url == "https://news.example/mid":
+                return _Resp(302, location="https://evil.test/payload")
+            raise AssertionError(f"must never fetch {url}")
         return _Resp(200, text="<html><body>hello</body></html>")
 
 
@@ -135,17 +146,31 @@ def _patch(monkeypatch, mode="ok", allow=()):
 
     The allowlist is injected by overriding Config.load, so `_fetch_with_redirects`
     runs its genuine gate logic rather than a test-local reimplementation of it.
+
+    DNS is stubbed at `getaddrinfo`, not by faking `_url_blocked`. Faking the
+    guard let these tests pass for the wrong reason: with only `ok.example`
+    exempted, a redirect to `evil.test` hit the real guard, failed to resolve,
+    and returned "DNS failed" — so `test_redirect_to_unlisted_host_is_refused`
+    asserted a DNS failure while appearing to prove the allowlist was enforced
+    on redirect hops. It was not, and the bypass was live. Making both hosts
+    resolve to a public address leaves the allowlist as the only thing that can
+    refuse the hop, which is the property worth testing. Literal private IPs
+    are still caught, because `_blocked_ip` fires on the literal before DNS is
+    consulted at all.
     """
     from sk.tools import web as webmod
 
     _Chain.hops = []
     _Chain.mode = mode
-    real = webmod._url_blocked
+    public_ip = "93.184.216.34"
+    resolvable = {"ok.example", "evil.test", "other.example", "news.example"}
 
-    def _decoys(url):
-        if "ok.example" in url:
-            return None
-        return real(url)
+    real_getaddrinfo = socket.getaddrinfo
+
+    def _fake_dns(host, *a, **kw):
+        if str(host) in resolvable:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (public_ip, 0))]
+        return real_getaddrinfo(host, *a, **kw)
 
     real_load = config_mod.Config.load
 
@@ -154,7 +179,7 @@ def _patch(monkeypatch, mode="ok", allow=()):
         cfg.egress_allow = tuple(allow)
         return cfg
 
-    monkeypatch.setattr(webmod, "_url_blocked", _decoys)
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_dns)
     monkeypatch.setattr(config_mod.Config, "load", staticmethod(_load))
     monkeypatch.setattr("httpx.Client", _Chain)
 
@@ -177,17 +202,54 @@ def test_fetch_allowed_when_allowlisted(monkeypatch):
 
 
 def test_redirect_to_unlisted_host_is_refused(monkeypatch):
-    """The bypass that matters: allowlist the first hop, redirect elsewhere."""
+    """The bypass that matters: allowlist the first hop, redirect elsewhere.
+
+    Both hosts resolve publicly, so the SSRF guard passes for both and the
+    egress allowlist is the only thing that can refuse the hop. Before the fix
+    `evil.test` was fetched and its content returned to the model.
+    """
     from sk.tools.web import tool_read_url
 
     _patch(monkeypatch, mode="to-unlisted", allow=("ok.example",))
     out = tool_read_url("https://ok.example/start")
-    assert "egress blocked" in out or "blocked" in out
+    assert "egress blocked" in out
+    assert "evil.test" not in _Chain.hops  # nothing left the process
+    # The refusal names the host and the remediation, because that is what the
+    # user needs in order to decide; `_Chain.hops` is the assertion that matters.
+    assert "sk egress allow evil.test" in out
+
+
+def test_redirect_to_unlisted_host_is_recorded_as_denied(monkeypatch):
+    """A refused hop must leave an audit row naming the target it refused.
+
+    Otherwise `sk audit --prove` cannot distinguish "the policy held" from
+    "we never tried", which is the whole evidentiary point of the ledger.
+    """
+    from sk.tools.web import tool_read_url
+
+    _patch(monkeypatch, mode="to-unlisted", allow=("ok.example",))
+    tool_read_url("https://ok.example/start")
+    rows = {r["host"]: r for r in store.egress_summary()}
+    assert "evil.test" in rows, "the denied redirect left no ledger row"
+    assert rows["evil.test"]["denied"] == 1
+    assert rows["evil.test"]["allowed"] == 0
+
+
+def test_multi_hop_chain_stops_at_the_first_denied_hop(monkeypatch):
+    """The allowlist gates every hop, not just the first: allowlisted ->
+    allowlisted -> unlisted must still refuse, and must not fetch hop 3."""
+    from sk.tools.web import tool_read_url
+
+    _patch(monkeypatch, mode="chain-to-unlisted", allow=("ok.example", "news.example"))
+    out = tool_read_url("https://ok.example/start")
+    assert "egress blocked" in out
     assert "evil.test" not in _Chain.hops
+    # The first hop was allowed, so it was genuinely fetched.
+    assert "https://ok.example/start" in _Chain.hops
 
 
 def test_redirect_to_internal_is_refused(monkeypatch):
-    """Egress policy and the SSRF guard both fire; SSRF still guards allowlisted."""
+    """SSRF still guards allowlisted hosts: a link-local literal is refused."""
     from sk.tools.web import tool_read_url
 
     _patch(monkeypatch, mode="to-internal", allow=("ok.example",))
