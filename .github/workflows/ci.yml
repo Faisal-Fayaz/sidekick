@@ -128,8 +128,14 @@ jobs:
       - name: Install package + test extras
         run: uv sync --frozen --extra test
 
-      - name: Report coverage (informational, not gated)
-        run: uv run pytest tests -q --cov=sk --cov-report=term-missing 2>&1 | tail -n 40
+      - name: Report coverage (gated at the fail_under floor)
+        # `set -o pipefail` is load-bearing. The previous form piped pytest into
+        # `tail -n 40`, so the pipeline exited with tail's status: the job
+        # reported success no matter what pytest returned. A gate that cannot
+        # fail is worse than no gate, because the green tick reads as coverage.
+        run: |
+          set -o pipefail
+          uv run pytest tests -q --cov=sk --cov-report=term-missing 2>&1 | tail -n 45
 
   website:
     # The Vite site had no CI at all — no build, no typecheck, no link check —
