@@ -65,8 +65,13 @@ source at <https://pypi.org/manage/account/publishing/>:
 - **Owner** `Faisal-Fayaz` · **Repository** `sidekick` · **Workflow** `release.yml`
 - **Environment** `pypi` · **Project** `sidekick-agent`
 
-Same on <https://test.pypi.org/manage/account/publishing/> for the `testpypi`
-environment (optional, for manual test runs).
+To make the dry run above work, register a second publishing source on
+<https://test.pypi.org/manage/account/publishing/> — owner `Faisal-Fayaz`, repo
+`sidekick`, workflow `release.yml`, environment `testpypi`. **Until that exists,
+the dry run fails at the upload step** with `invalid-publisher`, after build,
+`twine check` and the release-sequence guard have all already passed. That is a
+useful dry run for everything except the upload itself, but it is not a full
+green light — don't read a red X as "the release is broken".
 
 > The "Owner" must be the GitHub user who **owns the repo the workflow runs in**
 > (Faisal-Fayaz), not the person who pushes or registers. It matches the
