@@ -16,7 +16,7 @@ from .commands import auth, chat, daemon, mcp, memory, run, skills, system  # no
 
 # names used externally (tui.py, tests): re-export from their new homes
 from .commands.auth import _ask_key, _connect_flow, _pick_model_name, _pick_provider
-from .commands.system import _code_version
+from .commands.system import _code_version, _full_version
 from .resolve import _resolve_model
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "_make_on_token",
     "_resolve_model",
     "_code_version",
+    "_full_version",
     "_pick_provider",
     "_ask_key",
     "_connect_flow",
@@ -44,8 +45,17 @@ def _default(
     ctx: typer.Context,
     cwd: str = typer.Option("", "--cwd", help="Run as if in this directory"),
     profile: str = typer.Option("", "--profile", help="Use this config profile"),
+    version: bool = typer.Option(False, "--version", help="Show the version and exit"),
 ) -> None:
     """Launch the fullscreen TUI (same as `sk tui`)."""
+    # First, before --cwd validation and the profile lookup: `sk --version` has
+    # to work regardless of the working directory or a broken config, and it
+    # must not fall through to launch() below.
+    if version:
+        from .commands.system import _full_version
+
+        console.print(f"sk {_full_version()}")
+        raise typer.Exit(0)
     if cwd.strip():
         import os
         from pathlib import Path

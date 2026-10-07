@@ -22,6 +22,13 @@ on:
         type: choice
         default: testpypi
         options: [testpypi, pypi]
+      reconcile:
+        description: >
+          Recovery: re-tag and (re-)publish the GitHub Release for a version that
+          is already on PyPI. Use when a previous run uploaded to PyPI but died
+          before creating the tag, which used to be unrecoverable.
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,6 +48,10 @@ jobs:
       publish: ${{ steps.check.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the release-sequence check reads the tag list, and the
+          # default fetch-depth of 1 would give it none.
+          fetch-depth: 0
 
       - name: Identify version + target
         id: ident
@@ -70,6 +81,66 @@ jobs:
             echo "new version $VERSION — will publish"
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # A burned version number is unrecoverable: PyPI refuses to republish one
+      # and git tags cannot be reused. v0.14.0 and v0.28.0 were both burned
+      # here, and the PR suite cannot catch it because CI checks out at
+      # fetch-depth 1 and has no tags — those tests skip. This job has full
+      # history, so this is the last place to notice a hole in the sequence or a
+      # __version__ that went backwards, and it fails the release instead of
+      # shipping the gap. Stdlib only, and it runs before uv is installed:
+      # a release guard must not depend on a step that has not run yet.
+      #
+      # tests/test_release_integrity.py makes the same assertions and is the
+      # single source of the BURNED_VERSIONS list parsed below.
+      - name: Verify release sequence
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          git fetch --tags --force --quiet || true
+          python3 - <<'PY'
+          import pathlib, re, sys, subprocess
+
+          TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+          src = pathlib.Path("tests/test_release_integrity.py").read_text()
+          block = re.search(r"BURNED_VERSIONS = \{(.*?)\}", src, re.S)
+          if not block:
+              print("::error::could not find BURNED_VERSIONS in the test file")
+              sys.exit(1)
+          burned = set(re.findall(r'"(\d+\.\d+\.\d+)"', block.group(1)))
+
+          out = subprocess.run(
+              ["git", "tag", "--list"], capture_output=True, text=True
+          ).stdout.split()
+          tags = [t for t in out if TAG.match(t)]
+          if not tags:
+              print("::warning::no tags visible; sequence unverified")
+              sys.exit(0)
+
+          seen = {tuple(int(p) for p in TAG.match(t).groups()) for t in tags}
+          gaps = []
+          for ma in sorted({a for a, _, _ in seen}):
+              minors = sorted({mi for a, mi, _ in seen if a == ma})
+              for mi in range(min(minors), max(minors) + 1):
+                  if mi not in minors:
+                      gaps.append(f"{ma}.{mi}.0")
+          series = sorted({(ma, mi) for ma, mi, _ in seen})
+          for ma, mi in series:
+              patches = sorted(p for a, m, p in seen if (a, m) == (ma, mi))
+              for p in range(0, max(patches) + 1):
+                  if p not in patches:
+                      gaps.append(f"{ma}.{mi}.{p}")
+
+          unaccounted = [g for g in gaps if g not in burned]
+          for g in gaps:
+              state = "known gap" if g in burned else "UNACCOUNTED"
+              print(f"  {g} — {state}")
+          if unaccounted:
+              print("::error::unaccounted gap(s) in the release sequence: "
+                    + ", ".join(unaccounted)
+                    + " — these version numbers can never be published on PyPI")
+              sys.exit(1)
+          print(f"release sequence OK ({len(tags)} tags, {len(burned)} known gaps)")
+          PY
 
       - name: Install uv
         if: steps.check.outputs.publish == 'true'
@@ -144,7 +215,25 @@ jobs:
   github-release:
     name: GitHub Release (new version on main only)
     needs: [build, publish]
-    if: github.event_name == 'push' && needs.publish.result == 'success'
+    # Two ways in, and the second is the one that used to be missing.
+    #
+    # 1. We just published: needs.publish.result == 'success'.
+    # 2. The version is ALREADY on PyPI (needs.build.outputs.publish == 'false').
+    #
+    # (2) is the recovery path, and the old condition made this job
+    # unrecoverable. If the publish succeeded but the "Create tag" step failed,
+    # a re-run found the version on PyPI, set publish=false, skipped the
+    # `publish` job — and `needs.publish.result` was then 'skipped', not
+    # 'success', so github-release was skipped too. Forever: PyPI had the
+    # release, the repo had no tag and no GitHub Release, and the only manual
+    # escape was pushing a tag, which no workflow validates. `reconcile` above
+    # makes the same path reachable by hand.
+    if: >-
+      (github.event_name == 'push'
+        && (needs.publish.result == 'success' || needs.build.outputs.publish == 'false'))
+      || (github.event_name == 'workflow_dispatch'
+        && inputs.reconcile == 'true'
+        && needs.build.outputs.target == 'pypi')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +241,11 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # No-op on the recovery path: the version is already on PyPI, so nothing
+      # was built and there is nothing to download. Tolerated rather than
+      # required, because requiring it is what made the recovery unreachable.
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: dist
           path: dist
@@ -174,4 +267,5 @@ jobs:
         with:
           tag_name: v${{ needs.build.outputs.version }}
           files: dist/*
+          fail_on_unmatched_files: false
           generate_release_notes: true
