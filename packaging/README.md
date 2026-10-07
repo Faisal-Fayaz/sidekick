@@ -26,6 +26,37 @@ Automated publishing is credential-free and merge-driven
 4. If version `__version__` is already on PyPI, the workflow exits silently
    (non-release merges are no-ops).
 
+### Dry run and recovery
+
+**Dry run.** *Actions → release → Run workflow*, set `target` to `testpypi`
+(default) or `pypi`. This is a genuine dry run: it builds and uploads through
+trusted publishing to <https://test.pypi.org/project/sidekick-agent/> under its
+own `testpypi` environment.
+
+**Recovery — PyPI has the release but the repo has no tag.** A previous run can
+upload to PyPI and then fail before the "Create tag" step, leaving PyPI ahead of
+the git tags. Re-running used to be useless: the workflow saw the version on
+PyPI, set `publish=false`, skipped the `publish` job, and the `github-release`
+job required that job to have *succeeded* — so it was skipped forever. The
+condition now also accepts "already on PyPI", and the `reconcile` dispatch
+input makes it reachable by hand:
+
+1. *Actions → release → Run workflow*
+2. `target` = `pypi`, `reconcile` = `true`
+
+That creates the missing `v<version>` tag and GitHub Release. It does **not**
+re-upload to PyPI. There is no need to push a tag by hand — `on.push` filters
+on `branches: [main]`, so a bare tag push runs no workflow at all.
+
+### Version numbers are not recoverable
+
+A version number is burned once written into `src/sk/__init__.py`, whether or
+not it is ever published: PyPI refuses to republish a number, and git tags
+cannot be reused. `v0.14.0` and `v0.28.0` were both burned this way, which is
+why the sequence in `tests/test_release_integrity.py` lists them as known gaps.
+A *new* gap fails that test. Bump deliberately, and check the bump survives to
+a tag.
+
 ### One-time trusted-publisher setup (PyPI account side)
 
 On the PyPI account that will own `sidekick-agent`, register a publishing

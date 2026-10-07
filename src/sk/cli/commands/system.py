@@ -50,10 +50,24 @@ def _code_version() -> str:
         return "unknown"
 
 
+def _full_version() -> str:
+    """`0.29.0`, plus the running checkout's short hash when there is one.
+
+    Both `sk --version` and `sk version` print this. They used to disagree: there
+    was no `--version` at all (it exited 2, breaking the conventional probe that
+    packaging and bug-report tooling uses), and `sk version` printed *only* the
+    git hash — so the semantic version was unreachable from inside a checkout.
+    """
+    from sk import __version__
+
+    h = _code_version()
+    return f"{__version__} ({h})" if h and h != __version__ else __version__
+
+
 @app.command()
 def version():
-    """Show the running code version (git hash). Compare with the TUI header."""
-    console.print(f"sk {_code_version()}")
+    """Show the version and the running checkout (git hash)."""
+    console.print(f"sk {_full_version()}")
 
 
 @app.command()
