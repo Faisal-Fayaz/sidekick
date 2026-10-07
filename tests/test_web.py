@@ -2,6 +2,8 @@
 
 import pytest
 
+import sk.config as config_mod
+
 from sk.agent import _auto_web_context
 from sk.tools import _html_to_text, _url_blocked, dispatch_tool, tool_read_url, tool_web_search
 
@@ -97,7 +99,7 @@ class _SearchChainClient:
         return _SearchResp(200, text=RESULT_HTML)
 
 
-def _iso_search(monkeypatch, mode):
+def _iso_search(monkeypatch, mode, extra_allow=()):
     from sk.tools import web as webmod
 
     _SearchChainClient.instances.clear()
@@ -109,18 +111,53 @@ def _iso_search(monkeypatch, mode):
             return None  # public decoys: skip real DNS so tests stay offline
         return real_blocked(url)
 
+    # Appends to whatever `egress_test_hosts` (this module's pytestmark) already
+    # granted, rather than replacing it. That fixture is what allowlists
+    # `*.duckduckgo.com`; substituting a narrower tuple silently stopped
+    # `html.duckduckgo.com` matching and turned four redirect tests into
+    # "egress blocked" assertions about the first hop.
+    real_load = config_mod.Config.load
+
+    def _load(*a, **kw):
+        cfg = real_load(*a, **kw)
+        cfg.egress_allow = tuple(cfg.egress_allow) + tuple(extra_allow)
+        return cfg
+
     monkeypatch.setattr(webmod, "_url_blocked", _allow_decoys)
+    monkeypatch.setattr(config_mod.Config, "load", staticmethod(_load))
     monkeypatch.setattr("httpx.Client", _SearchChainClient)
 
 
 def test_search_redirect_to_private_never_fetched(monkeypatch):
-    """#266: a redirect hop to an internal host is refused, not followed."""
+    """#266: a redirect hop to an internal host is refused, not followed.
+
+    Asserts the refusal and the hops, not which gate spoke. Since #314-era
+    hardening the allowlist also runs on every hop and answers first (it needs
+    no DNS), so the message is now `egress blocked on redirect` rather than
+    `redirect to blocked URL`. Both are refusals; pinning the string made this
+    test break when the policy got stricter rather than weaker.
+    """
     _iso_search(monkeypatch, "evil-redirect")
     out = tool_web_search("sidekick")
-    assert "redirect to blocked URL" in out
+    assert "blocked" in out
     hops = _SearchChainClient.instances[-1].hops
     assert [h[0] for h in hops] == [DDG_URL]
     assert hops[0][1].get("params") == {"q": "sidekick"}
+
+
+def test_search_redirect_to_allowed_internal_host_is_ssrf_blocked(monkeypatch):
+    """SSRF must still speak when policy allows it.
+
+    The allowlist gates first, so it is easy to stop testing SSRF by accident.
+    An operator who has deliberately allowlisted a loopback target should
+    still not reach it through a redirect from a search.
+    """
+    _iso_search(monkeypatch, "evil-redirect", extra_allow=("127.0.0.1",))
+    out = tool_web_search("sidekick")
+    assert "blocked" in out
+    assert "egress blocked" not in out  # policy allowed it; SSRF refused
+    hops = _SearchChainClient.instances[-1].hops
+    assert [h[0] for h in hops] == [DDG_URL]
 
 
 def test_search_benign_redirect_chain_works(monkeypatch):

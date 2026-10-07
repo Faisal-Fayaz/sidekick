@@ -77,6 +77,18 @@ request is issued:
    DNS is queried twice in immediate succession so a flapping resolver cannot
    hand back a public answer and then a private one.
 
+Redirects are followed by hand (`follow_redirects=False` throughout), so this is
+a loop rather than a library default. That matters: the allowlist used to run
+only on the original URL, which made it bypassable — allowlist a host you trust,
+let it `302` anywhere, and the agent followed and handed the content to the
+model. The allowlist now gates every hop and a refused hop writes its own
+denial row, so `sk audit --prove` can say "the policy held" rather than "we
+never tried".
+
+A hop that the *policy* allows can still be refused by the SSRF guard, and vice
+versa; both refusals are reported with the remediation for the gate that
+actually fired.
+
 Redirects are followed manually (`follow_redirects=False`) precisely so no hop
 skips either gate. Allowlisting a host does not make it SSRF-safe; the guard
 still runs.
