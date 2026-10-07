@@ -181,3 +181,22 @@ def test_contributing_does_not_reference_removed_gates():
     assert "tests × 6, badge, build" not in contributing
     # The checklist must name coverage, which is now a required check.
     assert "coverage" in contributing
+
+
+def test_daemon_uninstall_is_documented():
+    """`daemon.remove_launchd` existed with no command, so an install could only
+    be undone by hand. The command and its doc line must stay together."""
+    assert "daemon-uninstall" in _read("README.md")
+    assert re.search(r"def daemon_uninstall\(\)", _read("src/sk/cli/commands/daemon.py")), (
+        "daemon-uninstall command is gone"
+    )
+
+
+def test_daemon_uninstall_is_reachable_from_the_cli():
+    import sk.cli as cli
+
+    names = set()
+    for info in getattr(cli.app, "registered_commands", []):
+        cb = getattr(info, "callback", None)
+        names.add(getattr(cb, "__name__", "") or getattr(info, "name", ""))
+    assert "daemon_uninstall" in names, sorted(n for n in names if n)

@@ -94,6 +94,34 @@ def daemon_install_macos(
     console.print(f"[dim]Logs: ~/.sidekick/nudges.log · label: {LAUNCHD_LABEL}[/dim]")
 
 
+@app.command(name="daemon-uninstall")
+def daemon_uninstall():
+    """Remove the macOS launchd agent installed by `sk daemon-install-macos`.
+
+    The inverse existed in `daemon.remove_launchd` but had no command, so the
+    only supported way to undo an install was to find the plist by hand and
+    `launchctl bootout` it. On Linux, `systemctl --user disable --now` the unit
+    instead; this command is the macOS half only, and says so.
+    """
+    from sk.daemon import LAUNCHD_LABEL, UNIT_NAME, has_launchd, remove_launchd
+
+    if not has_launchd():
+        console.print(
+            "[yellow]No launchd agent found — nothing to remove.[/yellow]\n"
+            f"[dim]On Linux, disable the systemd unit instead: "
+            f"systemctl --user disable --now {UNIT_NAME}[/dim]"
+        )
+        raise typer.Exit(0)
+    out = remove_launchd()
+    if out.startswith("Removed"):
+        console.print(f"[green]{out}[/green]")
+    elif out.startswith("No launchd"):
+        console.print(f"[yellow]{out}[/yellow]")
+    else:
+        console.print(f"[yellow]{out}[/yellow]")
+    console.print(f"[dim]Logs: ~/.sidekick/nudges.log · label: {LAUNCHD_LABEL}[/dim]")
+
+
 @app.command(name="daemon-schedule")
 def daemon_schedule(
     set_text: str = typer.Option("", "--set", help="Set schedule, e.g. --set 'every morning'"),

@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import re
+from collections.abc import Container
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -324,7 +325,7 @@ def _coerce_args(raw) -> dict | None:
     return {}
 
 
-def _match_tool_obj(obj: dict, allowed: set[str]) -> tuple[str, dict] | None:
+def _match_tool_obj(obj: dict, allowed: Container[str]) -> tuple[str, dict] | None:
     if isinstance(obj, dict) and obj.get("name") in allowed:
         for key in ("arguments", "parameters", "params", "input"):
             if key in obj:
@@ -372,27 +373,40 @@ _TEMPLATE_ARTIFACT = re.compile(r"<\]?\s*[\w.-]{2,20}\s*\[>\s*\[<", re.I)
 # otherwise the model is quoting some *other* system's markup.
 _INVOKE_NAME = re.compile(r"<\s*invoke\s+name\s*=\s*[\"']([A-Za-z_][\w.]*)[\"']", re.I)
 
-KNOWN_TOOL_NAMES = frozenset(
-    {
-        "sysinfo",
-        "list_dir",
-        "read_file",
-        "exec",
-        "shell",
-        "delete_file",
-        "write_file",
-        "edit_file",
-        "make_dir",
-        "remember",
-        "recall",
-        "todo_add",
-        "todo_list",
-        "todo_done",
-        "read_url",
-        "web_search",
-        "skill",
-    }
-)
+
+def _known_tool_names() -> frozenset[str]:
+    """Every tool name in the schema, derived rather than restated.
+
+    This was a hand-maintained list of 17 names, duplicated a second time as a
+    local `allowed` set inside _parse_text_tools. It had already drifted:
+    `generate_image` and `shell_session` exist in TOOLS_SCHEMA and were in
+    neither copy. Two consequences, both silent:
+
+    - a model emitting either as a ```json block had it discarded, so the tool
+      was never called and nothing said why;
+    - #368's residue detector only treats `<invoke name=X>` as unparsed markup
+      when X is in this set, so markup naming either tool was posted to the user
+      verbatim -- the exact failure that change existed to prevent.
+
+    Deriving it means a new tool cannot be half-added. Both excluded tools are
+    approval-gated, so routing them through the text-JSON fallback puts them
+    behind the same gate as a native call.
+    """
+    from .tools.registry import TOOLS_SCHEMA
+
+    names: set[str] = set()
+    for entry in TOOLS_SCHEMA:
+        if not isinstance(entry, dict):
+            continue
+        fn = entry.get("function")
+        if isinstance(fn, dict):
+            name = str(fn.get("name", ""))
+            if name:
+                names.add(name)
+    return frozenset(names)
+
+
+KNOWN_TOOL_NAMES = _known_tool_names()
 
 
 def _tool_residue(text: str) -> bool:
@@ -447,25 +461,7 @@ def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
     Returns list of (name, args). Only allows known tools.
     """
 
-    allowed = {
-        "sysinfo",
-        "list_dir",
-        "read_file",
-        "exec",
-        "shell",
-        "delete_file",
-        "write_file",
-        "edit_file",
-        "make_dir",
-        "remember",
-        "recall",
-        "todo_add",
-        "todo_list",
-        "todo_done",
-        "read_url",
-        "web_search",
-        "skill",
-    }
+    allowed = KNOWN_TOOL_NAMES
     found: list[tuple[str, dict]] = []
     seen: set[str] = set()
     for span in _balanced_objects(text):

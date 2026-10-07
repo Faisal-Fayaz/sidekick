@@ -20,6 +20,7 @@ import sk.agent as agent_mod
 from sk.agent import (
     KNOWN_TOOL_NAMES,
     MAX_RESIDUE_RETRIES,
+    _parse_text_tools,
     _strip_tool_residue,
     _tool_residue,
 )
@@ -262,3 +263,51 @@ def test_json_block_tool_calls_still_dispatch(tmp_path, monkeypatch):
 def test_retries_are_bounded_by_a_constant():
     """The bound has to exist and be small; 2 is the documented choice."""
     assert MAX_RESIDUE_RETRIES == 2
+
+
+# --- the name list must not drift from the schema (#376) -------------------
+#
+# The detector only treats `<invoke name=X>` as unparsed markup when X is a tool
+# we actually have. While the name list was hand-maintained it was missing
+# generate_image and shell_session, so markup naming either was NOT detected as
+# residue and was posted to the user verbatim -- the exact failure #368 exists to
+# prevent. Both are approval-gated, which is why including them is safe.
+
+
+def test_known_tool_names_matches_the_schema_exactly():
+    from sk.tools import TOOLS_SCHEMA
+
+    schema_names = {str(t["function"]["name"]) for t in TOOLS_SCHEMA}
+    assert KNOWN_TOOL_NAMES == frozenset(schema_names), (
+        f"only in KNOWN_TOOL_NAMES: {sorted(KNOWN_TOOL_NAMES - schema_names)}; "
+        f"only in TOOLS_SCHEMA: {sorted(schema_names - KNOWN_TOOL_NAMES)}"
+    )
+
+
+def test_every_schema_tool_is_named_by_the_detector():
+    """Adding a tool must not require a second edit somewhere else."""
+    from sk.tools import TOOLS_SCHEMA
+
+    for t in TOOLS_SCHEMA:
+        name = str(t["function"]["name"])
+        assert _tool_residue(f'<invoke name="{name}">'), (
+            f"{name} is in the schema but the residue detector does not recognise "
+            f"markup naming it, so such output would be posted verbatim"
+        )
+
+
+def test_text_json_fallback_accepts_every_schema_tool():
+    """The fallback must not quietly discard a tool the schema advertises."""
+    from sk.tools import TOOLS_SCHEMA
+
+    for t in TOOLS_SCHEMA:
+        name = str(t["function"]["name"])
+        parsed = _parse_text_tools(f'```json\n{{"name": "{name}", "arguments": {{}}}}\n```')
+        assert parsed and parsed[0][0] == name, f"{name} was discarded by the fallback"
+
+
+def test_generate_image_and_shell_session_are_detected_as_residue():
+    """The two tools the drift had swallowed."""
+    for name in ("generate_image", "shell_session"):
+        assert _tool_residue(f'<invoke name="{name}"><arg>x</arg></invoke>')
+        assert _tool_residue(f"<invoke name='{name}'>")

@@ -69,7 +69,12 @@ PATH_HINT = re.compile(
 GENERIC_WORDS = {"write", "file", "run", "execute", "create", "explain"}
 
 # Loop-machinery verdicts that mark a turn as failed/low-confidence and
-# eligible for one fast→smart retry (see should_escalate). Never raises.
+# eligible for one fast→smart retry. should_escalate matches on both of these,
+# and agent.py / anthropic_backend.py produce them -- so this tuple is the
+# contract, not documentation. It was previously defined and then ignored, with
+# both strings re-typed inline in should_escalate, which meant renaming a
+# producer would silently disable fast→smart escalation with no test failing.
+# Never raises.
 EXHAUSTION_MARKERS = ("(max steps reached)", "Accomplished:")
 
 
@@ -146,6 +151,6 @@ def should_escalate(answer: str) -> bool:
         t = (answer or "").strip()
         if not t:
             return True
-        return t.startswith("Accomplished:") or "(max steps reached)" in t
+        return t.startswith(EXHAUSTION_MARKERS[1]) or EXHAUSTION_MARKERS[0] in t
     except Exception:
         return False

@@ -15,6 +15,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import sk.mcp_client as mc
+import sk.mcp_client as mcp_client_mod
+import sk.mcp_server as mcp_server_mod
 
 TOOLS = [
     {"name": "echo", "description": "Echo", "inputSchema": {"type": "object"}},
@@ -397,3 +399,33 @@ def test_two_clients_do_not_share_a_cache(counting_server):
         a.close()
         b.close()
     assert _count(counter) == 2
+
+
+# --- one definition of the shared surface (#376) ---------------------------
+
+
+def test_transports_share_call_tool_and_exit():
+    """`call_tool` was defined identically in both classes, so a fix had to be
+    made twice and a miss was silent. The only real difference between the
+    transports is how `_request` moves bytes."""
+    assert "call_tool" not in mcp_client_mod.MCPClient.__dict__
+    assert "call_tool" not in mcp_client_mod.MCPHttpClient.__dict__
+    assert mcp_client_mod.MCPClient.call_tool is mcp_client_mod.MCPHttpClient.call_tool
+    assert mcp_client_mod.MCPClient.__exit__ is mcp_client_mod.MCPHttpClient.__exit__
+
+
+def test_protocol_version_has_one_definition():
+    """It was a bare literal in both mcp_client.py and mcp_server.py, so a bump
+    that missed one produced a client that silently failed to initialize against
+    our own server."""
+    assert mcp_client_mod.PROTOCOL_VERSION == mcp_server_mod.PROTOCOL_VERSION
+    lit = 'PROTOCOL_VERSION = "'
+    assert lit not in mcp_client_src(), f"client still hardcodes the literal:\n{mcp_client_src()}"
+
+
+def mcp_client_src() -> str:
+    import pathlib
+
+    import sk.mcp_client as m
+
+    return pathlib.Path(m.__file__).read_text()
