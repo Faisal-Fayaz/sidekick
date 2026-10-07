@@ -103,7 +103,23 @@ def fire_event(event: str, payload: dict) -> list[dict]:
             timeout = DEFAULT_TIMEOUT
         try:
             out.append(run_hook(str(h.get("command", "")), event, payload, timeout))
-        except Exception:
+        except Exception as e:
+            # A PreToolUse handler that cannot be consulted has not approved
+            # anything, so skipping it allowed the tool. `run_hook` is
+            # documented as never raising, so reaching this means something
+            # unexpected happened in our own code -- and for a gate on a tool
+            # call, unexpected must fail closed. PostToolUse and friends stay
+            # best-effort, because a notification that did not fire must not
+            # block a turn.
+            if event == "PreToolUse":
+                out.append(
+                    {
+                        "ok": False,
+                        "decision": "deny",
+                        "reason": f"hook could not be consulted: {type(e).__name__}: {e}"[:500],
+                        "command": str(h.get("command", "")),
+                    }
+                )
             continue
     return out
 
@@ -117,8 +133,12 @@ def pre_tool_use(session: str, tool: str, args: dict) -> tuple[bool, str]:
             if res.get("decision") == "deny":
                 reason = str(res.get("reason", "") or "denied by hook")
                 return False, f"Denied by hook `{res.get('command', '?')}`: {reason}"
-    except Exception:
-        pass
+    except Exception as e:
+        # Previously this discarded the results collected so far and returned
+        # allow. If the failure happened after a deny was already recorded, that
+        # deny was thrown away and the tool ran -- the one outcome a security
+        # hook must never produce. Deny instead, and say why.
+        return False, f"Denied: PreToolUse hooks could not be evaluated ({type(e).__name__}: {e})"
     return True, ""
 
 

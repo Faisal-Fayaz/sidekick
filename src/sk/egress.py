@@ -34,6 +34,10 @@ REASON_NOT_ALLOWED = "host is not in the egress allowlist"
 REASON_BAD_ENTRY = "allowlist entry is too broad to honour"
 REASON_BAD_URL = "could not parse destination"
 
+# One-shot keys for ledger-write warnings, so a broken audit DB does not print
+# on every refused fetch.
+_ledger_warned: set[str] = set()
+
 
 def _host_of(url: str) -> str:
     try:
@@ -110,10 +114,27 @@ def record(tool: str, url: str, reason: str | None, session: str = "") -> None:
     Denials are the valuable rows: an `egress` row with ok=0 can only exist if
     something actually tried to leave, which is what makes `sk audit --prove`
     (#156) say something it can back up.
+
+    So a failure to write is reported rather than swallowed. Losing a row here is
+    not merely a lost log line -- for a *denial* it removes the only evidence
+    that anything was ever blocked, and `sk audit --prove` cannot tell "the
+    policy held" from "we never tried". Deduped, so a broken ledger warns once
+    rather than on every refused fetch.
     """
     try:
         from .store import log_egress
 
         log_egress(tool or "fetch", _host_of(url), str(url or "")[:400], reason, session=session)
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+
+        msg = (
+            f"could not write the egress audit row for {_host_of(url) or url} ({type(e).__name__})"
+        )
+        key = msg[:160]
+        if key not in _ledger_warned:
+            _ledger_warned.add(key)
+            try:
+                print(f"[sidekick] warning: {msg}", file=sys.stderr)
+            except Exception:
+                pass

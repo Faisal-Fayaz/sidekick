@@ -47,11 +47,40 @@ def _load(session: str) -> list[dict]:
         return []
 
 
+_warned: set[str] = set()
+
+
+def _warn(msg: str) -> None:
+    """Warn once on stderr that a best-effort write stopped working.
+
+    Checkpoints are best-effort by design -- a session with a broken home
+    directory should still be able to edit files. But silence is not an
+    acceptable failure mode here: a checkpoint that does not save means `/rewind`
+    restores stale state (or nothing) while reporting success, and the redo
+    stack that is supposed to un-rewind is gone as well. Deduped so a
+    persistently unwritable directory warns once instead of on every tool call.
+    stderr, so JSON and report output modes stay clean.
+    """
+    key = msg[:160]
+    if key in _warned:
+        return
+    _warned.add(key)
+    try:
+        import sys
+
+        print(f"[sidekick] warning: {msg}", file=sys.stderr)
+    except Exception:
+        pass
+
+
 def _save(session: str, recs: list[dict]) -> None:
     try:
         atomic_write_text(_path_for(session), json.dumps(recs[-MAX_CHECKPOINTS:]))
-    except Exception:
-        pass
+    except Exception as e:
+        _warn(
+            f"could not save a checkpoint ({type(e).__name__}): /rewind will not "
+            f"restore correctly for this session"
+        )
 
 
 def _rpath_for(session: str) -> Path:
@@ -74,8 +103,11 @@ def _rload(session: str) -> list[dict]:
 def _rsave(session: str, recs: list[dict]) -> None:
     try:
         atomic_write_text(_rpath_for(session), json.dumps(recs[-MAX_CHECKPOINTS:]))
-    except Exception:
-        pass
+    except Exception as e:
+        _warn(
+            f"could not save the rewind redo stack ({type(e).__name__}): a later "
+            f"/rewind could not be undone"
+        )
 
 
 def _push_redo(session: str, entry: dict) -> None:
@@ -87,8 +119,11 @@ def _push_redo(session: str, entry: dict) -> None:
 def _clear_redo(session: str) -> None:
     try:
         _rpath_for(session).unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as e:
+        _warn(
+            f"could not clear the rewind redo stack ({type(e).__name__}): a stale "
+            f"undo may be offered after the next /rewind"
+        )
 
 
 def snapshot_before(session: str, tool: str, args: dict | None, cwd: str = "") -> int | None:
