@@ -198,6 +198,66 @@ def test_contributing_does_not_reference_removed_gates():
     assert "coverage" in contributing
 
 
+def test_readme_command_table_matches_cli():
+    """The README command table is hand-maintained and `sk --help` grows by
+    PR: a new command with no row (or a row for a removed command) drifts
+    silently. Introspect the typer app instead of shelling out, so the test
+    stays offline and hermetic."""
+    import sk.cli as cli
+
+    cli_cmds: set[str] = set()
+    for info in getattr(cli.app, "registered_commands", []):
+        if getattr(info, "hidden", False):
+            continue  # hook-log, run-bg-worker: intentionally undocumented
+        cb = getattr(info, "callback", None)
+        name = getattr(info, "name", None) or (getattr(cb, "__name__", "") or "").replace("_", "-")
+        if name:
+            cli_cmds.add(name)
+    groups: dict[str, set[str]] = {}
+    for grp in getattr(cli.app, "registered_groups", []):
+        subs: set[str] = set()
+        inst = getattr(grp, "typer_instance", None)
+        for cmd in getattr(inst, "registered_commands", []) or []:
+            cb = getattr(cmd, "callback", None)
+            nm = getattr(cmd, "name", None) or (getattr(cb, "__name__", "") or "").replace("_", "-")
+            if nm:
+                subs.add(nm)
+        if getattr(grp, "name", None):
+            groups[grp.name] = subs
+    cli_cmds |= set(groups)
+    assert len(cli_cmds) > 40, f"introspection found only {sorted(cli_cmds)}"
+
+    table = _read("README.md").split("## Command reference")[1].split("## Architecture")[0]
+    firsts: set[str] = set()  # head command of each `sk ...` chunk
+    mentioned: set[str] = set()  # every slash-group segment head
+    for chunk in re.findall(r"`(sk [^`]+)`", table):
+        for seg in chunk.split("/"):
+            tok = re.match(r"\s*(?:sk\s+)?([a-z][a-z-]*)", seg)
+            if tok:
+                mentioned.add(tok.group(1))
+        head = re.match(r"sk\s+([a-z][a-z-]*)", chunk)
+        if head:
+            firsts.add(head.group(1))
+    # every CLI command appears somewhere in the table (slash-group rows like
+    # `sk remember/recall/memories/forget` cover several at once)
+    assert not (set(cli_cmds) - mentioned), (
+        f"commands with no README row: {sorted(set(cli_cmds) - mentioned)}"
+    )
+    # every documented head command still exists (catches removed-command rows)
+    assert not ({f for f in firsts if f not in cli_cmds} - {"sk"}), (
+        f"README rows for unknown commands: {sorted(firsts - set(cli_cmds) - {'sk'})}"
+    )
+    # group subcommands ride in the group row (`sk auth add/list/...`); a
+    # renamed subcommand must update that row, not just the code
+    rows = [ln for ln in table.splitlines() if ln.startswith("|")]
+    for grp, subs in groups.items():
+        row = next((ln for ln in rows if f"sk {grp}" in ln), "")
+        assert row, f"no README row documents `sk {grp}`"
+        assert not (subs - set(re.findall(r"[a-z][a-z-]*", row))), (
+            f"`sk {grp}` row is missing subcommands: {sorted(subs - set(re.findall(r'[a-z][a-z-]*', row)))}"
+        )
+
+
 def test_daemon_uninstall_is_documented():
     """`daemon.remove_launchd` existed with no command, so an install could only
     be undone by hand. The command and its doc line must stay together."""
