@@ -115,6 +115,14 @@ def _run_shell(cmd: str) -> str:
     if not cmd:
         return ""
     try:
+        from .tools.shell import _check_shell
+
+        blocked = _check_shell(cmd)
+        if blocked is not None:
+            return f"(blocked: {blocked})"
+    except Exception as e:
+        return f"(blocked: refusal check failed closed: {e})"
+    try:
         r = subprocess.run(
             ["sh", "-c", cmd],
             capture_output=True,
@@ -141,9 +149,12 @@ def _read_ref(raw: str) -> str:
     if not raw:
         return "@"
     try:
-        p = Path(raw).expanduser()
-        if not p.is_absolute():
-            p = Path(os.getcwd()) / p
+        from .tools.read import _check_read_path
+
+        checked = _check_read_path(raw)
+        if isinstance(checked, str):
+            return f"(blocked: {checked})"
+        p = checked
         if not p.exists():
             return f"(file not found: {raw})"
         if not p.is_file():

@@ -120,15 +120,21 @@ def _expand_at_refs(text: str) -> str:
     import re
 
     def repl(m: re.Match) -> str:
-        p = Path(m.group(1)).expanduser()
+        raw = m.group(1)
         try:
+            from .tools.read import _check_read_path
+
+            checked = _check_read_path(raw)
+            if isinstance(checked, str):
+                return f"[blocked @{raw}: {checked}]"
+            p = checked
             if p.is_file() and p.stat().st_size < 200_000:
                 from .trust import fence
 
                 return "\n" + fence(p.read_text(errors="replace"), f"file {p}", limit=6000)
-            return f"[could not read @{m.group(1)}]"
+            return f"[could not read @{raw}]"
         except Exception as e:
-            return f"[error reading @{m.group(1)}: {e}]"
+            return f"[error reading @{raw}: {e}]"
 
     return re.sub(r"@([\w\-.~/][\w\-./~]*)", repl, text)
 
