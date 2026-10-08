@@ -258,6 +258,38 @@ def test_readme_command_table_matches_cli():
         )
 
 
+def test_website_package_version_matches_source(version):
+    """website/package.json drifted three releases behind (0.27.0 vs 0.30.0)
+    with nothing checking it. Exact match: bumping the source without the
+    site ships a version lie, and vice versa."""
+    import json
+
+    pkg = json.loads(_read("website/package.json"))
+    assert pkg.get("version") == version, (
+        f"website/package.json says {pkg.get('version')} but the source is {version}"
+    )
+
+
+def test_website_hero_test_count_tracks_roadmap():
+    """The hero claimed 780 tests passing against a 1389-test suite. The gate
+    anchors the hero to ROADMAP's latest 'Tests A → B' count (both are
+    human-updated, so the test forces updating them together) with room for
+    a release worth of growth. It cannot see the live collected count -- a
+    suite that grows without a ROADMAP Done entry still passes, same
+    one-sided compromise as the AUR pkgver gate."""
+    hero = _read("website/src/components/HeroTerminal.tsx")
+    m = re.search(r"(\d+)\s+tests passing", hero)
+    assert m, "hero test-count line is gone from HeroTerminal.tsx"
+    hero_n = int(m.group(1))
+    counts = [int(x) for x in re.findall(r"Tests \d+ → (\d+)", _read("ROADMAP.md"))]
+    assert counts, "ROADMAP.md records no 'Tests A → B' counts to anchor the hero"
+    latest = max(counts)  # Done lists most-recent-first, so the max is the newest
+    assert abs(hero_n - latest) <= 100, (
+        f"hero says {hero_n} tests but ROADMAP's latest count is {latest}; "
+        f"refresh the hero copy with the collected count"
+    )
+
+
 def test_daemon_uninstall_is_documented():
     """`daemon.remove_launchd` existed with no command, so an install could only
     be undone by hand. The command and its doc line must stay together."""
