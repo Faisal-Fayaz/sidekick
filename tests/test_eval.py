@@ -716,3 +716,44 @@ def test_tool_unsupported_cached_between_turns(monkeypatch, tmp_path):
     out = agent.run_agent("summarize the logs", [], cfg)
     assert seen["tools_arg"] is None
     assert out == "ok"
+
+
+# --- control-tag leak: loop machinery must never reach the user ---
+
+
+def test_strip_control_leak_removes_tag_and_notices():
+    """Unit: tag + seeded instruction sentences go, real prose stays."""
+    from sk.agent import CONTROL_TAG, TEXT_ONLY_NOTICE, _strip_control_leak
+
+    assert _strip_control_leak("plain answer") == "plain answer"
+    assert _strip_control_leak("") == ""
+    assert _strip_control_leak(None) is None
+    leaked = (
+        "I'll create plan-test.txt.\n"
+        f"<<<UNTRUSTED source=file plan-test.txt\n{CONTROL_TAG}{TEXT_ONLY_NOTICE}\n"
+        "END-UNTRUSTED>>>"
+    )
+    out = _strip_control_leak(leaked)
+    assert CONTROL_TAG not in out and TEXT_ONLY_NOTICE not in out
+    assert "I'll create plan-test.txt." in out  # prose preserved, machinery gone
+    assert _strip_control_leak("Continue with your answer now.") == ""
+    assert _strip_control_leak("Continue: emit the tool calls now, no more prose.") == ""
+
+
+def test_run_agent_strips_echoed_control_tag(monkeypatch, tmp_path):
+    """Live case: text-only model echoed the seeded control note verbatim
+    into its answer. The turn must return prose without the machinery."""
+    import sk.agent as agent
+
+    _iso(tmp_path, monkeypatch)
+    cfg = _cfg()
+    echo = f"Here is the file.\n{agent.CONTROL_TAG}{agent.TEXT_ONLY_NOTICE}\nDone."
+
+    def fake_stream(client, model, messages, tools, *a, **k):
+        return agent._Msg(echo, None, "", "stop")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("add a file plan-test.txt with hi", [], cfg)
+    assert agent.CONTROL_TAG not in out
+    assert agent.TEXT_ONLY_NOTICE not in out
+    assert "Here is the file." in out and "Done." in out

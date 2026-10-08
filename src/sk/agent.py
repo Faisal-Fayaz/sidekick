@@ -2125,6 +2125,39 @@ CANCELLED_TEXT = "(cancelled)"
 # removes older copies so dead instructions stop haunting later turns.
 CONTROL_TAG = "[sidekick-control] "
 
+# Verbatim loop instruction for text-only models (llama3.2:3b starts with it
+# pre-seeded). Small models echo context back into answers, so the tag and
+# this sentence both reached user-visible output verbatim during live probing
+# (a fenced "plan-test.txt" containing the tag). _strip_control_leak removes
+# them from every user-facing return; the in-loop messages keep them.
+TEXT_ONLY_NOTICE = (
+    "[model does not support native tool calling — emit tools as ```json blocks only]"
+)
+
+_CONTINUE_NOW = "Continue with your answer now."
+_CONTINUE_TOOLS = "Continue: emit the tool calls now, no more prose."
+
+
+def _strip_control_leak(text: str) -> str:
+    """Remove loop-machinery control notes echoed by the model. Never raises.
+
+    Covers the tag plus the exact instruction sentences built with it: a
+    small model repeats context verbatim, and a control sentence in the
+    answer reads as product behavior ("I'll create… [sidekick-control]…").
+    Intentional user-facing errors (residue failure, exhaustion recap,
+    denials) never contain these fragments and pass through untouched.
+    """
+    try:
+        if not isinstance(text, str) or not text:
+            return text
+        out = text.replace(CONTROL_TAG, "")
+        out = out.replace(TEXT_ONLY_NOTICE, "")
+        out = out.replace(_CONTINUE_NOW, "")
+        out = out.replace(_CONTINUE_TOOLS, "")
+        return out
+    except Exception:
+        return text
+
 
 def _drop_stale_control(messages: list) -> None:
     """Drop older control-tagged user messages in place, keeping the newest.
@@ -2426,7 +2459,7 @@ def run_agent(
             # step telling the model what to do instead. Bounded, because a model
             # that keeps doing this must not loop until the budget dies.
             residue_attempts += 1
-            clean = _strip_tool_residue(msg_text)
+            clean = _strip_control_leak(_strip_tool_residue(msg_text))
             messages.append({"role": "assistant", "content": clean or "(tool call not understood)"})
             if residue_attempts > MAX_RESIDUE_RETRIES:
                 note = (
@@ -2504,7 +2537,7 @@ def run_agent(
                     }
                 )
                 continue
-            final_text = msg_text
+            final_text = _strip_control_leak(msg_text)
             messages.append({"role": "assistant", "content": final_text})
             # post-edit verify (refs #280): edited code that fails its syntax
             # check gets targeted repair rounds instead of shipping broken.
@@ -2600,7 +2633,7 @@ def run_agent(
                 # fails the `.strip()` test below, so control falls out of the
                 # loop to `for ... else` and the user gets the progress report
                 # instead of a trace, or of a bare "(empty)".
-                final_text = m2.content or ""
+                final_text = _strip_control_leak(m2.content or "")
             except Exception:
                 final_text = ""
             messages.append({"role": "assistant", "content": final_text})
@@ -2609,7 +2642,7 @@ def run_agent(
     else:
         # Budget spent without a final answer: one bounded no-tools call to
         # report progress + blockers instead of the bare sentinel. Never raises.
-        final_text = (
+        final_text = _strip_control_leak(
             _synthesize_exhaustion(
                 client,
                 cfg.model,
@@ -2623,4 +2656,4 @@ def run_agent(
             or "(max steps reached)"
         )
 
-    return final_text
+    return _strip_control_leak(final_text)
