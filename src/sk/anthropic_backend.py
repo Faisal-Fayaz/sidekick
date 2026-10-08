@@ -587,7 +587,9 @@ def run_anthropic_agent(
                     }
                 )
                 continue
-            return text or "(empty)"
+            from .agent import _strip_control_leak
+
+            return _strip_control_leak(text) or "(empty)"
         batch = [
             (
                 u.get("name", ""),
@@ -668,7 +670,9 @@ def run_anthropic_agent(
                     on_token(recap_text)
                 except Exception:
                     pass
-            return recap_text
+            from .agent import _strip_control_leak
+
+            return _strip_control_leak(recap_text)
     except Exception:
         pass
     return "(max steps reached)"
