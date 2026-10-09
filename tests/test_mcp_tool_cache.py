@@ -80,12 +80,31 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"message": "unknown"}})
 
 
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """HTTP fixture server that stays off stderr on expected disconnects.
+
+    A client that times out mid-request leaves the handler thread writing
+    to a dead socket; BaseServer.handle_error (invoked on the SERVER, not
+    the handler) prints that BrokenPipeError traceback to the process
+    stderr, where under a full-suite run it lands inside a later test's
+    CliRunner capture window and corrupts assertions on stdout purity
+    (test_run_json's json.loads saw "Extra data: line 2" on macOS CI).
+    Anything else still prints — a real handler bug must stay loud.
+    """
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 @pytest.fixture()
 def http_server():
     servers = []
 
     def _make(mode="json"):
-        srv = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        srv = _QuietHTTPServer(("127.0.0.1", 0), _Handler)
         srv.mode = mode
         srv.seen = []
         srv.daemon_threads = True
@@ -98,6 +117,10 @@ def http_server():
         try:
             srv.shutdown()
         except Exception:
+            pass
+        try:
+            srv.server_close()  # shutdown() leaves the listen socket open;
+        except Exception:  # unclosed it reaches GC as stderr noise (see above)
             pass
 
 
