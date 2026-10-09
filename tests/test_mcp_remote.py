@@ -108,12 +108,32 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"message": "unknown method"}})
 
 
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """HTTP fixture server that stays off stderr on expected disconnects.
+
+    Timeout tests (e.g. test_http_timeout: 1s client vs 30s sleep) abandon
+    the connection on purpose; the handler thread wakes later and writes
+    to a dead socket. BaseServer.handle_error (invoked on the SERVER, not
+    the handler) prints that BrokenPipeError traceback to the process
+    stderr, where under a full-suite run it lands inside a later test's
+    CliRunner capture window and corrupts assertions on stdout purity
+    (test_run_json's json.loads saw "Extra data: line 2" on macOS CI).
+    Anything else still prints — a real handler bug must stay loud.
+    """
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 @pytest.fixture()
 def http_server():
     servers = []
 
     def _make(mode="json"):
-        srv = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        srv = _QuietHTTPServer(("127.0.0.1", 0), _Handler)
         srv.mode = mode
         srv.seen = []
         srv.flaked = False
@@ -127,6 +147,10 @@ def http_server():
         try:
             srv.shutdown()
         except Exception:
+            pass
+        try:
+            srv.server_close()  # shutdown() leaves the listen socket open;
+        except Exception:  # unclosed it reaches GC as stderr noise (see above)
             pass
 
 
@@ -182,6 +206,23 @@ def test_http_headers_passthrough(http_server):
     with mc.MCPHttpClient("web", _url(srv), {"Authorization": "Bearer x"}, 10) as client:
         client.list_tools()
     assert srv.seen[0]["headers"].get("Authorization") == "Bearer x"
+
+
+def test_abandoned_connection_stays_off_stderr(capsys):
+    """The timeout test abandons a 30s-sleeping handler on purpose; when it
+    wakes and writes to the dead socket, the BrokenPipeError traceback must
+    not reach stderr — under a full-suite run it lands inside a later test's
+    CliRunner capture and corrupts stdout-purity assertions (test_run_json
+    saw 'Extra data: line 2' on macOS CI twice)."""
+    srv = _QuietHTTPServer(("127.0.0.1", 0), _Handler)
+    try:
+        try:
+            raise BrokenPipeError(32, "Broken pipe")
+        except BrokenPipeError:
+            srv.handle_error(None, ("127.0.0.1", 1))
+        assert capsys.readouterr().err == ""
+    finally:
+        srv.server_close()
 
 
 def test_http_timeout(http_server):
