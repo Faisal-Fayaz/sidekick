@@ -22,6 +22,13 @@ from .widgets import ChatArea, ChatLog
 TAIL_MESSAGES = 10
 TAIL_CHARS = 1500
 
+# How much of each live stream _push_live shows. The answer is the point of the
+# box, so it gets the larger window; both were hardcoded 500/2000 until
+# 2026-10-11, when a long answer streamed by a reasoning model was cut to a
+# fragment inside the thinking region and read as "it never rendered".
+LIVE_REASON_CHARS = 2000
+LIVE_BODY_CHARS = 8000
+
 
 def _tail_slice(messages: list[dict], limit: int = TAIL_MESSAGES) -> tuple[bool, list[dict]]:
     """(was_truncated, tail). Pure session-tail honesty helper."""
@@ -1643,7 +1650,16 @@ class SidekickTUI(App):
 
     def _push_live(self) -> None:
         """Progressive Markdown render, throttled to ~2Hz. Raw tokens accumulate
-        silently between renders; unclosed fences render as code until closed."""
+        silently between renders; unclosed fences render as code until closed.
+
+        The two streams are labelled and kept visually distinct. Reasoning used
+        to be a bare "…" dim blob above a "───" rule, which a reasoning model
+        (one that puts most of its text in the reasoning channel) made
+        indistinguishable from the answer: the user watched a response scroll
+        through what looked like the thinking line and concluded it "never
+        rendered". Labelling them — "thinking" vs the answer itself — is what
+        fixes the misread, not just the truncation widths.
+        """
         try:
             now = time.monotonic()
             if self._live_rendered_at and now - self._live_rendered_at < 0.5:
@@ -1651,15 +1667,24 @@ class SidekickTUI(App):
             self._live_rendered_at = now
             live = self.query_one("#live", RichLog)
             live.clear()
-            head = "".join(self._live_reason)[-500:]
+            head = "".join(self._live_reason)[-LIVE_REASON_CHARS:]
             if head:
-                live.write(Text("…" + head, style="dim"))
+                label = f"thinking ({len(''.join(self._live_reason))} chars)"
+                live.write(Text(f"… {label}", style="dim"))
+                live.write(Text(head, style="dim"))
                 live.write(Text("───", style="dim"))
-            body = "".join(self._live_parts)[-2000:]
+            body = "".join(self._live_parts)
+            if head and body:
+                live.write(Text("answer", style="bold"))
+            elif not head:
+                live.write(Text("answer", style="bold"))
+            tail = body[-LIVE_BODY_CHARS:]
+            if len(body) > len(tail):
+                tail = f"[… {len(body) - len(tail)} chars trimmed …]\n{tail}"
             try:
-                live.write(Markdown(body))
+                live.write(Markdown(tail))
             except Exception:
-                live.write(Text(body))
+                live.write(Text(tail))
         except Exception:
             pass
 
@@ -1793,7 +1818,7 @@ class SidekickTUI(App):
 
     def _finish(self, answer: str, stats: str) -> None:
         """Post the turn's answer to chat. The answer is the whole point of this
-        method, so it is written before any chrome is touched and every later
+        method, so it is written BEFORE any chrome is touched and every later
         step is independently guarded.
 
         It used to run _hide_live() -> _sub() -> query_one() -> write() with
@@ -1802,28 +1827,54 @@ class SidekickTUI(App):
         skipped the post — the user saw the answer appear, then vanish, with no
         error anywhere. history.db kept it (save_message runs before this), which
         is why the transcript showed a complete reply that was never rendered.
+
+        Guarding every step was not enough on its own (observed live
+        2026-10-11): _hide_live() ran FIRST, so the streamed text was gone
+        before the post was even attempted, and the `except: log_error(); return`
+        around the #chat-log lookup then ended the turn with the answer
+        destroyed everywhere the user could see it. The transcript still held a
+        complete reply, so the failure looked like "it never rendered". Fixed by
+        posting FIRST and only hiding the live box once the post has succeeded;
+        if the post cannot happen at all, the streamed text is deliberately left
+        in place rather than silently discarded, and the failure is logged.
         """
-        self._hide_live()
         self._stats = stats
         text = answer or "(empty)"
+        posted = False
+        log = None
         try:
             log = self.query_one("#chat-log", RichLog)
         except Exception as e:
             log_error("finish", e)
-            return
-        try:
-            _role(log, "sidekick", "")
+        if log is not None:
             try:
-                log.write(Markdown(text))
-            except Exception:
-                _role(log, "sidekick", text)
-        except Exception as e:
-            log_error("finish", e)
+                _role(log, "sidekick", "")
+                try:
+                    log.write(Markdown(text))
+                except Exception:
+                    _role(log, "sidekick", text)
+                posted = True
+            except Exception as e:
+                log_error("finish", e)
+        # Only tear down the live box once the answer is safely on screen; if the
+        # post failed, the already-rendered streamed text is the only copy the
+        # user has, so it stays (and the failure is logged rather than silent).
+        if posted:
+            self._hide_live()
         try:
             self._sub()
         except Exception as e:
             log_error("finish", e)
-        try:
-            _rule(log)
-        except Exception as e:
-            log_error("finish", e)
+        if not posted:
+            log_error(
+                "finish",
+                RuntimeError(
+                    "answer could not be posted to chat; the live box was kept so the "
+                    "streamed text stays visible"
+                ),
+            )
+        elif log is not None:
+            try:
+                _rule(log)
+            except Exception as e:
+                log_error("finish", e)
