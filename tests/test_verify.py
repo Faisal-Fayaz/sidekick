@@ -190,3 +190,41 @@ def test_two_turns_without_provider_ids_produce_unique_ids(monkeypatch):
     ids2 = [c.id for c in turn2]
     assert len(set(ids1)) == len(ids1)
     assert not (set(ids1) & set(ids2)), f"duplicate ids across turns: {set(ids1) & set(ids2)}"
+
+
+# --- SIDEKICK_VERIFY_REPAIRS: model-conditional verify budget ----------------
+
+
+def test_verify_budget_defaults_to_constant(monkeypatch):
+    monkeypatch.delenv("SIDEKICK_VERIFY_REPAIRS", raising=False)
+    assert agent._verify_budget() == agent.VERIFY_REPAIR_BUDGET == 2
+
+
+def test_verify_budget_env_override_and_garbage(monkeypatch):
+    monkeypatch.setenv("SIDEKICK_VERIFY_REPAIRS", "0")
+    assert agent._verify_budget() == 0
+    monkeypatch.setenv("SIDEKICK_VERIFY_REPAIRS", "5")
+    assert agent._verify_budget() == 5
+    monkeypatch.setenv("SIDEKICK_VERIFY_REPAIRS", "-3")
+    assert agent._verify_budget() == 0  # clamped, never negative
+    monkeypatch.setenv("SIDEKICK_VERIFY_REPAIRS", "lots")
+    assert agent._verify_budget() == 2  # garbage falls back, never bricks
+    monkeypatch.setenv("SIDEKICK_VERIFY_REPAIRS", "")
+    assert agent._verify_budget() == 2
+
+
+def test_verify_repairs_zero_skips_shell(tmp_path, monkeypatch):
+    """SIDEKICK_VERIFY_REPAIRS=0: edited .py ships without a verify call."""
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.setenv("SIDEKICK_VERIFY_REPAIRS", "0")
+    seen = {"shell": 0}
+
+    def fake_dispatch(name, args):
+        if name == "shell":
+            seen["shell"] += 1
+        return "ok"
+
+    monkeypatch.setattr(agent, "dispatch_tool", fake_dispatch)
+    done, used, note = agent._verify_turn(["/tmp/x.py"], 0, approve=lambda n, a: True, session="t")
+    assert (done, used, note) == (True, 0, "")
+    assert seen["shell"] == 0

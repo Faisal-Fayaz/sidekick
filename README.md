@@ -259,6 +259,7 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 | `SIDEKICK_BASE_URL` / `SIDEKICK_API_KEY` | override the endpoint / key for this process |
 | `SIDEKICK_SPEND_CAP` | per-session USD cap, `0` = unlimited |
 | `SIDEKICK_REASONING_EFFORT` | reasoning effort for backends that support it |
+| `SIDEKICK_VERIFY_REPAIRS` | post-edit verify repair rounds (default `2`, `0` disables) |
 | `SIDEKICK_PROFILE` | load a named config profile (see `sk config --profiles`) |
 | `OPENCODE_API_KEY` | key for the `opencode` provider |
 | `SIDEKICK_TRUST_REPO=1` | **opt in to repo-supplied slash commands** |

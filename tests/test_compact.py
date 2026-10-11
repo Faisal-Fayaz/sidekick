@@ -44,6 +44,28 @@ def test_estimate_sanity():
     assert estimate_tokens("x" * 400) == 100
 
 
+def test_summary_prompt_is_a_headed_update_schema():
+    """Pinned contract (Fan et al., arXiv:2609.20804 §7.3, Fig 18): fixed
+    headings support incremental maintenance because the previous summary
+    is supplied and revised; "summarize — don't transcribe" keeps the
+    summary smaller than the events it replaces. The "rolling summary"
+    phrase is load-bearing for test_run_agent_compacts_long_session's
+    fake-stream detector below."""
+    p = agent._SUMMARY_PROMPT
+    for heading in (
+        "## Goal",
+        "## Actions taken",
+        "## Done",
+        "## Pending",
+        "## Errors & fixes",
+        "## Current state",
+        "## Next step",
+    ):
+        assert heading in p, f"summary schema lost {heading}"
+    assert "UPDATE it" in p and "don't transcribe" in p
+    assert "ONLY the summary" in p and "rolling summary" in p
+
+
 def test_passthrough_under_budget():
     msgs = _turns(2)
     seen = []
@@ -251,3 +273,88 @@ def test_tool_result_never_orphaned_from_its_assistant_turn():
     _prompt, _summary, split = compact_history("", msgs, 900, lambda t: "SUM")
     assert split is not None
     assert msgs[split].get("role") != "tool", "split left a tool result orphaned"
+
+
+# --- staged elision before summarization (M1 soft stage) ----------------------
+
+
+def _fenced(label, n):
+    return f"<<<UNTRUSTED source={label}\n" + ("x" * n) + "\nEND-UNTRUSTED>>>"
+
+
+def _bulky_turns(n, fence_at=1, fence_chars=8000):
+    out = []
+    for i in range(n):
+        out.append({"id": i + 1, "role": "user", "content": f"question number {i}"})
+        body = f"answer number {i} with some filler words to add bulk " * 8
+        if i == fence_at:
+            body += "\n" + _fenced("file /tmp/notes.md", fence_chars)
+        out.append({"id": 100 + i + 1, "role": "assistant", "content": body})
+    return out
+
+
+def test_elision_skips_summarizer_when_sufficient():
+    """The T4 mechanism: cheap rule-based elision first, LLM call only when
+    elision did not suffice. The bomb proves the summarizer never ran."""
+    msgs = _bulky_turns(10)
+
+    def bomb(t):
+        raise AssertionError("summarizer must not run when elision suffices")
+
+    prompt, new_summary, split = compact_history("", msgs, 1500, bomb)
+    assert new_summary is None and split is None  # no watermark advance
+    blob = "\n".join(str(m.get("content", "")) for m in prompt)
+    assert "[fenced file /tmp/notes.md block elided" in blob
+    assert "8001 chars" in blob  # 8000 x's + the newline before the marker
+    assert "x" * 8000 not in blob  # the bulk is gone
+    assert len(prompt) == len(msgs)  # content-only: count/order/roles intact
+    assert [m["role"] for m in prompt] == [m["role"] for m in msgs]
+    assert prompt[-1]["content"] == msgs[-1]["content"]  # tail verbatim
+
+
+def test_elision_still_summarizes_when_insufficient():
+    """Elision shrinks the summarizer input but must not replace it when the
+    view is still over budget."""
+    msgs = _bulky_turns(10)
+    for m in msgs:  # pad everything so elision alone cannot fit
+        m["content"] = str(m.get("content", "")) + " padding words here " * 60
+    captured = []
+    prompt, new_summary, split = compact_history(
+        "", msgs, 700, lambda t: captured.append(t) or "SUM"
+    )
+    assert new_summary == "SUM" and split is not None
+    assert "[fenced file /tmp/notes.md block elided" in captured[0]
+    assert "x" * 8000 not in captured[0]  # summarizer saw the stub, not the bulk
+
+
+def test_small_fences_stay_verbatim():
+    """Only bulky blocks are worth stubbing; a stub must never cost more
+    context than the block it replaces."""
+    from sk.agent import _elide_fenced_blocks
+
+    small = [{"role": "assistant", "content": "see " + _fenced("file a", 50)}]
+    out, n, reclaimed = _elide_fenced_blocks(small)
+    assert (n, reclaimed) == (0, 0)
+    assert out[0]["content"] == small[0]["content"]
+
+
+def test_elision_preserves_shape_and_never_raises():
+    """Roles, order, and count are untouched (tool-pairing invariant holds),
+    and malformed input degrades to a passthrough, never a raise."""
+    from sk.agent import _elide_fenced_blocks
+
+    msgs = [
+        {"role": "assistant", "content": "calling now"},
+        {"role": "tool", "content": "result " + _fenced("exec df -h", 2000)},
+        {"role": "user", "content": "thanks"},
+        {"role": "assistant"},  # no content key
+        {"role": "user", "content": None},  # non-str content
+        {"role": "assistant", "content": "<<<UNTRUSTED source=x\nno close marker"},
+    ]
+    out, n, reclaimed = _elide_fenced_blocks(msgs)
+    assert n == 1 and reclaimed >= 2000
+    assert [m.get("role") for m in out] == [m.get("role") for m in msgs]
+    assert out[2].get("content") == "thanks" and out[3].get("content", "") == ""
+    assert out[5]["content"].startswith("<<<UNTRUSTED")  # malformed: untouched
+    assert _elide_fenced_blocks([]) == ([], 0, 0)
+    assert _elide_fenced_blocks(None) == ([], 0, 0)
