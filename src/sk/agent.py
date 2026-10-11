@@ -875,11 +875,19 @@ def _gated_dispatch(
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
     if _breaker_tripped(session, name, target) >= BREAKER_TRIPS_AT:
+        # Failing-streak wording (Fan et al., arXiv:2609.20804 §7.4, Fig 20):
+        # name the repetition, forbid reissue, point at the actual error.
+        # Trip stays at 3 rather than the paper's 5/8: their numbers come from
+        # one threshold policy on 30B+ models (Limitations: do not transfer
+        # them), and Sidekick's default models are weaker while each failing
+        # dispatch costs local wall-clock. "Stopped" + the count are pinned by
+        # test_circuit_breaker_trips_on_repeats — keep both tokens.
         msg = (
             f"Stopped: '{name}' with these exact arguments has already failed "
-            f"{BREAKER_TRIPS_AT} times in a row. It will keep failing: change the "
-            f"arguments (smaller content, different path/command) or fix the "
-            f"underlying cause instead of retrying."
+            f"{BREAKER_TRIPS_AT} times in a row. Repeating it will NOT work: read "
+            f"the actual error above, then try a DIFFERENT command (different "
+            f"path/command, smaller content) or fix the underlying cause. Do NOT "
+            f"issue the same call again."
         )
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
@@ -921,6 +929,9 @@ def _gated_dispatch(
 # being dispatched and becomes a diagnosis instead. In-memory per process;
 # a restart resets all counters (fail-closed toward retrying, never toward
 # skipping work). Never raises by construction (all access guarded).
+# Per-target keying IS the paper's streak definition (same tool name +
+# byte-identical arguments; a paginated read at a new offset ends the
+# streak — Fan et al., arXiv:2609.20804 §7.4), implemented via _tool_target.
 _fail_counts: dict[tuple[str, str, str], int] = {}
 
 # Consecutive *policy* denials, keyed (session, tool) — deliberately NOT keyed by
@@ -1317,10 +1328,33 @@ def estimate_tokens(text: str) -> int:
     return tokens_estimate(text, floor=1)
 
 
+# Structured rolling-summary prompt. A single prose instruction ("key facts,
+# preferences, decisions") produced summaries that dropped the thread's
+# through-line: what was tried, what failed, and what comes next. The headed
+# schema comes from Fan et al., arXiv:2609.20804 §7.3 (Fig 18): fixed headings
+# support incremental maintenance because the previous summary is supplied
+# and revised, and "summarize — don't transcribe" keeps the summary smaller
+# than the events it replaces. Adapted from their repo-coding headings to a
+# terminal companion (commands/tools/todos instead of files-only); the
+# "rolling summary" phrase is load-bearing for tests/test_compact.py.
 _SUMMARY_PROMPT = (
-    "Condense this chat history into a rolling summary for future turns. "
-    "Reply with ONLY the summary, under 400 words: key facts, user preferences, "
-    "decisions made, open todos and questions."
+    "You are compacting a terminal companion's conversation into a rolling "
+    "summary to save context. You are given the OLDEST part of the transcript "
+    "(and possibly a previous summary to update). Reply with ONLY the summary, "
+    "under 400 words, under these exact headings (omit a heading only if truly "
+    "empty): "
+    "## Goal The user's task / intent (preserve it precisely). "
+    "## Actions taken Commands run, files read or written, tools used, with "
+    "the key results. "
+    "## Done What is accomplished, with concrete results. "
+    "## Pending Open todos, unanswered questions, what still needs doing. "
+    "## Errors & fixes Errors hit and how they were resolved (or still open). "
+    "## Current state Working directory, session facts, anything needed to "
+    "continue. "
+    "## Next step The immediate next action, in line with the most recent "
+    "work. Be specific (keep exact paths, commands, error messages). "
+    "If a previous summary is given, UPDATE it: keep still-true facts, drop "
+    "stale ones, merge in the new events. Summarize — don't transcribe."
 )
 
 
@@ -1330,6 +1364,75 @@ def _render_turns(msgs: list[dict]) -> str:
 
 def _as_role_content(msgs: list[dict]) -> list[dict]:
     return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in msgs]
+
+
+# Only "bulky" fenced blocks are worth stubbing: below this a stub saves
+# nothing and eats provenance. Paper's M1 elides "bulky tool observations"
+# (Alg 1, step 8); Sidekick caps tool output at ~6-8k chars (vs their 24k),
+# so the threshold sits well below the cap.
+_ELISION_MIN_CHARS = 1000
+
+
+def _elide_fenced_blocks(
+    middle: list[dict], min_chars: int = _ELISION_MIN_CHARS
+) -> tuple[list[dict], int, int]:
+    """Replace bulky machine-fenced blocks with provenance stubs. Pure logic.
+
+    Staged elision before LLM summarization (Fan et al., arXiv:2609.20804
+    §2.3 M1, staged as in their T4): rule-based elision reclaims tokens with
+    no model call, so the summarizer only runs when elision did not suffice.
+    T1 (no-recall) stub variant — this codebase deliberately has no
+    recall_event (paper §3.2/§9.6: median 0 calls per task, no accuracy gain
+    over elision alone), so the stub says re-read/re-run.
+
+    Why fences and only fences: a `<<<UNTRUSTED source=...>>>` block is
+    machine-copied grounding (file inline, fetched page, search result) by
+    construction (see .trust.fence), so stubbing it cannot eat user intent
+    or the model's own reasoning — the reproducibility property that makes
+    elision safe. Small fences stay verbatim (cheap and often load-bearing).
+    Roles, order, and message count are untouched, so the tool-pairing
+    invariant in _keep_index still holds.
+
+    Returns (new_middle, elided_count, reclaimed_tokens). Never raises.
+    """
+    try:
+        import re
+
+        from .trust import CLOSE, OPEN
+
+        fence_re = re.compile(re.escape(OPEN) + r" source=([^\n]*)\n(.*?)" + re.escape(CLOSE), re.S)
+
+        def stub(m: re.Match) -> str:
+            label = (m.group(1) or "").strip()[:60] or "unknown"
+            body = m.group(2) or ""
+            lines = body.count("\n") + 1
+            return (
+                f"[fenced {label} block elided — {lines} lines / "
+                f"{len(body)} chars. Re-read or re-run to get it again.]"
+            )
+
+        out: list[dict] = []
+        elided = 0
+        reclaimed = 0
+        for m in middle or []:
+            content = m.get("content", "")
+            if not isinstance(content, str):
+                out.append(m)
+                continue
+
+            def repl(mm: re.Match) -> str:
+                nonlocal elided, reclaimed
+                body = mm.group(2) or ""
+                if len(body) < min_chars:
+                    return mm.group(0)
+                elided += 1
+                reclaimed += len(body)
+                return stub(mm)
+
+            out.append({**m, "content": fence_re.sub(repl, content)})
+        return (out, elided, reclaimed)
+    except Exception:
+        return (list(middle or []), 0, 0)
 
 
 def _keep_index(msgs: list[dict], anchor: int, floor: int, cap: int) -> int:
@@ -1384,6 +1487,12 @@ def compact_history(
     `new_summary is None` means compaction did not run — under budget, nothing
     to fold, or the summarizer produced nothing. That is deliberately distinct
     from "the summarizer failed", which raises (#306).
+
+    Staged elision runs before the summarizer (see _elide_fenced_blocks): over
+    budget, bulky machine-fenced blocks in the middle slice are stubbed first
+    and the view re-measured; the LLM call happens only when elision did not
+    suffice. Views that pass through verbatim (under budget, nothing foldable)
+    are never elided — elision must not rewrite a turn that fits.
     """
     as_role = _as_role_content(msgs)
     base = (
@@ -1406,6 +1515,12 @@ def compact_history(
         # nothing foldable: pass everything through rather than silently
         # reporting a summarizer failure that never happened
         return (base + _as_role_content(msgs), None, None)
+    elided_middle, elided_n, _reclaimed = _elide_fenced_blocks(middle)
+    if elided_n:
+        elided_view = base + _as_role_content(msgs[: ai + 1] + elided_middle + msgs[ri:])
+        if estimate_tokens(_render_turns(elided_view)) <= budget_tokens:
+            return (elided_view, None, None)
+        middle = elided_middle  # summarizer sees the smaller input
     context = (prior + "\n" if (prior or "").strip() else "") + _render_turns(middle)
     new_summary = summarizer(context).strip()  # may raise: that IS a failure
     if not new_summary:
@@ -1947,6 +2062,28 @@ def build_messages(
 # model rounds per turn are spent fixing verify failures. Never raises.
 VERIFY_REPAIR_BUDGET = 2
 
+
+def _verify_budget() -> int:
+    """Repair-round budget for post-edit verification. Never raises.
+
+    Default is VERIFY_REPAIR_BUDGET (behaviour unchanged). SIDEKICK_VERIFY_REPAIRS
+    overrides it (0 disables verification); garbage falls back to the default.
+    Env-only experimental flag, same pattern as SIDEKICK_REASONING_EFFORT:
+    Fan et al., arXiv:2609.20804 §4 traces strong-model planning savings to
+    reduced post-edit verification — verification rounds pay mostly for weak
+    models, so a frontier/BYO user can set 0/1 without touching code.
+    """
+    import os
+
+    try:
+        raw = (os.environ.get("SIDEKICK_VERIFY_REPAIRS", "") or "").strip()
+        if not raw:
+            return VERIFY_REPAIR_BUDGET
+        return max(0, int(raw))
+    except Exception:
+        return VERIFY_REPAIR_BUDGET
+
+
 # How many times one turn may retry after the model emits an unparseable tool
 # call before giving up and saying so. Two is enough to catch a one-off slip and a
 # model that needed telling; beyond that the format is not going to change, and
@@ -2035,7 +2172,7 @@ def _verify_turn(
     normal shell approval apply. Never raises.
     """
     try:
-        if repairs_used >= VERIFY_REPAIR_BUDGET or read_only or plan_mode:
+        if repairs_used >= _verify_budget() or read_only or plan_mode:
             return (True, repairs_used, "")
         cmd = _verify_command(edited)
         if cmd is None:

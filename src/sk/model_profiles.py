@@ -40,6 +40,12 @@ FRONTIER_STEPS = 15
 # has read anything. Against the old hardcoded num_ctx of 4096 that left ~324
 # tokens for the entire conversation, so the budget could not be honoured at any
 # setting (#308).
+#
+# 16k sits below the tightest budget studied in Fan et al., arXiv:2609.20804
+# (32k, where managed-vs-unmanaged success differed by +35.7pp on SWE-Bench):
+# context management is the highest-value harness lever exactly here, which is
+# why compaction stages cheap rule-based elision before the LLM summarizer
+# (see agent._elide_fenced_blocks) rather than jumping straight to a model call.
 LOCAL_WINDOW = 16384
 CLOUD_WINDOW = 128000
 FRONTIER_WINDOW = 200000

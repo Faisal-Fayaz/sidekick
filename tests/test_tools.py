@@ -425,7 +425,7 @@ def test_runtime_breaker_is_untouched_by_policy_counts(tmp_path, monkeypatch):
         agent._gated_dispatch("write_file", args, approve=lambda n, a: True, session="t")
     out, ok = agent._gated_dispatch("write_file", args, approve=lambda n, a: True, session="t")
     assert ok is False and "Stopped" in out and "3 times" in out
-    assert "change the arguments" in out, "runtime guidance regressed"
+    assert "Do NOT" in out and "actual error" in out, "runtime guidance regressed"
 
 
 def test_policy_count_is_scoped_to_the_session(tmp_path, monkeypatch):

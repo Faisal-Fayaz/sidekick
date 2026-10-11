@@ -17,6 +17,16 @@ from .write import (
 # everything requiring user approval (writes + general shell + delete)
 APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "shell_session", "delete_file"}
 
+# Why predefined tools instead of bash-only: the defaults here serve weak,
+# bash-poor local models (llama3.2:3b needs the text-JSON fallback already).
+# Fan et al., arXiv:2609.20804 §3.2 finds predefined tools raise success for
+# such models (+15.0pp SWE-Bench at 30B; without them 66% of shell-centric
+# trajectories die on out-of-interface emissions), while bash-only helps only
+# models with native shell fluency — and their Limitations note the
+# intervention is bundled, so "fewer tools = cheaper" does not transfer as a
+# general claim. Do not collapse this registry into shell without evidence
+# about the specific models it must serve.
+
 # hard mode gates (prompt text alone does not stop disobedient models):
 # plan mode blocks file writes (shell exploration stays approval-gated);
 # read-only mode blocks every approval-gated tool.
