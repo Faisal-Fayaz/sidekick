@@ -1432,6 +1432,9 @@ async def _pilot_live_labels_thinking_vs_answer():
     async with app.run_test() as pilot:
         await pilot.pause()
         app._prime_live()
+        app._stop_think_timer()  # dots would repaint over the render
+        app._live_n = 1  # what on_token sets; stops the "· thinking" ticker
+        app._live_rendered_at = 0.0  # deterministic, no ~2Hz throttle
         app._live_reason = ["deliberating about the right approach " * 40]
         app._live_parts = ["Here is the final answer."]
         app._push_live()
@@ -1454,6 +1457,9 @@ async def _pilot_live_keeps_more_than_the_old_window():
     async with app.run_test() as pilot:
         await pilot.pause()
         app._prime_live()
+        app._stop_think_timer()
+        app._live_n = 1
+        app._live_rendered_at = 0.0
         long_answer = "x" * (app_mod.LIVE_BODY_CHARS + 4000)
         app._live_parts = [long_answer]
         app._push_live()
@@ -1749,6 +1755,11 @@ async def _pilot_finish_survives_chat_log_query_failure(monkeypatch):
         await pilot.pause()
         app._prime_live()
         app._live_parts = ["the answer text"]
+        # on_token also bumps _live_n, which is what stops the "· thinking"
+        # ticker; without it the ticker repaints over the render (the race that
+        # made this fixture flaky in CI).
+        app._live_n = 1
+        app._live_rendered_at = 0.0  # bypass the ~2Hz throttle for a deterministic render
         # Render it for real: in the live flow on_token -> _push_live paints the
         # #live box, which is what the user was looking at before it vanished.
         app._push_live()
