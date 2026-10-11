@@ -1129,14 +1129,33 @@ def _tools_rejected(exc: BaseException) -> bool:
     Groq and friends return HTTP 400 "Tool calling is not supported with this
     model" when the selected model has no function-calling support. We match
     the phrasing (not status codes) so unrelated errors still surface.
+
+    OpenRouter-hosted models also fail with a *tool-id* error instead of a
+    capability one: observed live 2026-10-11, `Function id '<uuid>': DEGRADED
+    function cannot be invoked` on a model that had just emitted a perfectly
+    valid `skill` call, five steps into the turn. Nothing matched it, so the
+    turn died with the exception, the loop never reached the text-JSON
+    fallback, and the user got the raw recap monologue instead of an answer.
+    A refusal to *invoke* the tool is a refusal of tool calling, whatever the
+    wording, so match those shapes too.
     """
     msg = str(exc).lower()
-    return (
+    if (
         "tool calling is not supported" in msg
         or "tools are not supported" in msg
         or "does not support tool" in msg
         or "function calling is not supported" in msg
         or "does not support function calling" in msg
+    ):
+        return True
+    # Tool-id refusals: the request was accepted, then the call was refused.
+    return (
+        "degraded function cannot be invoked" in msg
+        or "function cannot be invoked" in msg
+        or ("function id" in msg and "cannot be invoked" in msg)
+        or "tool use is not supported" in msg
+        or "invalid tool" in msg
+        and "function" in msg
     )
 
 
@@ -2239,6 +2258,31 @@ def _verify_turn(
         return (True, repairs_used, "")
 
 
+def _looks_like_prompt_echo(text: str) -> bool:
+    """True when the model's 'answer' is really the harness prompt coming back.
+
+    A model that never called a tool often echoes the recap instruction instead
+    of answering (observed 2026-10-11). Anything containing the scaffolding, or
+    an unfilled `<one line>` placeholder, is the prompt, not an explanation, so
+    the deterministic report stands on its own.
+    """
+    try:
+        t = text or ""
+        if any(frag in t for frag in _RECAP_LEAKS):
+            return True
+        if "<one line>" in t:
+            return True
+        # An unfilled template line is a prompt echo.
+        if re.search(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*$", t):
+            return True
+        # A *filled* recap line is still the model asserting work it cannot
+        # back. With an empty ledger that is exactly the fabrication this whole
+        # path exists to prevent, so treat it as an echo and do not quote it.
+        return bool(re.search(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*\S", t))
+    except Exception:
+        return True  # a probe that cannot decide must not become user-visible text
+
+
 def _synthesize_exhaustion(
     client,
     model: str,
@@ -2313,7 +2357,42 @@ def _synthesize_exhaustion(
         # came back with the three requested lines *plus* the model narrating its
         # own instructions — "We need must exactly 3 lines. … No tools now." — and
         # that text was persisted to history.db and displayed.
-        return (msg.content or "").strip()
+        out = (msg.content or "").strip()
+
+        # Nothing ran, so there is nothing for the model to summarize. Asking it
+        # anyway invited it to narrate the prompt and invent an accomplishment
+        # (observed 2026-10-11: "Accomplished: Generated 5 project ideas" with
+        # an empty ledger). The honest report is deterministic text; the model
+        # is asked only because it may know *why* it looped.
+        if not prior:
+            reason = ""
+            try:
+                # Only a non-echo tail may be quoted back, and only as the
+                # reason it looped. An echoed recap would otherwise smuggle the
+                # model's fabricated "Accomplished: …" back into the answer.
+                if len(out) > 600:
+                    out = out[-600:]
+                if out and not _looks_like_prompt_echo(out):
+                    reason = out.strip()
+            except Exception:
+                reason = ""
+            lines = ["Stopped: the step budget ran out before an answer."]
+            lines.append("Accomplished: nothing — no tool ran this turn.")
+            if reason:
+                # Drop a leading recap-shaped line from the quoted reason so a
+                # stray "Accomplished: X" cannot ride along.
+                reason = re.sub(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*", "", reason).strip()
+                reason = re.sub(r"\n+", " ", reason)
+            if reason:
+                lines.append(f"Blocked: {reason}")
+            else:
+                lines.append("Blocked: the model spent its steps without producing an answer.")
+            lines.append("Next: re-ask, or raise max_steps / switch model with `/model`.")
+            return "\n".join(lines)
+
+        # Work did happen: keep the model's recap, but never let it echo the
+        # harness scaffolding back at the user.
+        return _strip_recap_leak(_strip_control_leak(out))
     except Exception:
         return ""
 
@@ -2338,6 +2417,41 @@ TEXT_ONLY_NOTICE = (
 
 _CONTINUE_NOW = "Continue with your answer now."
 _CONTINUE_TOOLS = "Continue: emit the tool calls now, no more prose."
+
+# Scaffolding from the exhaustion-recap prompt. Observed live 2026-10-11: a
+# reasoning model narrated the recap instruction back into its answer ("The
+# user is asking me to continue with my answer, but I hit the step budget. They
+# want me to reply with ONLY 3 lines … Accomplished: <one line>"), so the user
+# saw the harness's own prompt and its deliberation instead of a result. These
+# are stripped from user-facing output the same way CONTROL_TAG is.
+_RECAP_LEAKS = (
+    "You hit the step budget.",
+    "Reply with ONLY these 3 lines",
+    "Accomplished: <one line>",
+    "Blocked: <one line>",
+    "Next: <one line>",
+    "No tool ran this turn",
+    "Ground the recap in this list",
+    "do not claim anything that is not in it",
+)
+
+
+def _strip_recap_leak(text: str) -> str:
+    """Drop recap scaffolding the model echoed back. Never raises.
+
+    Applied on top of _strip_control_leak for the exhaustion path only, so an
+    ordinary answer that happens to contain these words is untouched (they are
+    distinctive harness strings, not user vocabulary).
+    """
+    try:
+        if not isinstance(text, str) or not text:
+            return text
+        out = text
+        for frag in _RECAP_LEAKS:
+            out = out.replace(frag, "")
+        return out
+    except Exception:
+        return text
 
 
 def _strip_control_leak(text: str) -> str:
@@ -2883,19 +2997,17 @@ def run_agent(
         # report progress + blockers instead of the bare sentinel. Never raises.
         # `completed` is this turn's real tool ledger, so the recap is grounded
         # in what actually ran rather than what the model believes it did.
-        final_text = _strip_control_leak(
-            _synthesize_exhaustion(
-                client,
-                cfg.model,
-                messages,
-                cfg.temperature,
-                max_tokens,
-                extra,
-                on_token,
-                on_reasoning,
-                done_work=completed,
-            )
-            or "(max steps reached)"
+        recap = _synthesize_exhaustion(
+            client,
+            cfg.model,
+            messages,
+            cfg.temperature,
+            max_tokens,
+            extra,
+            on_token,
+            on_reasoning,
+            done_work=completed,
         )
+        final_text = _strip_recap_leak(_strip_control_leak(recap)) or "(max steps reached)"
 
     return _strip_control_leak(final_text)

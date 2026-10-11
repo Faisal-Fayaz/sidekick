@@ -125,7 +125,11 @@ def test_exhaustion_report_is_content_only(monkeypatch):
         reasoning = "We need must be exactly 3 lines."
 
     monkeypatch.setattr("sk.agent._stream_chat", lambda *a, **kw: _M())
-    out = _synthesize_exhaustion(None, "m", [], 0.2, 400, {}, lambda _t: None)
+    # done_work non-empty: with an empty ledger the recap is now built in code
+    # (nothing ran, so nothing can be summarized) — see test_recap_honesty.
+    out = _synthesize_exhaustion(
+        None, "m", [], 0.2, 400, {}, lambda _t: None, done_work=["list_dir|path=."]
+    )
     assert out == "Accomplished: a\nBlocked: b\nNext: c"
     assert "exactly 3 lines" not in out
 
