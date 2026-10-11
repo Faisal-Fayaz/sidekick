@@ -1077,6 +1077,51 @@ def _retryable_status(exc: BaseException) -> int:
 
 _tools_unsupported: set[str] = set()
 
+# A model can accept the `tools` parameter and still never emit a tool call.
+# Observed live 2026-10-11 with an OpenRouter-hosted model: every request
+# returned HTTP 200, so _tools_rejected never fired, but the model answered
+# in prose every time — six of eight recent sessions ran zero tools. The turn
+# burned its whole step budget and shipped the exhaustion recap instead of
+# anything useful, which reads to the user as "the agent cannot use tools".
+#
+# Fingerprint: consecutive steps that were cut off mid-thought
+# (finish == "length") with no tool call and no parseable text-JSON. A
+# well-behaved model either calls a tool or finishes with an answer; looping
+# into the length cap repeatedly is the silent-uncalling signature. The
+# threshold is 3 because a model legitimately answers without tools for a
+# turn or two, and tripping early would push capable models into the weaker
+# text-JSON path for no reason.
+SILENT_TOOLS_TRIPS_AT = 3
+
+_silent_tool_streak: dict[str, int] = {}
+
+
+def _note_silent_tool_turn(model: str, cut_off: bool) -> int:
+    """Count consecutive length-cutoff steps that produced no tool call.
+
+    Returns the current streak. Any successful turn (a tool call, or a real
+    answer that fit) resets it. Never raises.
+    """
+    try:
+        model = str(model or "")
+        if not model:
+            return 0
+        streak = (_silent_tool_streak.get(model, 0) + 1) if cut_off else 0
+        if streak:
+            _silent_tool_streak[model] = streak
+        else:
+            _silent_tool_streak.pop(model, None)
+        return streak
+    except Exception:
+        return 0
+
+
+def _clear_silent_tool_streak(model: str) -> None:
+    try:
+        _silent_tool_streak.pop(str(model or ""), None)
+    except Exception:
+        pass
+
 
 def _tools_rejected(exc: BaseException) -> bool:
     """True when the provider/server refuses function calling for THIS model.
@@ -2619,6 +2664,7 @@ def run_agent(
             continue
 
         if not getattr(msg, "tool_calls", None) and text_tools:
+            _clear_silent_tool_streak(cfg.model)  # it did call a tool
             batch = list(text_tools[:4])  # cap 4 per turn
             proceed, turn_approve = _maybe_review_plan(
                 batch,
@@ -2663,17 +2709,52 @@ def run_agent(
         # no tool call -> done, unless cut off mid-thought (finish=length):
         # then ask for continuation instead of accepting a plan with no action.
         if not getattr(msg, "tool_calls", None):
-            if msg.finish == "length" and continued < 2:
-                continued += 1
-                messages.append({"role": "assistant", "content": msg_text})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": CONTROL_TAG
-                        + "Continue: emit the tool calls now, no more prose.",
-                    }
-                )
-                continue
+            if msg.finish == "length":
+                # Any cutoff with tools still on counts toward the streak, and
+                # the continuation cap rises to match the trip threshold so the
+                # detector can actually reach it — under the old cap of 2 the
+                # branch exited at the third cutoff, one step short of a trip.
+                streak = _note_silent_tool_turn(cfg.model, tools_enabled)
+                if streak >= SILENT_TOOLS_TRIPS_AT:
+                    # It accepted `tools`, returned 200 every time, and never
+                    # called one. Stop spending the budget on a loop that cannot
+                    # succeed: take it off the native path so the next turn (and
+                    # the rest of this one) gets the text-JSON fallback, and say
+                    # so instead of shipping a recap that looks like a result.
+                    _tools_unsupported.add(cfg.model)
+                    _clear_silent_tool_streak(cfg.model)
+                    tools_enabled = False
+                    note = (
+                        f"[{cfg.model} accepted the tools but never called one: "
+                        f"{streak} answers were cut off with no tool call. Switching "
+                        "to text-JSON tools for this and later turns. If it still "
+                        "does not call them, it cannot use tools — try /model fast "
+                        "or a tool-capable model.]"
+                    )
+                    if on_token is not None:
+                        try:
+                            on_token(note)  # type: ignore
+                        except Exception:
+                            pass
+                    messages.append(
+                        {"role": "user", "content": CONTROL_TAG + note + "\n" + TEXT_ONLY_NOTICE}
+                    )
+                    continued = 0
+                    continue
+                cap = SILENT_TOOLS_TRIPS_AT - 1 if tools_enabled else 2
+                if continued < cap:
+                    continued += 1
+                    messages.append({"role": "assistant", "content": msg_text})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": CONTROL_TAG
+                            + "Continue: emit the tool calls now, no more prose.",
+                        }
+                    )
+                    continue
+            else:
+                _clear_silent_tool_streak(cfg.model)
             final_text = _strip_control_leak(msg_text)
             messages.append({"role": "assistant", "content": final_text})
             # post-edit verify (refs #280): edited code that fails its syntax
@@ -2702,6 +2783,7 @@ def run_agent(
             continue
 
         # has tool calls: parse, plan-review gate, then append assistant turn + execute
+        _clear_silent_tool_streak(cfg.model)  # it called a tool natively
         parsed: list[tuple[str, str, dict]] = []
         for tc in msg.tool_calls:  # type: ignore
             try:
