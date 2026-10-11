@@ -2248,11 +2248,20 @@ def _synthesize_exhaustion(
     extra: dict,
     on_token,
     on_reasoning=None,
+    done_work: list[str] | None = None,
 ) -> str:
     """One final no-tools call to report progress + blockers when the step
     budget dies without a final answer. Bounded (<=400 tokens), streams via
     on_token like a normal turn. Never raises; returns "" on any failure so
     callers keep the "(max steps reached)" fallback.
+
+    `done_work` is this turn's actual tool ledger (the `completed` targets).
+    Observed live 2026-10-11: with zero tools run, the recap answered
+    "Accomplished: Provided a ready-to-run shell script …" — an assertion the
+    audit log for that session did not support. The recap is the last thing the
+    user sees when a turn goes wrong, so it must not be the one place unverified
+    claims get introduced. With nothing done, the prompt says so and the model
+    has no prior it can dress up as progress.
 
     on_reasoning must be threaded through. It used to be hardcoded None, and
     _stream_chat falls back to on_token when there is no reasoning sink, so the
@@ -2263,6 +2272,17 @@ def _synthesize_exhaustion(
     follow-up). A caller with no reasoning sink gets the old fallback, which is
     why the parameter is optional rather than required."""
     try:
+        prior = "; ".join((done_work or [])[:10])
+        if prior:
+            grounding = (
+                "Ground the recap in this list of what actually ran this turn; "
+                f"do not claim anything that is not in it:\n{prior}"
+            )
+        else:
+            grounding = (
+                "No tool ran this turn — nothing was executed, so the Accomplished "
+                "line must say so. Do not describe output you did not produce."
+            )
         recap = list(messages) + [
             {
                 "role": "user",
@@ -2271,7 +2291,7 @@ def _synthesize_exhaustion(
                     "filled in, no other text:\n"
                     "Accomplished: <one line>\n"
                     "Blocked: <one line>\n"
-                    "Next: <one line>"
+                    "Next: <one line>\n\n" + grounding
                 ),
             }
         ]
@@ -2861,6 +2881,8 @@ def run_agent(
     else:
         # Budget spent without a final answer: one bounded no-tools call to
         # report progress + blockers instead of the bare sentinel. Never raises.
+        # `completed` is this turn's real tool ledger, so the recap is grounded
+        # in what actually ran rather than what the model believes it did.
         final_text = _strip_control_leak(
             _synthesize_exhaustion(
                 client,
@@ -2871,6 +2893,7 @@ def run_agent(
                 extra,
                 on_token,
                 on_reasoning,
+                done_work=completed,
             )
             or "(max steps reached)"
         )
