@@ -1419,6 +1419,58 @@ def test_reasoning_stays_display_only(monkeypatch):
     _run(_pilot_reasoning_stays_display_only(monkeypatch))
 
 
+async def _pilot_live_labels_thinking_vs_answer():
+    """The live box must label its two regions.
+
+    Observed 2026-10-11: a reasoning model streamed most of a reply through the
+    reasoning channel, which rendered as a bare "…" dim blob above a "───"
+    rule. It was indistinguishable from the answer, so the user read a rendered
+    reply as "it never showed up". Label the regions so that misread cannot
+    recur.
+    """
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._prime_live()
+        app._live_reason = ["deliberating about the right approach " * 40]
+        app._live_parts = ["Here is the final answer."]
+        app._push_live()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#live").lines)
+        assert "thinking" in blob, "reasoning region is unlabelled"
+        assert "answer" in blob, "answer region is unlabelled"
+        assert "Here is the final answer." in blob
+
+
+async def _pilot_live_keeps_more_than_the_old_window():
+    """The answer window used to be 2000 chars, which truncated a long answer to
+    a fragment inside the thinking region."""
+    from sk.tui import app as app_mod
+
+    assert app_mod.LIVE_BODY_CHARS > 2000
+    assert app_mod.LIVE_REASON_CHARS > 500
+
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._prime_live()
+        long_answer = "x" * (app_mod.LIVE_BODY_CHARS + 4000)
+        app._live_parts = [long_answer]
+        app._push_live()
+        await pilot.pause()
+        blob = "\n".join(str(ln) for ln in app.query_one("#live").lines)
+        assert "trimmed" in blob, "an over-window answer should say so, not silently cut"
+        assert "x" * (app_mod.LIVE_BODY_CHARS + 4000) not in blob
+
+
+def test_live_labels_thinking_vs_answer():
+    _run(_pilot_live_labels_thinking_vs_answer())
+
+
+def test_live_keeps_more_than_the_old_window():
+    _run(_pilot_live_keeps_more_than_the_old_window())
+
+
 def _stub_app(monkeypatch, **slot):
     """SidekickTUI with stubbed widgets for _answer_pending unit tests."""
     import threading as _th
@@ -1673,6 +1725,99 @@ async def _pilot_sub_never_raises(monkeypatch):
 
         monkeypatch.setattr(app, "_sub_unguarded", _boom)
         app._sub()  # must not raise
+
+
+async def _pilot_finish_survives_chat_log_query_failure(monkeypatch):
+    """A failing #chat-log query must NOT silently drop the answer.
+
+    Observed live on 2026-10-11: a turn finished, the transcript held a
+    complete reply, and the screen showed nothing — the answer had streamed
+    into the #live box and was never posted to chat.
+
+    The cause is ordering, not a missing guard. _finish() ran
+    _hide_live() FIRST, so the streamed text was destroyed before the post
+    was attempted; the `except: log_error(...); return` on the
+    query_one("#chat-log") lookup then abandoned the turn with the answer
+    already erased from the only place the user could see it. history.db
+    still had it (save_message runs before _finish), so the transcript
+    looked complete while the screen did not.
+
+    This asserts the answer survives the failure, not that it is pretty.
+    """
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._prime_live()
+        app._live_parts = ["the answer text"]
+        # Render it for real: in the live flow on_token -> _push_live paints the
+        # #live box, which is what the user was looking at before it vanished.
+        app._push_live()
+        await pilot.pause()
+        live = app.query_one("#live")
+        assert "the answer text" in "\n".join(str(ln) for ln in live.lines), (
+            "fixture: the live box never rendered the answer"
+        )
+
+        real_query_one = app.query_one
+
+        def _query(selector, *a, **kw):
+            if selector == "#chat-log":
+                raise RuntimeError("chat log gone")
+            return real_query_one(selector, *a, **kw)
+
+        monkeypatch.setattr(app, "query_one", _query)
+        app._finish("the answer text", "1s")
+        await pilot.pause()
+
+        monkeypatch.undo()
+        blob = "\n".join(str(ln) for ln in app.query_one("#chat-log").lines)
+        live_blob = "\n".join(str(ln) for ln in app.query_one("#live").lines)
+        assert "the answer text" in blob or "the answer text" in live_blob, (
+            "answer lost: not posted to chat AND cleared from the live box"
+        )
+
+
+async def _pilot_finish_logs_dispatch_boundary_failure(monkeypatch, tmp_path):
+    """A raise escaping the guarded blocks must reach tui-errors.log.
+
+    _finish is invoked through Textual's call_from_thread, which swallows
+    exceptions raised at the dispatch boundary. Sidekick's own log_error
+    only fires from explicit try/except inside _finish, so an unguarded
+    raise was invisible: no tui-errors.log entry, no on-screen error, and
+    the turn simply ended with the answer gone. This pins that _finish
+    never propagates, whatever happens inside it.
+    """
+    import sk.tui.app as app_mod
+
+    errors = []
+    monkeypatch.setattr(app_mod, "log_error", lambda w, e: errors.append((w, e)))
+
+    app = SidekickTUI()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._prime_live()
+
+    def _boom(*a, **kw):
+        raise RuntimeError("theme exploded mid-post")
+
+    monkeypatch.setattr(app_mod, "_role", _boom)
+    try:
+        # Must not propagate out of _finish.
+        app._finish("the answer text", "1s")
+        assert isinstance(app._stats, str), "_finish aborted before recording stats"
+        assert errors, "a raise inside _finish was swallowed without log_error"
+    finally:
+        # restore before teardown: the patch would otherwise break the app's
+        # own internals on exit, which is a test artifact, not the bug.
+        monkeypatch.undo()
+
+
+def test_finish_survives_chat_log_query_failure(monkeypatch):
+    _run(_pilot_finish_survives_chat_log_query_failure(monkeypatch))
+
+
+def test_finish_logs_dispatch_boundary_failure(monkeypatch, tmp_path):
+    _run(_pilot_finish_logs_dispatch_boundary_failure(monkeypatch, tmp_path))
 
 
 def test_finish_posts_answer_despite_sub_failure(monkeypatch):
