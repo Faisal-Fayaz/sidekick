@@ -707,6 +707,7 @@ def init_cmd():
                 hook_install(shell="", write=True)
         except (EOFError, KeyboardInterrupt, OSError):
             pass
+        _offer_search_egress(cfg)
         console.print("[green]init complete. Try `sk tui`.[/green]")
         return
 
@@ -757,6 +758,7 @@ def init_cmd():
             hook_install(shell="", write=True)
     except (EOFError, KeyboardInterrupt, OSError):
         pass
+    _offer_search_egress(cfg)
     console.print("[green]init complete. Try `sk tui`.[/green]")
 
 
@@ -1188,6 +1190,43 @@ def brief(
 
 
 # --- egress policy (#328) ----------------------------------------------------
+
+# The one destination `web_search` ever contacts. It is Sidekick's choice, not
+# the model's, and it is not attacker-controllable — the model picks a query
+# string, not a host — so it is the one entry `sk init` is worth offering.
+# read_url is deliberately NOT offered: there the model does choose the host,
+# which is the prompt-injection exfiltration path #328 exists to close.
+SEARCH_HOST = "html.duckduckgo.com"
+
+
+def _offer_search_egress(cfg) -> None:
+    """Ask once, at first run, whether `web_search` may reach DuckDuckGo (#359).
+
+    Deny-by-default is unchanged — this only asks, at the moment the user is
+    setting up, instead of leaving a core capability silently off. Without it a
+    first-run user's searches fail with no sign they were ever enabled; the
+    empty allowlist means deny-all, and nothing said so.
+    """
+    allowed = list(getattr(cfg, "egress_allow", None) or ())
+    if cfg is None or SEARCH_HOST in allowed:
+        return
+    try:
+        console.print("\n[bold]Web search[/] — `web_search` can look things up online.")
+        console.print(
+            "[dim]Sidekick fetches nothing by default. This allows ONE fixed host,\n"
+            f"{SEARCH_HOST} (DuckDuckGo), used only for searches. It does NOT\n"
+            "allow visiting arbitrary URLs you or it pick — that stays off.[/]"
+        )
+        yes = typer.confirm("Allow web search?", default=True)
+    except (EOFError, KeyboardInterrupt, OSError):
+        return
+    if yes:
+        allowed.append(SEARCH_HOST)
+        cfg.egress_allow = tuple(allowed)
+        cfg.save()
+        console.print(f"[green]web search enabled[/] ({SEARCH_HOST})")
+    else:
+        console.print("[dim]left off. `sk egress allow html.duckduckgo.com` enables it.[/]")
 
 
 @app.command()

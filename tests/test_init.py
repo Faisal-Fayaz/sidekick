@@ -116,7 +116,8 @@ def test_init_unreachable_ollama(monkeypatch):
 
 def test_init_full_local_flow(monkeypatch):
     _sysmod(monkeypatch)
-    answers = iter([True, False])  # local=yes, hook=no
+    # local=yes, hook=no, web search=yes
+    answers = iter([True, False, True])
     monkeypatch.setattr("typer.confirm", lambda *a, **k: next(answers))
     monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: [])
     monkeypatch.setattr("sk.tools.tool_sysinfo", lambda: SYSINFO_NVIDIA)
@@ -132,3 +133,64 @@ def test_init_full_local_flow(monkeypatch):
     assert "init complete" in res.output
     saved = _C.load()
     assert saved.provider == "ollama" and saved.model == "llama3.2:3b"
+    # #359: first run asked about web search instead of leaving it silently off
+    assert "html.duckduckgo.com" in (saved.egress_allow or ())
+
+
+def test_init_offers_search_egress_only_the_search_host(monkeypatch):
+    """The prompt must enable search and NOT arbitrary fetches (#359)."""
+    _sysmod(monkeypatch)
+    answers = iter([True, False, True])
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: next(answers))
+    monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: [])
+    monkeypatch.setattr("sk.tools.tool_sysinfo", lambda: SYSINFO_NVIDIA)
+    monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hi"))
+    monkeypatch.setattr("sk.init_wizard.pull_model", lambda *a, **k: (True, "pulled"))
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+    from sk.cli.commands.system import SEARCH_HOST
+    from sk.config import Config as _C
+
+    res = CliRunner().invoke(app, ["init"])
+    assert res.exit_code == 0, res.output
+    allowed = _C.load().egress_allow or ()
+    assert allowed == (SEARCH_HOST,), allowed
+    assert "*" not in allowed and "*" != SEARCH_HOST
+
+
+def test_init_search_decline_leaves_deny_default(monkeypatch):
+    """Declining must keep the allowlist empty — the control is unchanged."""
+    _sysmod(monkeypatch)
+    answers = iter([True, False, False])  # local, hook, web search = no
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: next(answers))
+    monkeypatch.setattr("sk.auth.fetch_models", lambda *a, **k: [])
+    monkeypatch.setattr("sk.tools.tool_sysinfo", lambda: SYSINFO_NVIDIA)
+    monkeypatch.setattr("sk.auth.ping", lambda *a, **k: (True, "hi"))
+    monkeypatch.setattr("sk.init_wizard.pull_model", lambda *a, **k: (True, "pulled"))
+    from typer.testing import CliRunner
+
+    from sk.cli import app
+    from sk.config import Config as _C
+
+    res = CliRunner().invoke(app, ["init"])
+    assert res.exit_code == 0, res.output
+    assert not (_C.load().egress_allow or ())
+    assert "sk egress allow html.duckduckgo.com" in res.output
+
+
+def test_offer_search_egress_is_idempotent(monkeypatch, tmp_path):
+    """Already-allowed hosts are not re-prompted or duplicated."""
+    import sk.store as store
+    from sk.cli.commands.system import SEARCH_HOST, _offer_search_egress
+    from sk.config import Config
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: pytest_fail("must not re-ask"))
+    cfg = Config(egress_allow=(SEARCH_HOST,))
+    _offer_search_egress(cfg)
+    assert list(cfg.egress_allow) == [SEARCH_HOST]
+
+
+def pytest_fail(msg):
+    raise AssertionError(msg)

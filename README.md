@@ -64,7 +64,7 @@ heard> what files are in the sidekick repo
 
 ```bash
 uv tool install sidekick-agent[voice]   # global `sk`, STT included
-sk init                                  # guided first-run: hardware → model → verify
+sk init                                  # guided first-run: hardware → model → verify → web search
 sk                                       # fullscreen chat — start here (`sk tui` works too)
 ```
 
@@ -208,7 +208,9 @@ Design bets that paid off: **deterministic grounding beats prompt instructions**
 Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]` in TUI, prompt in CLI), HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. Multi-tool turns with destructive actions get **one plan review** up front instead of per-tool prompts (silent in `--yes`/`/yolo`; denials execute nothing). `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs.
 
 **Egress is deny-by-default.** Sidekick will not fetch a destination the model
-asked for until you allow that host:
+asked for until you allow that host. `sk init` asks once whether to enable web
+search (`html.duckduckgo.com` — one fixed host Sidekick picks, not the model);
+everything else stays blocked:
 
 ```bash
 sk egress                              # what is allowed, and what was blocked
