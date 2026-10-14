@@ -402,7 +402,14 @@ def test_exhaustion_report_never_includes_reasoning(monkeypatch):
         ),
     )
     out = agent_mod._synthesize_exhaustion(
-        None, "m", [{"role": "user", "content": "x"}], 0.2, 400, {}, None
+        None,
+        "m",
+        [{"role": "user", "content": "x"}],
+        0.2,
+        400,
+        {},
+        None,
+        done_work=["list_dir|path=."],
     )
     assert out == "Accomplished: a\nBlocked: b\nNext: c"
     assert "exactly 3 lines" not in out

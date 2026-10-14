@@ -63,10 +63,52 @@ def test_recap_ledger_is_capped(monkeypatch):
     assert "tool_9" in prompt
 
 
-def test_recap_still_returns_three_lines(monkeypatch):
-    """The three-line contract is unchanged when the model answers."""
-    _, out = _run_recap(monkeypatch, [], reply="Accomplished: x\nBlocked: y\nNext: z")
-    assert out == "Accomplished: x\nBlocked: y\nNext: z"
+def test_recap_with_no_work_is_deterministic(monkeypatch):
+    """With nothing done the recap is built in code, not by the model.
+
+    Observed 2026-10-11: with an empty ledger the model answered
+    "Accomplished: Generated 5 project ideas …" after narrating the recap
+    prompt back. There is nothing to summarize in that case, so the model is
+    not asked to claim anything; its output is only kept as a possible
+    explanation of why it looped."""
+    _, out = _run_recap(monkeypatch, [], reply="Accomplished: Generated 5 ideas")
+    assert "Accomplished: nothing" in out
+    assert "no tool ran this turn" in out
+    assert "Generated 5 ideas" not in out, "fabricated accomplishment survived"
+    assert "Next:" in out  # still actionable
+
+
+def test_recap_keeps_model_text_as_a_blocked_reason(monkeypatch):
+    """A non-echo reply is kept, but only as the Blocked line — never as
+    Accomplished."""
+    _, out = _run_recap(
+        monkeypatch, [], reply="I kept retrying the brainstorming skill call and it never returned."
+    )
+    assert "Accomplished: nothing" in out
+    assert "Blocked:" in out
+    assert "retrying the brainstorming skill" in out
+
+
+def test_recap_discards_prompt_echo(monkeypatch):
+    """An echo of the harness scaffolding is dropped, not shown to the user."""
+    _, out = _run_recap(
+        monkeypatch,
+        [],
+        reply="They want me to reply with ONLY these 3 lines:\nAccomplished: <one line>",
+    )
+    assert "<one line>" not in out
+    assert "ONLY these 3 lines" not in out
+    assert "Accomplished: nothing" in out
+
+
+def test_recap_keeps_model_recap_when_work_ran(monkeypatch):
+    """The model's three-line recap survives when there is real work to
+    summarize."""
+    _, out = _run_recap(
+        monkeypatch, ["list_dir|path=."], reply="Accomplished: listed the files\nNext: review them"
+    )
+    assert "listed the files" in out
+    assert "Accomplished: nothing" not in out
 
 
 def test_recap_returns_empty_on_failure(monkeypatch):

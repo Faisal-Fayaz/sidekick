@@ -607,8 +607,24 @@ def test_tools_rejected_detection():
     assert _tools_rejected(Exception("Tool calling is not supported with this model"))
     assert _tools_rejected(Exception("ERROR: tools are not supported by model"))
     assert _tools_rejected(Exception("does not support function calling"))
+    # Observed live 2026-10-11 on an OpenRouter-hosted model that had just
+    # emitted a valid skill call: the refusal names the tool *id*, not the
+    # capability, so nothing used to match and the turn died mid-loop.
+    assert _tools_rejected(
+        Exception(
+            "Error code: 400 - {'error': {'message': 'Provider returned error', "
+            "'metadata': {'raw': '{\"status\":400, \"detail\": \"Function id "
+            "'0a213807-640b-43fb-bfbf-2919f9b666ad': DEGRADED function cannot be "
+            "invoked\"}'}}}"
+        )
+    )
+    assert _tools_rejected(Exception("Function id 'abc': DEGRADED function cannot be invoked"))
+    # and the unrelated failures must still surface rather than demoting a model
     assert not _tools_rejected(Exception("401 bad key"))
     assert not _tools_rejected(Exception("connection reset"))
+    assert not _tools_rejected(Exception("Error code: 429 Rate limit exceeded"))
+    assert not _tools_rejected(Exception("Error code: 500 boom"))
+    assert not _tools_rejected(Exception("model unreachable"))
 
 
 def test_tool_unsupported_falls_back_to_text_tools(monkeypatch, tmp_path):

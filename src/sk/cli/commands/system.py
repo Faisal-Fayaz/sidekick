@@ -24,22 +24,25 @@ def _code_version() -> str:
     try:
         import subprocess as _sp
 
-        r = _sp.run(
-            [
-                "git",
-                "-C",
-                str(Path(__file__).resolve().parent.parent.parent),
-                "rev-parse",
-                "--short",
-                "HEAD",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        h = (r.stdout or "").strip()
-        if h:
-            return h
+        # src/sk/cli/commands/system.py -> repo root. The walk is fixed depth,
+        # and each level is checked, because `uv tool` installs unpack the tree
+        # under ~/.local/share/uv/tools/... where the walk lands on a directory
+        # that exists but is not a checkout — which silently degraded
+        # `sk --version` to a bare semver with no hash, making it impossible to
+        # tell which build is running.
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            if (parent / ".git").exists():
+                r = _sp.run(
+                    ["git", "-C", str(parent), "rev-parse", "--short", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                h = (r.stdout or "").strip()
+                if h:
+                    return h
+                break
     except Exception:
         pass
     try:
