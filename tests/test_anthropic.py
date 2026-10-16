@@ -1,5 +1,6 @@
 """Native Anthropic backend tests: translation, auth, full loop. No network."""
 
+import sk.agent as agent
 import sk.anthropic_backend as ab
 import sk.store as store
 from sk.config import Config, provider_tier
@@ -780,3 +781,36 @@ def test_tool_result_is_not_silently_truncated(tmp_path, monkeypatch):
     second = payloads[1]["messages"]
     blob = str(second)
     assert big in blob, "tool result was truncated before reaching the model"
+
+
+def test_anthropic_recap_is_grounded_in_tool_output(tmp_path, monkeypatch):
+    """The Anthropic recap used to have no grounding at all: it asked the model to
+    report what was accomplished while withholding the turn's tool ledger, leaving
+    the #369 fabrication fully exposed on this path. It must now carry both the
+    targets and the capped output excerpts."""
+    _iso(tmp_path, monkeypatch)
+    seen = {}
+
+    def fake_stream(*a, **k):
+        return _stream_resp(
+            [{"type": "tool_use", "id": "tu1", "name": "shell", "input": {"cmd": "wc -l src/*"}}],
+            stop="tool_use",
+        )
+
+    def fake_post(url, headers=None, json=None, **k):
+        seen["prompt"] = json["messages"][-1]["content"]
+        return {"content": [{"type": "text", "text": "Accomplished: x\nBlocked: y\nNext: z"}]}
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    # imported inside run_anthropic_agent, so patch the source module
+    monkeypatch.setattr(agent, "_run_tools_batch", lambda *a, **k: [("  5461 total", True)])
+    monkeypatch.setattr(ab, "_post", fake_post)
+
+    ab.run_anthropic_agent(
+        "count it", [], _cfg(max_steps=1), approve=lambda n, a: True, session="s"
+    )
+
+    prompt = seen["prompt"]
+    assert "5461 total" in prompt, "tool output must reach the anthropic recap"
+    assert "never estimate one" in prompt
+    assert "Accomplished: <one line>" in prompt

@@ -519,6 +519,7 @@ def run_anthropic_agent(
         _thinking = None
     seen: dict[str, str] = {}
     completed: list[str] = []  # per-turn tool work done (for error reports)
+    evidence: list[str] = []  # capped excerpts of what those tools returned
     continued = 0  # max_tokens continuations this turn (mirrors the OpenAI path)
 
     for _ in range(max(1, max_steps)):
@@ -638,10 +639,34 @@ def run_anthropic_agent(
             )
         from .agent import _record_completed
 
-        _record_completed(completed, batch, outs)
+        _record_completed(completed, batch, outs, evidence)
     # Loop exhausted without a final answer (every in-loop return is one):
     # one bounded no-tools recap call instead of the bare sentinel.
+    #
+    # This recap previously had no grounding at all: it asked the model to report
+    # what was accomplished while withholding the turn's tool ledger, so the same
+    # fabrication seen on the OpenAI path was fully exposed here (#369). It now
+    # carries both the target ledger and the capped output excerpts, and keeps the
+    # three-line shape the rest of sidekick's exhaustion reports use.
     try:
+        prior = "; ".join(completed[:10])
+        if prior:
+            grounding = (
+                "Ground the recap in this list of what actually ran this turn; "
+                f"do not claim anything that is not in it:\n{prior}"
+            )
+        else:
+            grounding = (
+                "No tool ran this turn — nothing was executed, so the Accomplished "
+                "line must say so. Do not describe output you did not produce."
+            )
+        if evidence:
+            grounding += (
+                "\n\nThese are the actual outputs of the tools that ran, in order. "
+                "Any figure, count, name, or path you report MUST come from these "
+                "lines — quote them exactly. If you want a number that is not here, "
+                "say so in Blocked; never estimate one:\n" + "\n".join(evidence)
+            )
         recap = {
             "model": cfg.model,
             "max_tokens": 400,
@@ -650,8 +675,11 @@ def run_anthropic_agent(
                 {
                     "role": "user",
                     "content": (
-                        "You hit the step budget. In 3 lines max, report: what was "
-                        "accomplished this turn, and what is blocked. No more tool calls."
+                        "You hit the step budget. Reply with ONLY these 3 lines, "
+                        "filled in, no other text:\n"
+                        "Accomplished: <one line>\n"
+                        "Blocked: <one line>\n"
+                        "Next: <one line>\n\n" + grounding
                     ),
                 }
             ],

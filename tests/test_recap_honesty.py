@@ -26,7 +26,7 @@ def _iso(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
 
 
-def _run_recap(monkeypatch, done_work, reply="Accomplished: x"):
+def _run_recap(monkeypatch, done_work, reply="Accomplished: x", evidence=None):
     """Call _synthesize_exhaustion directly; return the prompt it built."""
     seen = []
 
@@ -35,7 +35,9 @@ def _run_recap(monkeypatch, done_work, reply="Accomplished: x"):
         return agent._Msg(reply, None, "", "stop")
 
     monkeypatch.setattr(agent, "_stream_chat", fake_stream)
-    out = agent._synthesize_exhaustion(None, "m", [], 0.0, 400, {}, None, None, done_work=done_work)
+    out = agent._synthesize_exhaustion(
+        None, "m", [], 0.0, 400, {}, None, None, done_work=done_work, evidence=evidence
+    )
     assert seen, "recap never called the model"
     return seen[-1], out
 
@@ -140,3 +142,76 @@ def test_run_agent_passes_the_turn_ledger(tmp_path, monkeypatch):
     recaps = [p for p in seen if "hit the step budget" in p]
     assert recaps, "no recap was issued"
     assert "list_dir" in recaps[-1]
+
+
+# --- #369: the recap must see what the tools *returned*, not just what ran -----
+# Session tui-20261003-112714365610-0001. `exec` ran `wc -l` successfully, the
+# real 5,461 was in context, and the recap still reported a "roughly 240,000-line
+# source footprint" — a ~44x overstatement of a real project, in the one field
+# someone sizes a porting effort by. The target ledger named the command but not
+# its output, so nothing anchored the number.
+
+
+def test_evidence_anchors_figures_in_the_recap_prompt(monkeypatch):
+    done = ["exec|cmd=wc -l src/*#f7aabdfc4f0d"]
+    evidence = [
+        "exec|cmd=wc -l src/*#f7aabdfc4f0d ->  120 main.cpp\n 5341 physics.cpp\n 5461 total"
+    ]
+    prompt, _ = _run_recap(monkeypatch, done, evidence=evidence)
+    assert "5461 total" in prompt, "the real line count must reach the recap"
+    assert "never estimate one" in prompt
+
+
+def test_record_completed_collects_output_per_tool(monkeypatch):
+    completed, evidence = [], []
+    batch = [
+        ("exec", {"cmd": "ls"}),
+        ("exec", {"cmd": "wc -l src/*"}),
+        ("read_file", {"path": "src/physics.hpp"}),
+    ]
+    outs = [
+        ("main.cpp physics.cpp CMakeLists.txt", True),
+        ("  5461 total", True),
+        ("struct Body { float x; };", True),
+    ]
+    agent._record_completed(completed, batch, outs, evidence)
+    assert len(completed) == 3
+    assert any("5461 total" in e for e in evidence)
+    # target and output stay paired on one line
+    assert all("->" in e for e in evidence)
+    # multiline output collapses so it reads as one quotable line
+    assert not any("\n" in e for e in evidence)
+
+
+def test_failed_tool_output_is_still_offered_as_evidence(monkeypatch):
+    """A failed call stays out of the target ledger, but the recap's Blocked line
+    needs its actual error text or it will invent a reason (#369 did exactly that:
+    a real error beside a fabricated number)."""
+    completed, evidence = [], []
+    agent._record_completed(
+        completed,
+        [("exec", {"cmd": "wc -l"})],
+        [("Error: shell did not expand the patterns", False)],
+        evidence,
+    )
+    assert completed == [], "failed call must not count as accomplished work"
+    assert any("did not expand" in e for e in evidence)
+
+
+def test_evidence_is_capped():
+    """The recap call is budgeted at 400 tokens, so evidence cannot grow with
+    the number of tools a turn ran."""
+    evidence = []
+    for i in range(200):
+        agent._record_completed(
+            [], [("exec", {"cmd": f"cmd{i}"})], [(f"output {i} " + "x" * 4000, True)], evidence
+        )
+    assert 0 < len(evidence) < 200
+    assert sum(len(e) for e in evidence) <= agent.RECAP_EVIDENCE_TOTAL + 400
+
+
+def test_record_completed_never_raises_without_evidence_arg(monkeypatch):
+    """Existing two-arg callers (and _error_with_progress's contract) still hold."""
+    completed = []
+    agent._record_completed(completed, [("exec", {"cmd": "ls"})], [("out", True)])
+    assert completed == ["exec|cmd=ls#6a8f0c9e1b2d"] or completed[0].startswith("exec|cmd=ls")

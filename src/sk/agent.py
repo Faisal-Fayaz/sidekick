@@ -2293,6 +2293,7 @@ def _synthesize_exhaustion(
     on_token,
     on_reasoning=None,
     done_work: list[str] | None = None,
+    evidence: list[str] | None = None,
 ) -> str:
     """One final no-tools call to report progress + blockers when the step
     budget dies without a final answer. Bounded (<=400 tokens), streams via
@@ -2326,6 +2327,13 @@ def _synthesize_exhaustion(
             grounding = (
                 "No tool ran this turn — nothing was executed, so the Accomplished "
                 "line must say so. Do not describe output you did not produce."
+            )
+        if evidence:
+            grounding += (
+                "\n\nThese are the actual outputs of the tools that ran, in order. "
+                "Any figure, count, name, or path you report MUST come from these "
+                "lines — quote them exactly. If you want a number that is not here, "
+                "say so in Blocked; never estimate one:\n" + "\n".join(evidence)
             )
         recap = list(messages) + [
             {
@@ -2493,20 +2501,82 @@ def _drop_stale_control(messages: list) -> None:
         pass
 
 
+RECAP_EVIDENCE_CHARS = 900  # per-tool excerpt budget for the exhaustion recap
+RECAP_EVIDENCE_TOTAL = 1800  # total excerpt budget across all tools in a turn
+
+
+def _excerpt(result: object, limit: int = RECAP_EVIDENCE_CHARS) -> str:
+    """Collapse a tool result to a single quotable line for recap grounding.
+
+    The recap needs the *figures* a tool returned, not just the command that
+    ran it. Observed 2026-10-03 (#369): `exec` ran `wc -l` successfully and the
+    real 5,461 was in context, but the recap reported a "roughly 240,000-line
+    source footprint" — a ~44x overstatement attached to a real project. Targets
+    alone cannot prevent that; only the output can anchor it.
+
+    Whitespace is collapsed so a multi-line listing reads as one line, and the
+    tail is dropped when the result is longer than `limit` — for the common
+    `wc`/`ls`/`grep` shapes the informative part is at the front.
+    """
+    try:
+        text = " ".join(str(result).split())
+    except Exception:
+        return ""
+    if len(text) > limit:
+        text = text[:limit].rstrip() + " …"
+    return text
+
+
 def _record_completed(
-    completed: list[str], batch: list[tuple[str, dict]], outs: list[tuple[str, bool]]
+    completed: list[str],
+    batch: list[tuple[str, dict]],
+    outs: list[tuple[str, bool]],
+    evidence: list[str] | None = None,
 ) -> None:
     """Append successful tool targets to the turn's progress ledger (capped).
-    Never raises. Feeds _error_with_progress when a later call fails."""
+    Never raises. Feeds _error_with_progress when a later call fails.
+
+    When `evidence` is supplied it also collects a per-tool excerpt of what the
+    tool actually returned, for exhaustion-recap grounding. Unlike the target
+    ledger, evidence includes failed calls: a recap's `Blocked` line has to be
+    able to name the failure that blocked it, and #369's recap did exactly that
+    ("the earlier glob-based line count failed because the shell did not expand
+    the patterns") while inventing the number beside it.
+    """
     try:
         for (name, args), (result, _) in zip(batch, outs):
+            target = _tool_target(name, args or {})
             if isinstance(result, str) and (
                 result.startswith("Error") or "blocked" in result[:60].lower()
             ):
+                if evidence is not None:
+                    _append_evidence(evidence, target, result)
                 continue
-            completed.append(_tool_target(name, args or {}))
+            completed.append(target)
+            if evidence is not None:
+                _append_evidence(evidence, target, result)
             if len(completed) >= 10:
                 return
+    except Exception:
+        pass
+
+
+def _append_evidence(evidence: list[str], target: str, result: object) -> None:
+    """Add one `target -> output` evidence line, trimming to the total budget.
+
+    Evidence is capped independently of the target ledger so that a turn which
+    only ever ran failing tools still contributes grounding, and so the recap
+    prompt stays inside its own token budget. Oldest entries are dropped first:
+    the recap is a report on a turn that ran long, and the tail of it is what
+    the user needs to know about.
+    """
+    try:
+        quote = _excerpt(result)
+        if not quote:
+            return
+        while sum(len(e) for e in evidence) + len(quote) > RECAP_EVIDENCE_TOTAL and evidence:
+            del evidence[0]
+        evidence.append(f"{target} -> {quote}")
     except Exception:
         pass
 
@@ -2691,6 +2761,7 @@ def run_agent(
     seen: dict[str, str] = {}  # target-key -> result; stops re-fetch loops
     continued = 0
     completed: list[str] = []  # per-turn tool work done (for error reports)
+    evidence: list[str] = []  # capped excerpts of what those tools returned
     edited: list[str] = []  # write_file/edit_file targets (for post-edit verify)
     repairs_used = 0  # verify-fail repair rounds consumed (capped)
 
@@ -2827,7 +2898,7 @@ def run_agent(
             for p in _edited_paths(batch):
                 if p not in edited:
                     edited.append(p)
-            _record_completed(completed, batch, outs)
+            _record_completed(completed, batch, outs, evidence)
             combined = [
                 f"[tool {tname} result]\n{result}" for (tname, _), (result, _) in zip(batch, outs)
             ]
@@ -2961,7 +3032,7 @@ def run_agent(
                 edited.append(p)
         for (tid, _tname, _targs), (result, _repeated) in zip(parsed, outs):
             messages.append({"role": "tool", "tool_call_id": tid, "content": result})
-        _record_completed(completed, batch, outs)
+        _record_completed(completed, batch, outs, evidence)
 
         # after tools, loop to let model synthesize (next iteration)
         # peek: if last iteration, force final synthesis (failures fall
@@ -3007,6 +3078,7 @@ def run_agent(
             on_token,
             on_reasoning,
             done_work=completed,
+            evidence=evidence,
         )
         final_text = _strip_recap_leak(_strip_control_leak(recap)) or "(max steps reached)"
 
