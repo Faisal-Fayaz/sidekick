@@ -14,6 +14,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import Config
+from .errors import TurnFailure, classify_error
 from .model_profiles import context_window_for, max_tokens_for
 from .tokens import estimate_tokens as tokens_estimate
 from .tools import (
@@ -2815,7 +2816,16 @@ def run_agent(
                 messages.append({"role": "user", "content": note})
                 continue
             if completed:
-                return _error_with_progress(completed, e)
+                # A failed turn must not look like a successful one. The text
+                # still reads as a report (the TUI and the transcript want it),
+                # but it carries the failure so the CLI can say `ok: false`
+                # instead of shipping the error as an answer.
+                cause = str(e)[:300] or type(e).__name__
+                return TurnFailure(
+                    _error_with_progress(completed, e),
+                    error=cause,
+                    code=classify_error(e),
+                )
             raise
 
         # Reasoning-only turn (reasoning models, empty content): the trace

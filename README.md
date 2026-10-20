@@ -183,6 +183,24 @@ The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of f
 
 Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked index; the agent loads full instructions on demand via the `skill` tool. `fast`/`smart` resolve per provider (Ollama: llama3.2:3b/qwen2.5-coder:7b, Groq: gpt-oss-20b/120b).
 
+### The `--json` envelope
+
+`sk run --json` prints exactly one JSON document on stdout, and the exit code
+reports the outcome:
+
+```json
+{"ok": true, "answer": "...", "model": "qwen2.5-coder:7b", "session": "default", "tools": ["read_file"], "error": null, "error_code": null}
+```
+
+`ok` is the outcome of the *turn*, not of the command. A turn that died
+mid-flight used to hand back its error text as the answer with `ok: true`, so a
+caller could not tell a finished run from a throttled one — a benchmark
+harness scored a rate-limited run as a completed turn. `error_code` is a
+stable classification so a caller never has to parse prose:
+`rate_limit`, `auth`, `server_error`, `timeout`, `network`, `bad_request`,
+`turn_failed`, `job_failed`. Exit code 1 means the turn failed, 0 that it
+completed.
+
 ## Architecture
 
 ```mermaid

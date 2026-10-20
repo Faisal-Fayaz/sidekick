@@ -590,6 +590,11 @@ def test_error_carries_progress_anthropic(tmp_path, monkeypatch):
     out = ab.run_anthropic_agent("do things", [], _cfg(), approve=lambda n, a: True, session="s")
     assert out.startswith("Turn failed partway")
     assert "list_dir" in out and "overloaded" in out and "Resume with" in out
+    # Same contract as the OpenAI path: the failure travels with the text.
+    from sk.errors import TurnFailure
+
+    assert isinstance(out, TurnFailure)
+    assert out.code == "server_error"
 
 
 # --- #312: parity gaps between the Anthropic and OpenAI agent loops ----------

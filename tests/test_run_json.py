@@ -42,6 +42,58 @@ def test_json_failure_exit_code(monkeypatch):
     assert doc["ok"] is False and "unreachable" in (doc["error"] or "")
 
 
+def test_json_failure_carries_a_machine_readable_code(monkeypatch):
+    """A caller has to be able to tell a throttled provider from a bad request
+    without parsing prose."""
+
+    def boom(*a, **k):
+        raise RuntimeError("Error code: 429 - Rate limit exceeded")
+
+    monkeypatch.setattr(run_mod, "run_agent", boom)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "hi", "--json", "--yes"])
+    assert res.exit_code == 1
+    doc = json.loads(res.output)
+    assert doc["ok"] is False
+    assert doc["error_code"] == "rate_limit"
+
+
+def test_json_failed_turn_is_not_reported_as_success(monkeypatch):
+    """The turn died mid-flight and said so in its text; the envelope used to
+    say `ok: true` anyway, so a harness scored a rate-limited run as a
+    completed turn."""
+    from sk.errors import TurnFailure
+
+    def failed(*a, **k):
+        return TurnFailure(
+            "Turn failed partway: Error code: 429 - slow down",
+            error="Error code: 429 - slow down",
+            code="rate_limit",
+        )
+
+    monkeypatch.setattr(run_mod, "run_agent", failed)
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "hi", "--json", "--yes"])
+    assert res.exit_code == 1
+    doc = json.loads(res.output)
+    assert doc["ok"] is False
+    assert doc["error_code"] == "rate_limit"
+    assert "429" in doc["error"]
+    assert "Turn failed partway" in doc["answer"]  # the report is still there
+
+
+def test_json_envelope_always_has_an_error_code_key(monkeypatch):
+    """The envelope's shape must not change under a consumer."""
+    monkeypatch.setattr(run_mod, "run_agent", lambda *a, **k: "all good")
+    runner, app = _runner()
+    res = runner.invoke(app, ["run", "hi", "--json", "--yes"])
+    assert res.exit_code == 0, res.output
+    doc = json.loads(res.output)
+    assert doc["ok"] is True
+    assert doc["error"] is None
+    assert doc["error_code"] is None
+
+
 def test_json_denial_is_completed_turn(monkeypatch):
     monkeypatch.setattr(
         run_mod, "run_agent", lambda *a, **k: "Denied: plan denied by user — nothing was executed."
