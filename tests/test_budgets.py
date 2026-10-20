@@ -198,6 +198,45 @@ def test_error_carries_progress_openai(tmp_path, monkeypatch):
     out = agent.run_agent("do things", [], _cfg(), approve=lambda n, a: True, session="s")
     assert out.startswith("Turn failed partway")
     assert "list_dir" in out and "400" in out and "Resume with" in out
+    # The turn failed, and it has to say so: the text still reads as a report,
+    # but the failure travels with it so the CLI reports `ok: false`.
+    from sk.errors import TurnFailure
+
+    assert isinstance(out, TurnFailure)
+    assert out.code == "bad_request"
+    assert "400" in out.error
+
+
+def test_failed_turn_classifies_a_rate_limited_turn(tmp_path, monkeypatch):
+    """A throttled provider is an infrastructure failure, not a bad request."""
+    import sk.agent as agent
+    import sk.store as store
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "history.db")
+
+    class _Msg:
+        def __init__(self, content="", tool_calls=None, reasoning="", finish="stop"):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.reasoning = reasoning
+            self.finish = finish
+
+    class _TC:
+        def __init__(self, name="list_dir", args='{"path": "."}'):
+            self.id = "t1"
+            self.function = type("F", (), {"name": name, "arguments": args})()
+
+    def fake_stream(client, model, messages, tools, *a, **k):
+        if not any(m.get("role") == "tool" for m in messages):
+            return _Msg(content="", tool_calls=[_TC()])
+        raise RuntimeError("Error code: 429 - {'error': {'message': 'Rate limit exceeded'}}")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream)
+    out = agent.run_agent("do things", [], _cfg(), approve=lambda n, a: True, session="s")
+    from sk.errors import TurnFailure
+
+    assert isinstance(out, TurnFailure)
+    assert out.code == "rate_limit"
 
 
 def test_error_without_progress_still_raises(tmp_path, monkeypatch):

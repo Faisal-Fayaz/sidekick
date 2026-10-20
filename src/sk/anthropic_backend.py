@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from .auth import anthropic_headers
+from .errors import TurnFailure, classify_error
 
 
 def openai_tools_to_anthropic(openai_schema: list[dict]) -> list[dict]:
@@ -559,7 +560,13 @@ def run_anthropic_agent(
             except Exception as e:
                 from .agent import _error_with_progress
 
-                return _error_with_progress(completed, e)
+                # Same contract as the OpenAI path: a failed turn carries the
+                # failure with it, so the CLI reports `ok: false`.
+                return TurnFailure(
+                    _error_with_progress(completed, e),
+                    error=str(e)[:300] or type(e).__name__,
+                    code=classify_error(e),
+                )
             blocks = resp.get("content", []) if isinstance(resp, dict) else []
         _stop = stop_reason if streamed else None
         texts = [

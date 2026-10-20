@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from sk.atomic import atomic_write_text, quarantine
+from sk.errors import TurnFailure
 
 JOBS_PATH = Path.home() / ".sidekick" / "jobs.json"
 
@@ -201,6 +202,14 @@ def run_bg_worker(job_id: str) -> str:
             finish_job(job_id, error=err)
             notify("sidekick job failed", f"{job_id}: {err[:200]}")
             return f"Error: {err}"
+        if isinstance(answer, TurnFailure):
+            # The turn failed but did not raise: report the job as failed
+            # rather than shipping the failure text as a successful result.
+            err = answer.error[:500]
+            save_message(session, "assistant", str(answer))
+            finish_job(job_id, error=err)
+            notify("sidekick job failed", f"{job_id}: {err[:200]}")
+            return str(answer)
         save_message(session, "assistant", answer or "(empty)")
         finish_job(job_id, answer=answer or "")
         preview = (answer or "(empty)").strip().replace("\n", " ")[:200]

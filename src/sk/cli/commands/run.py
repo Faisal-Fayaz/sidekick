@@ -6,6 +6,7 @@ import typer
 from rich.markdown import Markdown
 
 from sk.agent import run_agent
+from sk.errors import JOB_FAILED, TurnFailure, describe_error
 from sk.store import get_history, save_message
 
 from ..approvers import (
@@ -82,6 +83,7 @@ def run(
                             "session": session,
                             "tools": [],
                             "error": msg,
+                            "error_code": JOB_FAILED,
                             "job_id": "",
                         }
                     ),
@@ -100,6 +102,7 @@ def run(
                         "session": session,
                         "tools": [],
                         "error": None,
+                        "error_code": None,
                         "job_id": job_id,
                     }
                 ),
@@ -134,9 +137,14 @@ def run(
     on_token = None if (no_stream or as_json) else _make_on_token(stream)
     on_reasoning = None if (no_stream or as_json) else _make_on_reasoning()
 
-    def _emit(ok: bool, answer: str, error: str | None) -> None:
+    def _emit(ok: bool, answer: str, error: str | None, error_code: str | None = None) -> None:
         # plain print: rich would wrap long lines and parse [] as markup,
         # either of which corrupts machine-readable output.
+        #
+        # `error_code` is a stable machine-readable classification (see
+        # sk.errors.ERROR_CODES) so a caller can tell a throttled provider
+        # from a rejected request without parsing the message. It is always
+        # present so the envelope's shape never changes under a consumer.
         print(
             _json.dumps(
                 {
@@ -146,6 +154,7 @@ def run(
                     "session": session,
                     "tools": used_tools,
                     "error": error,
+                    "error_code": error_code,
                 }
             ),
             flush=True,
@@ -201,13 +210,20 @@ def run(
                 )
     except Exception as e:
         if as_json:
-            _emit(False, "", str(e)[:500])
+            message, code = describe_error(e)
+            _emit(False, "", message, code)
             raise typer.Exit(1)
         console.print("\r\x1b[2K", end="")
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     save_message(session, "assistant", answer)
     if as_json:
+        # A turn that failed carries the failure with it: report it as a
+        # failure instead of shipping the error text as if it were the answer.
+        failure = answer if isinstance(answer, TurnFailure) else None
+        if failure is not None:
+            _emit(False, str(failure), failure.error, failure.code)
+            raise typer.Exit(1)
         _emit(True, answer or "", None)
         return
     streamed = getattr(on_token, "state", {}).get("n", 0) if on_token else 0
