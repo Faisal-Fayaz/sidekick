@@ -12,8 +12,9 @@ The short `## Roadmap` section in `README.md` is just a pointer here.
 
 ## Vision
 
-A local-first terminal companion you can talk to — chat, voice, and tools,
-on your hardware. No cloud account required, no API bill by default.
+A local-first developer agent for code you cannot send to the cloud — code
+search, evidence-backed review, and rules you can inspect and edit. No cloud
+account required by default.
 
 ## Principles
 
@@ -24,7 +25,20 @@ How we decide what gets in:
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 
-## Next — v0.31.0 (unplanned — propose by PR)
+## Next — v0.31.0 (review foundation)
+
+Scope for the first developer milestone. Details and accepted defaults live in
+[`docs/developer-plan.md`](docs/developer-plan.md). Tracking:
+[v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6).
+
+- **Code intelligence** — approval-free `search_code` and `glob_files`, line-range `read_file`, and `repo_map` v1 for tree/languages/Python symbols. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398), [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399), [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400)
+- **Review target and diff model** — resolve working tree, staged, commit, base ref, and path targets; collect file status, hunks, binary/rename handling, caps, and skip coverage. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401)
+- **Evidence-backed findings** — severity/category/confidence schema, validate file/line/evidence, drop invalid findings, and emit stable Markdown/JSON. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402)
+- **`sk review` MVP** — one engine for the CLI and `/review`, read-only, Markdown default, opt-in JSON and `--fail-on`. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403)
+
+Out of scope for `v0.31.0`: harness layers, project checks, provider
+abstraction, sandboxing, and IDE integration. Later versions remain tentative
+until Phase 1 ships.
 
 ## Later
 
