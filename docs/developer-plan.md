@@ -1,13 +1,15 @@
 # Sidekick Developer Plan
 
-**Status:** Draft for maintainer review — no implementation started
+**Status:** Accepted for `v0.31.0` Phase 1 — no implementation started
 **Date:** 2026-11-03
-**Baseline:** `abfa95d` on `main`
+**Accepted:** 2026-11-04
+**Baseline:** `abfa95d` on `main` (audit baseline; accepted at `780c8bd`)
 **Baseline release:** `0.30.0`, 1,467 tests, 80.01% coverage, 19 tools
+**Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6)
 
-> This is a proposal, not a replacement for `ROADMAP.md`. If accepted, the
-> versioned roadmap sections should be updated by PR, and this document should
-> either move under `docs/` permanently or be folded into `ROADMAP.md`.
+> `ROADMAP.md` remains the source of truth for versioned scope. This document
+> holds the detailed design and accepted defaults behind `v0.31.0`. The first
+> six backlog items are tracked in the v0.31.0 milestone.
 
 ---
 
@@ -650,14 +652,15 @@ Estimates assume 1–2 maintainers. Calendar time will stretch if part-time.
 | **3. Runtime and platform** | ~2–3 weeks | Adaptive budgets, provider abstraction, git tools, sandbox/hooks/security CI, coverage uplift | Provider parity, sandbox tests, security scans green |
 | **4. Evals and adoption** | ongoing | Nightly live eval, scoreboard, docs/demo, design partners, team/air-gapped groundwork | Public benchmark; 3 design partners; docs current |
 
-**Suggested version mapping (tentative):**
+**Version mapping:**
 
 - `v0.31.0` — review foundation: code intelligence + `sk review` MVP.
 - `v0.32.0` — editable harness + verification loop.
 - `v0.33.0` — provider abstraction + platform hardening.
 - `v0.34.0` — evals, benchmark, adoption.
 
-Do not promise these versions until Phase 0 is complete.
+`v0.31.0` is scoped in `ROADMAP.md`. Later versions remain tentative until
+Phase 1 ships.
 
 ---
 
@@ -695,7 +698,10 @@ A release is not ready unless:
 
 ---
 
-## 8. Decisions needed before implementation
+## 8. Decisions (accepted for v0.31.0)
+
+The recommendations below are the Phase 1 defaults. Revisit one only with a
+documented reason in the PR that changes it.
 
 1. **Is code review the flagship?**
    Recommendation: **yes**. It is the best fit for local-first, privacy, and
@@ -737,12 +743,14 @@ A release is not ready unless:
 
 ## 9. First backlog
 
-1. Add `search_code` and `glob_files` tools with path-guard and fallback tests.
-2. Add line-range support to `read_file`.
-3. Add `repo_map` v1: tree, languages, Python symbols, token cap.
-4. Build review target resolver and diff model.
-5. Add finding schema, validation, and Markdown/JSON serialization.
-6. Wire `sk review` and `/review` to the same engine.
+Items 1–6 are scoped to `v0.31.0`. Items 7–12 remain backlog for later phases.
+
+1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests.
+2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`.
+3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap.
+4. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401) — Build review target resolver and diff model.
+5. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402) — Add finding schema, validation, and Markdown/JSON serialization.
+6. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403) — Wire `sk review` and `/review` to the same engine.
 7. Add harness loader, merge logic, `--explain`, and `--check-config`.
 8. Add built-in review rules and the first 10 seeded cases.
 9. Add project checks config, command runner, and diagnostic parsers.
