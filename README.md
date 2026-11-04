@@ -2,187 +2,276 @@
 
 # Sidekick
 
-**A local-first terminal companion you can talk to — chat, voice, and 19 tools, on your hardware.**
+**A local-first terminal agent for developers — chat, code, and 19 tools, on your hardware.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
 [![Ollama](https://img.shields.io/badge/LLM-ollama%20%2B%20any%20OpenAI--compatible-orange.svg)](https://ollama.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml/badge.svg)](https://github.com/Faisal-Fayaz/sidekick/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/sidekick-agent.svg)](https://pypi.org/project/sidekick-agent/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/sidekick-agent?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/sidekick-agent)
 
-*No cloud account required. No API bill by default. Your files, memory, and voice never leave your machine unless you hand it a key.*
+*No cloud account required. No API bill by default. Your files, memory, and voice stay on your machine unless you hand it a key.*
 
-</div>
-
-## See it
-
-Slash autocomplete with fuzzy filtering, right in the prompt:
-
-![Slash autocomplete](docs/tui-complete.svg)
-
-A grounded answer — real tools, real system data, streamed live:
-
-![Grounded answer](docs/tui-chat.svg)
-
-*Screenshots are real SVG captures of the app running headless (`docs/shot.py`), not mockups. A marketing/docs site lives in [`website/`](website/) (Vite + React + TS).*
-
-```console
-$ sk brief
-╭─ sidekick brief  Sat 2026-09-19 11:58 ─╮
-│ CPU: AMD Ryzen 7 4800H (16 threads)     │
-│ Mem: 7.2Gi · GPU: GTX 1650 4GB          │
-│ /dev/nvme0n1p8  133G  117G  8.5G  94% / │
-╰─────────────────────────────────────────╯
-│ ! disk 94% full — clean ~/Downloads…    │
-
-$ sk run "what is the ideal llm i can run on my device"
-• qwen3:4b (2.5 GB): fits comfortably in your 4096 MiB VRAM.
-• llama3.2:3b (2.0 GB): another good option.
-
-$ sk talk
-[Enter] to record, [Enter] to stop. /quit exits.
-heard> what files are in the sidekick repo
+```bash
+uv tool install "sidekick-agent[voice]" && sk init && sk
 ```
 
-## Why sidekick
-
-| | Sidekick | Typical cloud agent |
-|---|---|---|
-| Runs fully offline (Ollama) | ✅ | ❌ |
-| Voice input, transcribed on your CPU | ✅ | ❌ |
-| Copy/paste that works in-terminal | ✅ drag-select, `ctrl+y`, `/copy` | varies |
-| Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
-| Skills you can read (`SKILL.md`, incl. superpowers) | ✅ | varies |
-| Offline test suite incl. prompt-regression evals | ✅ | rare |
-| Deny-by-default egress for what the model fetches (`sk egress`, logged) | ✅ | ❌ |
-| Audit ledger you can hand to an auditor (`sk audit`, credentials redacted) | ✅ | ❌ (their product *is* your code) |
-| Costs $0 by default, spend caps when you bring keys | ✅ | metered |
+</div>
 
 ## Quickstart
 
 ```bash
-uv tool install sidekick-agent[voice]   # global `sk`, STT included
-sk init                                  # guided first-run: hardware → model → verify → web search
-sk                                       # fullscreen chat — start here (`sk tui` works too)
+uv tool install "sidekick-agent[voice]"   # global `sk`, local STT included
+sk init                                    # hardware → model → verify → web search
+sk                                         # fullscreen chat
 ```
 
-No clone, no build — installs straight from PyPI. Requires Python 3.12+.
-Without `[voice]` you get everything except Talk/mic (installs on first use instead). Local path needs Ollama (`ollama serve`, pull `qwen2.5-coder:7b` for smarts or `llama3.2:3b` for speed).
+Requires Python 3.12+. The local path needs Ollama (`ollama serve`). `sk init`
+checks your hardware, suggests a model that fits, and verifies the connection.
+Any OpenAI-compatible endpoint also works — bring a key or point Sidekick at a
+local server.
+
+## See it
+
+Slash autocomplete, now with the developer commands one keystroke away:
+
+![Slash autocomplete showing /review](docs/tui-complete.svg)
+
+A grounded answer with real tools, real files, and streamed Markdown:
+
+![Grounded answer with read_file](docs/tui-chat.svg)
+
+*Real headless captures from [`docs/shot.py`](docs/shot.py), not mockups. The
+captures use `qwen3-coder:30b` as a display model; `sk init` picks one for your
+hardware. A marketing/docs site lives in [`website/`](website/).*
+
+## Why Sidekick
+
+Sidekick is a terminal agent that can actually operate your machine: read and
+edit code, run commands, search the web only where you allow it, remember
+projects, and leave an audit trail you can inspect.
+
+It is built for the cases where a hosted agent is a bad fit: private repos,
+regulated code, offline or flaky networks, small GPUs, and developers who want
+to see exactly what the agent did.
+
+| | Sidekick | Typical hosted agent |
+|---|---|---|
+| Runs fully offline with Ollama | ✅ | ❌ |
+| Source code stays on your machine by default | ✅ | usually sent to a provider |
+| Voice transcribed on your CPU | ✅ | ❌ |
+| Answers grounded in *your* system, not guessed | ✅ deterministic grounding | prompt-only |
+| Approval gates, hard refusals, and checkpoints | ✅ | varies |
+| Deny-by-default egress for model-initiated fetches | ✅ `sk egress`, logged | ❌ |
+| Audit ledger with credentials redacted | ✅ `sk audit` | vendor-side logs |
+| MCP server and client | ✅ both directions | varies |
+| Editable skills, commands, and tools | ✅ `SKILL.md`, `TOOLS.md` | varies |
+| Default bill | **$0** | metered |
+
+## Developer workflow
+
+Sidekick is deliberately approval-first. Reads run automatically; writes,
+deletes, and general shell commands ask. That makes it useful on a real repo
+without handing an unattended model the keys.
+
+| Task | What you use |
+|---|---|
+| Explore a repo | `list_dir`, `read_file`, and the read-only `exec` allowlist |
+| Edit safely | `write_file` / `edit_file` with approval; `/plan` to propose; `/rewind` to undo |
+| Inspect changes | `/diff` and `/review` inside a session |
+| Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
+| Extend | skills, custom slash commands, declarative `TOOLS.md` tools, MCP |
+| Stay in control | approval cards, hard refusals, egress allowlist, audit ledger |
+
+The TUI and plain-text REPL share every command, so a scripted fallback and an
+interactive session behave the same way.
+
+## Chat
+
+One input, two surfaces:
+
+```bash
+sk                   # fullscreen TUI with streaming + themes — start here
+sk tui --model fast  # same, explicit form
+sk chat              # fallback REPL: dumb terminals, screen readers, broken TUIs
+```
+
+Type `/` and autocomplete filters all 30+ commands — Enter completes, Tab too,
+Esc dismisses, ↑/↓ navigates. `F1` opens a generated cheatsheet built from the
+same tables as the dispatcher, so it cannot rot.
+
+TUI keys: **Enter** sends · **ctrl+j**/**alt+enter** newline · **↑/↓** history ·
+**ctrl+y** copies · **ctrl+g** push-to-talk · **pgup/pgdn** scroll · **F1** help ·
+**F2** dark/light theme · **F3** sessions drawer · **F4** plan/build toggle ·
+**F5** model picker.
+
+Answers stream live as Markdown. The status bar shows model, session, mode, and
+last-turn stats. Approvals arrive as cards with a timeout.
+
+Plan mode proposes without writing: `/plan` blocks file writes in chat
+(`/build` reverts), `F4` toggles the same in the TUI, and `sk run --plan` does it
+single-shot. Sessions carry `/compact [hint]`, `/diff`, `/review`, and
+`/rewind [n]` to undo agent file edits.
 
 ## Install
 
 | Channel | Command |
 |---|---|
-| PyPI / uv | `uv tool install sidekick-agent[voice]` |
-| PyPI / pipx | `pipx install sidekick-agent[voice]` |
-| PyPI / pip | `pip install sidekick-agent[voice]` |
+| PyPI / uv | `uv tool install "sidekick-agent[voice]"` |
+| PyPI / pipx | `pipx install "sidekick-agent[voice]"` |
+| PyPI / pip | `pip install "sidekick-agent[voice]"` |
 | AUR (Arch) | `yay -S python-sidekick-agent` |
-| conda-forge | `conda install -c conda-forge sidekick-agent` *(feedstock lives in a separate repo)* |
+| conda-forge | `conda install -c conda-forge sidekick-agent` *(separate feedstock repo)* |
 
-The published name is **`sidekick-agent`** (the `sidekick` name is taken on
-PyPI); the command stays `sk`. Version is a single source of truth in
-`src/sk/__init__.py`. Publishing is automatic and credential-free: when a PR
-is merged to `main` of the canonical repo
-[`Faisal-Fayaz/sidekick`](https://github.com/Faisal-Fayaz/sidekick) with a bumped
-`__version__`, GitHub Actions trusted-publishes to PyPI and opens a GitHub
-Release (forks can never publish) — details in [`packaging/README.md`](packaging/README.md).
+The published name is **`sidekick-agent`**; the command stays `sk`. Without
+`[voice]` you get everything except Talk/mic, which installs on first use.
+Version lives in `src/sk/__init__.py`. Publishing is automatic and
+credential-free: merging a version bump to `main` trusted-publishes to PyPI and
+opens a GitHub Release. Forks cannot publish. Details:
+[`packaging/README.md`](packaging/README.md).
 
 **From source (dev):**
 
 ```bash
 git clone https://github.com/Faisal-Fayaz/sidekick && cd sidekick
-uv tool install -e ".[voice]"   # editable dev install; STT included
+uv tool install -e ".[voice]"
 sk doctor
 ```
-
-## Chat
-
-One input, two surfaces — fullscreen TUI and plain-text REPL share every command:
-
-```bash
-sk                   # fullscreen chat with streaming + themes — start here
-sk tui --model fast  # same, explicit form
-sk chat              # fallback REPL: dumb terminals, screen readers, broken TUIs
-```
-
-Type `/` and an autocomplete popup filters all 20+ commands — Enter completes, Tab too, Esc dismisses, ↑/↓ navigates. `F1` opens a generated cheatsheet (keys + commands, built from the same tables as the dispatcher, so it can't rot).
-
-TUI keys: **Enter** sends · **ctrl+j**/**alt+enter** newline · **↑/↓** history · **ctrl+y** copies · **ctrl+g** push-to-talk · **pgup/pgdn** scroll · **F1** help · **F2** dark/light theme · **F3** sessions drawer · **F4** plan/build toggle · **F5** model picker (filter + live provider list). Answers stream live as Markdown with role colors; approvals arrive as cards with timeout; the status bar shows model · session · last-turn time/tokens.
-
-Plan mode proposes without writing: `/plan` blocks file writes in chat (`/build` reverts), `F4` toggles the same in the TUI, and `sk run --plan` does it single-shot. Sessions carry `/compact [hint]` (summarize history on demand), `/diff` and `/review` (inspect the working tree), plus `/rewind [n]` to undo agent file edits.
 
 ## Voice
 
 ```bash
 sk talk [-d SECS] [--stt-model base] [--device hw:2,0]  # Enter records, Enter stops
-sk mic-test                                             # peak dB + silent/quiet/good verdict
+sk mic-test                                             # peak dB + verdict
 ```
 
-Capture via the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on macOS), transcription via local faster-whisper int8, transcript lands editable in the prompt. In the TUI, `ctrl+g` (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted after each take.
+Capture uses the OS-native recorder (arecord/ALSA on Linux, sox/ffmpeg on
+macOS); transcription uses local faster-whisper int8. The transcript lands
+editable in the prompt. In the TUI, `ctrl+g` or the mic pill does the same.
+Recordings are temp files and are deleted after each take.
 
-## MCP server
+## MCP
 
 ```bash
 sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps
 ```
 
-All 19 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run; shell/writes/delete need `--allow-writes`, else a clean denied error. Stdout carries protocol only. Claude Desktop snippet:
+All 19 tools, same safety policy: SSRF guards, write blocklists, and hard
+refusals apply unchanged. Reads auto-run; shell/writes/delete need
+`--allow-writes`, otherwise they return a clean denied error. Stdout carries
+protocol only.
+
+Claude Desktop snippet:
 
 ```json
 { "mcpServers": { "sidekick": { "command": "sk", "args": ["mcp"] } } }
 ```
 
-## Providers (BYO key)
+Sidekick also works as an MCP client. See [`docs/mcp-client.md`](docs/mcp-client.md).
+
+## Providers
 
 ```bash
-sk connect     # pick provider → paste key (hidden) → pick model → ping. Done.
+sk connect   # pick provider → paste key (hidden) → pick model → ping
 ```
 
-One guided flow: numbered provider list (local ones skip keys), live validation *before* anything saves, curated model list (TTS/image junk filtered, recommended pre-highlighted, Enter accepts), and a 5-token ping instead of a full agent turn. Advanced paths still work: `sk auth add/list/status/remove`, `sk model`, `sk setup` (connect + hook), `sk config --provider openai --api-key sk-...`, `/provider groq` inside chat.
+Presets: `ollama | openai | groq | together | deepseek | openrouter | google |
+lmstudio | anthropic | opencode | custom`. `anthropic` speaks the native
+Messages API; the rest are OpenAI-compatible. Any compatible endpoint works via
+`--provider custom --base-url https://... --api-key ...`.
 
-Presets: `ollama|openai|groq|together|deepseek|openrouter|google|lmstudio|anthropic|opencode|custom` (`anthropic` speaks the native Messages API; the rest are OpenAI-compatible). Any OpenAI-compatible endpoint works via `--provider custom --base-url https://... --api-key ...`. Preferred: `SIDEKICK_API_KEY` env (never touches disk); file keys are chmod 600 and masked in `--show`. The Anthropic backend marks the static system prompt + tool definitions cacheable (repeat turns up to 10x cheaper); OpenAI-compatible providers cache matching prefixes automatically server-side. Reasoning effort: `sk config --reasoning-effort low` (default; `off|minimal|low|medium|high|max`), escalated to `high` in plan mode. Honored on OpenRouter (`reasoning.effort`), OpenAI (`reasoning_effort`), Anthropic (thinking budget sized to fit `max_tokens`), and Ollama (`think` toggle — `off` disables thinking, `high`/`max` enables it).
+Preferred key handling: `SIDEKICK_API_KEY` in the environment (never touches
+disk). File keys are chmod 600 and masked in `--show`. `sk auth
+add/list/status/remove` manages credentials; `sk model` asks the provider for
+its live list.
 
-The `opencode` preset points at OpenCode Zen, opencode's gateway with a set of free, tools-capable models (`config.OPENCODE_FREE_MODELS`) plus paid tiers. The anonymous free tier is restricted by opencode to its own app, so add a free OpenCode account key first — `OPENCODE_API_KEY` env or `sk auth add opencode` (get it at opencode.ai/auth). Fast/smart resolve to `nemotron-3.5-lightning-free` / `muse-spark-1.3-contributor-free`; run `sk models opencode` for the live list.
+Reasoning effort: `sk config --reasoning-effort low` (default;
+`off|minimal|low|medium|high|max`), escalated to `high` in plan mode. Honored on
+OpenRouter (`reasoning.effort`), OpenAI (`reasoning_effort`), Anthropic
+(thinking budget sized to fit `max_tokens`), and Ollama (`think` toggle).
+
+<details>
+<summary>OpenCode Zen free tier</summary>
+
+The `opencode` preset points at OpenCode Zen, with free tool-capable models plus
+paid tiers. The anonymous free tier is restricted to opencode's own app, so add
+a free OpenCode account key first: `OPENCODE_API_KEY` or
+`sk auth add opencode` (get it at opencode.ai/auth). Fast/smart resolve to
+`nemotron-3.5-lightning-free` / `muse-spark-1.3-contributor-free`; run
+`sk models opencode` for the live list.
+
+</details>
 
 ## Command reference
+
+### Chat and sessions
 
 | Command | What |
 |---|---|
 | `sk` / `sk tui [--continue] [--model M] [--allow LIST] [--deny LIST]` | Fullscreen chat, fresh session each launch. `sk --version` prints the version and exits; `--cwd DIR` and `--profile NAME` work on every command |
-| `sk chat [--continue] [--session S] [-y|--yes] [--model M] [--allow LIST] [--deny LIST] [--no-stream]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
-| `sk talk [-d SECS] [--stt-model base] [--device hw:2,0] [--session S] [-y] [--install]` | Push-to-talk voice chat (CPU transcription, Enter to record/stop; `--install` skips the install prompt) |
+| `sk chat [--continue] [--session S] [-y\|--yes] [--model M] [--allow LIST] [--deny LIST] [--no-stream]` | Fallback plain-text REPL (dumb terminals, screen readers, TUI issues) |
+| `sk talk [-d SECS] [--stt-model base] [--device hw:2,0] [--session S] [-y] [--install]` | Push-to-talk voice chat (CPU transcription; `--install` skips the install prompt) |
 | `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
-| `/yolo`, `/confirm`, `/readonly` | Approval modes: auto-approve writes / ask every time / block all file writes (research mode) |
-| `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it from inside a session |
-| `/plan`, `/build` | Plan mode: propose without writing (blocked writes) / back to build mode |
-| `/rewind [n]` | Undo an agent file edit — snapshots write/edit/delete targets (`shell` mutations are not tracked, use git for those) |
-| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream]` | Single-shot agent run (auto-router picks the model; `--json` emits one machine-readable document + exit codes, use with `--yes` unattended; `--bg` detaches, returns a job id, notifies on completion; `--allow shell:pytest,write_file` skips prompts for listed tools; `--plan` proposes without writing) |
+| `/yolo`, `/confirm`, `/readonly` | Approval modes: auto-approve writes / ask every time / block all file writes |
+| `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it |
+| `/plan`, `/build` | Plan mode: propose without writing / back to build mode |
+| `/rewind [n]` | Undo an agent file edit (snapshots write/edit/delete targets; `shell` mutations are not tracked) |
+
+### Agent and automation
+
+| Command | What |
+|---|---|
+| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream]` | Single-shot agent run. Auto-routes the model; `--json` emits one machine-readable document + exit codes; `--bg` detaches and notifies; `--allow shell:pytest,write_file` skips prompts for listed tools |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
-| `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without LLM |
-| `sk digest [--force]` | Teammate pilot: brief + overnight failures, desktop nudge or log |
+| `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without an LLM |
+| `sk digest [--force]` | Brief + overnight failures, desktop nudge or log |
+| `sk export [SESSION] [--out f.md] [--force]` | Session transcript as Markdown. Refuses to overwrite unless `--force` |
+| `sk imagine "prompt" [--out f.png] [--size WxH] [--model M]` | Generate an image via the provider images endpoint |
+
+### Memory and search
+
+| Command | What |
+|---|---|
 | `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
 | `sk search QUERY [--session S]` | Full-text search across past transcripts |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
-| `sk imagine "prompt" [--out f.png] [--size WxH] [--model M]` | Generate an image via the provider images endpoint |
-| `sk export [SESSION] [--out f.md] [--force]` | Session transcript as Markdown (turns + tool calls). **Refuses to overwrite an existing `--out` unless `--force`** |
+| `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows; pair with spend caps |
+
+### Safety and audit
+
+| Command | What |
+|---|---|
 | `sk egress [list\|allow HOST\|deny HOST\|test URL]` | Egress policy: what the model may fetch, and what it was blocked from ([docs](docs/egress.md)) |
 | `sk audit [--session S] [--format md\|json] [-n N]` | Compliance log: tool runs, approve/deny, local-vs-egress (`-n` clamped 1–1000) |
-| `sk stats [--session S] [--format md\|json]` | Usage + cost estimates from audit rows (turns, tools, tokens); pair with spend caps for BYO-key budgets |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
-| `sk hooks [--check]` | List event hooks + live dry-run (see `docs/hooks.md`) |
-| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` / `sk plugins` / `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` (removes the launchd agent; on Linux disable the systemd unit) / `sk daemon-schedule [--set TXT]` | Skill packs (registry + superpowers) / user-defined tools (`TOOLS.md`, see `docs/plugins.md`) / background watcher (systemd/launchd, calendar schedules) |
-| `sk mcp [--allow-writes]` | MCP server over stdio (19 tools, safe defaults) |
-| `sk mcp-servers` | List configured MCP client servers + live tool check (see `docs/mcp-client.md`) |
-| `sk doctor [--fix]` / `sk report` / `sk models [list \| pull <id> \| prune <id>]` / `sk config` / `sk version` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / models (list, download, remove) / settings / build / self-update |
-| `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
-| `sk model` / `sk auth add/list/status/remove` | Ask the provider for its live model list and set the default / manage provider keys (masked, validated live) |
+| `sk hooks [--check]` | List event hooks + live dry-run (see [`docs/hooks.md`](docs/hooks.md)) |
 
-Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked index; the agent loads full instructions on demand via the `skill` tool. `fast`/`smart` resolve per provider (Ollama: llama3.2:3b/qwen2.5-coder:7b, Groq: gpt-oss-20b/120b).
+### Extensions and servers
+
+| Command | What |
+|---|---|
+| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` | Skill packs: registry + superpowers |
+| `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
+| `sk mcp [--allow-writes]` | MCP server over stdio (19 tools, safe defaults) |
+| `sk mcp-servers` | List configured MCP client servers + live tool check (see [`docs/mcp-client.md`](docs/mcp-client.md)) |
+| `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules) |
+
+### Setup and system
+
+| Command | What |
+|---|---|
+| `sk init` / `sk setup` / `sk connect` | Guided first-run / full setup / provider key flow |
+| `sk doctor [--fix]` / `sk report` / `sk upgrade [--check]` | Health (+auto-remediation) / redacted diagnostics bundle / self-update |
+| `sk models [list \| pull <id> \| prune <id>]` / `sk model` / `sk config` / `sk version` | Models (list, download, remove) / ask the provider for its live list / settings / build |
+| `sk auth add/list/status/remove` | Manage provider keys (masked, validated live) |
+
+Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-ranked
+index; the agent loads full instructions on demand via the `skill` tool.
+`fast`/`smart` resolve per provider.
 
 ### The `--json` envelope
 
@@ -190,17 +279,16 @@ Packs use the `SKILL.md` frontmatter format. The prompt carries a relevance-rank
 reports the outcome:
 
 ```json
-{"ok": true, "answer": "...", "model": "qwen2.5-coder:7b", "session": "default", "tools": ["read_file"], "error": null, "error_code": null}
+{"ok": true, "answer": "...", "model": "qwen3-coder:30b", "session": "default", "tools": ["read_file"], "error": null, "error_code": null}
 ```
 
 `ok` is the outcome of the *turn*, not of the command. A turn that died
 mid-flight used to hand back its error text as the answer with `ok: true`, so a
-caller could not tell a finished run from a throttled one — a benchmark
-harness scored a rate-limited run as a completed turn. `error_code` is a
-stable classification so a caller never has to parse prose:
-`rate_limit`, `auth`, `server_error`, `timeout`, `network`, `bad_request`,
-`turn_failed`, `job_failed`. Exit code 1 means the turn failed, 0 that it
-completed.
+caller could not tell a finished run from a throttled one — a benchmark harness
+scored a rate-limited run as a completed turn. `error_code` is a stable
+classification so a caller never has to parse prose: `rate_limit`, `auth`,
+`server_error`, `timeout`, `network`, `bad_request`, `turn_failed`, `job_failed`.
+Exit code 1 means the turn failed, 0 that it completed.
 
 ## Architecture
 
@@ -220,11 +308,22 @@ flowchart TB
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```
 
-Design bets that paid off: **deterministic grounding beats prompt instructions** (small models ignore rules but can't argue with injected facts), **text-JSON fallback** (coders emit tools as text over the OpenAI endpoint), **FTS5 over vectors** (zero deps, instant, no embedding server on a 4GB box), **parallel reads** (approval-gated tools stay serial; independent reads run concurrently with failures isolated), **capability profiles over hope** (known models declare their tool protocol; the router reads them instead of paying a probing 400).
+Design bets that paid off: **deterministic grounding beats prompt instructions**
+(small models ignore rules but cannot argue with injected facts), **text-JSON
+fallback** (coders emit tools as text over the OpenAI endpoint), **FTS5 over
+vectors** (zero deps, instant, no embedding server on a 4GB box), **parallel
+reads** (approval-gated tools stay serial; independent reads run concurrently
+with failures isolated), **capability profiles over hope** (known models declare
+their tool protocol; the router reads them instead of paying a probing 400).
 
 ## Safety
 
-Reads auto-run. Writes, deletes, and general shell need approval (inline `[y/N]` in TUI, prompt in CLI), HOME/`/tmp` only, ≤100KB, never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. Multi-tool turns with destructive actions get **one plan review** up front instead of per-tool prompts (silent in `--yes`/`/yolo`; denials execute nothing). `shell` hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, fork bombs even with approval. `read_url`/`web_search` block localhost/private IPs.
+**Approvals first.** Reads auto-run. Writes, deletes, and general shell need
+approval (inline card in the TUI, prompt in the CLI), HOME/`/tmp` only, ≤100KB,
+never `~/.ssh`, `~/.gnupg`, `/etc`, `/usr`. Multi-tool turns with destructive
+actions get one plan review up front instead of per-tool prompts. `shell`
+hard-refuses `rm -rf /`, `mkfs`, `dd` to devices, and fork bombs even with
+approval. `read_url`/`web_search` block localhost/private IPs.
 
 **Egress is deny-by-default.** Sidekick will not fetch a destination the model
 asked for until you allow that host. `sk init` asks once whether to enable web
@@ -250,29 +349,40 @@ which is governed on its own.
 Your model API endpoint and the MCP servers you configured are unaffected — you
 chose those, they are not something a prompt can talk the agent into adding.
 Fetch decisions are written to the ledger with the host and reason, visible via
-`sk egress` and `sk audit`. (Adding or removing an allowlist entry is a config
-change, not a fetch, so it is not itself a ledger row.)
+`sk egress` and `sk audit`.
 
 **The ceiling, stated plainly:** this governs fetches made *through the agent's
 tools*. A `shell` command running `curl` is not covered — no string denylist can
 be a network boundary. That is why shell still needs approval, and why
 [issue #329](https://github.com/Faisal-Fayaz/sidekick/issues/329) (OS-level
 sandboxing) is the real answer rather than another pattern list. See
-[`docs/egress.md`](docs/egress.md). API keys chmod 600, masked in output.
+[`docs/egress.md`](docs/egress.md).
 
-**Your data is private to your account.** `~/.sidekick` is `0700` and everything inside it is `0600` — the full transcript, shell commands the agent ran, checkpoints, and the last 100 prompts. It was created with the umask default before, which left `history.db` world-readable and two files world-*writable*; an existing install is tightened the first time you run any `sk` command. This is a local filesystem control: it does not protect against root, and it does not stop anything the agent itself can read.
+**Your data is private to your account.** `~/.sidekick` is `0700` and
+everything inside it is `0600` — transcript, shell commands, checkpoints, and the
+last 100 prompts. An existing install is tightened the first time you run any
+`sk` command. This is a local filesystem control: it does not protect against
+root, and it does not stop anything the agent itself can read.
 
 ## Tests
 
 ```bash
-uv run --python 3.12 --with ".[test]" pytest tests -q   # unit + regression + Textual pilot, no Ollama needed
+uv run --python 3.12 --with ".[test]" pytest tests -q
 ```
 
-The eval harness (`tests/test_eval.py`) locks in every past quality bug as an offline regression test. A suite-wide fixture guarantees tests never touch your live `~/.sidekick/`.
+The suite covers unit, regression, Textual pilot, property, and security tests
+with no Ollama needed. The eval harness (`tests/test_eval.py`) locks past quality
+bugs into offline regression tests, and a suite-wide fixture guarantees tests
+never touch your live `~/.sidekick/`.
+
+CI runs the suite on Python 3.12, 3.13, and 3.14 across Ubuntu and macOS, plus
+lint, type-check, build, coverage, and website checks.
 
 ## Config
 
-`~/.sidekick/config.toml` (`provider`, `model`, `base_url` override, `api_key`, …). Data stays home: `history.db`, `skills/`, `nudges.log`, `input_history`, `tui-errors.log`.
+`~/.sidekick/config.toml` holds `provider`, `model`, `base_url`, `api_key`, and
+the rest. Data stays home: `history.db`, `skills/`, `nudges.log`,
+`input_history`, `tui-errors.log`.
 
 | Env var | Effect |
 |---|---|
@@ -281,50 +391,71 @@ The eval harness (`tests/test_eval.py`) locks in every past quality bug as an of
 | `SIDEKICK_SPEND_CAP` | per-session USD cap, `0` = unlimited |
 | `SIDEKICK_REASONING_EFFORT` | reasoning effort for backends that support it |
 | `SIDEKICK_VERIFY_REPAIRS` | post-edit verify repair rounds (default `2`, `0` disables) |
-| `SIDEKICK_PROFILE` | load a named config profile (see `sk config --profiles`) |
+| `SIDEKICK_PROFILE` | load a named config profile |
 | `OPENCODE_API_KEY` | key for the `opencode` provider |
 | `SIDEKICK_TRUST_REPO=1` | **opt in to repo-supplied slash commands** |
 
 > **`SIDEKICK_TRUST_REPO` — why your repo's commands do nothing.** A cloned repo
-> ships its own `.sidekick/commands/*.md`, and a `!`cmd`` expansion inside one
-> reaches `sh -c` with no approval prompt. Those templates are therefore ignored
-> unless you set `SIDEKICK_TRUST_REPO=1` in your own shell. It is read from the
-> environment and never from repo config, so a repository cannot self-authorize
-> (#287). Commands in `~/.sidekick/commands/` are always loaded.
+> can ship `.sidekick/commands/*.md`, and a `!`cmd`` expansion inside one reaches
+> `sh -c` with no approval prompt. Those templates are ignored unless you set
+> `SIDEKICK_TRUST_REPO=1` in your own shell. It is read from the environment and
+> never from repo config, so a repository cannot self-authorize (#287). Commands
+> in `~/.sidekick/commands/` always load.
 
-**History budget:** the prompt budget bounds the **whole assembled prompt**, not just history — system prompt, auto-context, tool schemas, and a reservation for the reply are all measured and subtracted, then history gets what is left (#308). `history_budget_tokens` (default 3000) caps that share; over-budget sessions compact to a rolling summary via the current model (DB history stays complete). Lower it for small-context models.
+**History budget:** the prompt budget bounds the whole assembled prompt — system
+prompt, auto-context, tool schemas, and the reply reservation — then history gets
+what is left (#308). `history_budget_tokens` (default 3000) caps that share;
+over-budget sessions compact to a rolling summary via the current model (DB
+history stays complete). Lower it for small-context models.
 
-**Context window:** `context_window` (0 = take it from the model profile) sets the total window, and the same number is sent to Ollama as `num_ctx`, so the budget and the server cannot disagree. Local models default to 16k, frontier to 200k. The fixed cost alone — system prompt plus tool schemas — measures ~3,700 tokens, so a window below ~8k leaves no usable conversation. Raise it if you have VRAM to spare; the KV cache grows with it. Run `/context` to see where a turn's tokens actually go.
+**Context window:** `context_window` (0 = take it from the model profile) sets
+the total window, and the same number is sent to Ollama as `num_ctx`, so the
+budget and the server cannot disagree. Local models default to 16k, frontier to
+200k. The fixed cost alone — system prompt plus tool schemas — measures ~3,700
+tokens, so a window below ~8k leaves no usable conversation. Raise it if you
+have VRAM to spare; the KV cache grows with it. Run `/context` to see where a
+turn's tokens go.
 
-**Per-project config:** a `.sidekick.toml` in any repo layers over the global file (nearest one walking up from cwd). It may carry a `[project]` table only:
+**Per-project config:** a `.sidekick.toml` in any repo layers over the global
+file (nearest one walking up from cwd). It may carry a `[project]` table only:
 
 ```toml
 [project]
-docs = ["CONTRIBUTING.md", "docs/architecture.md"]  # injected into the prompt
+docs = ["CONTRIBUTING.md", "docs/egress.md"]  # injected into the prompt
 memory_namespace = "my-repo"                        # scopes this repo's memory
 ```
 
-**Nothing at the top level of a project file is honoured** — not `provider`, `model`, `max_steps`, `temperature`, `egress_allow`, or anything else. That is deliberate, not a gap: a repository you just cloned must not be able to steer the agent's model, budget, approvals, or network, so those keys live in `~/.sidekick/config.toml` or the environment only. The same applies to `[project].approved_commands` (shell approvals stay global).
-
-Every ignored key is reported rather than dropped quietly — a reduced `max_steps` in a project file is a *refusal*, not tuning, and it should not look otherwise:
-
-```console
-$ sk config --show
-provider=ollama
-project: /home/me/repo/.sidekick.toml
-  ignoring max_steps in .sidekick.toml (global config or env only)
-  ignoring max_step in .sidekick.toml (not a project-file setting; …)
-```
+**Nothing at the top level of a project file is honoured** — not `provider`,
+`model`, `max_steps`, `temperature`, `egress_allow`, or anything else. A repo
+you just cloned must not be able to steer the agent's model, budget, approvals,
+or network. Those keys live in `~/.sidekick/config.toml` or the environment
+only. The same applies to `[project].approved_commands` (shell approvals stay
+global). Every ignored key is reported rather than dropped quietly.
 
 `sk --cwd PATH` runs any command as if in that directory.
 
-**Project memory auto-discovery:** from the cwd upward, the first `SIDEKICK.md` / `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` found (root-down) is injected into the prompt automatically — no config needed for repos that already document themselves.
+**Project memory auto-discovery:** from the cwd upward, the first `SIDEKICK.md`
+/ `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` found (root-down) is injected into the
+prompt automatically.
 
-**Config profiles:** named `~/.sidekick/profiles/<name>.toml` files (e.g. work, personal, low-VRAM) replace `config.toml` when selected via `sk --profile NAME …` or `SIDEKICK_PROFILE=NAME` (env still wins, project files still layer). Manage with `sk config --profiles` (list), `sk config --save-profile NAME` (snapshot current non-secret settings — keys stay in keyring/env). Migrating: `cp ~/.sidekick/config.toml ~/.sidekick/profiles/work.toml`, trim it, and switch with the flag. `sk config --show` prints the active profile.
+**Config profiles:** named `~/.sidekick/profiles/<name>.toml` files replace
+`config.toml` when selected via `sk --profile NAME …` or
+`SIDEKICK_PROFILE=NAME` (env still wins, project files still layer). Manage with
+`sk config --profiles` (list) and `sk config --save-profile NAME` (snapshot
+current non-secret settings — keys stay in keyring/env).
+
+## Documentation
+
+- [Egress policy](docs/egress.md)
+- [Event hooks](docs/hooks.md)
+- [MCP client](docs/mcp-client.md)
+- [Plugins and declarative tools](docs/plugins.md)
 
 ## Roadmap
 
-See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, next milestone, done list). It changes by pull request only.
+See [`ROADMAP.md`](ROADMAP.md) — the shared plan (vision, next milestone, done
+list). It changes by pull request only. Contributions are welcome; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
