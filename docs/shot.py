@@ -1,8 +1,9 @@
 """Capture real TUI screenshots headless for the README. No LLM, no network.
 
-Deterministic by design: the capture runs against a throwaway HOME, seeds a few
-demo sessions, and clears the startup log so the images never leak the person
-running the script. The model shown is a display default; no model is called.
+The screenshots are curated demo sessions, not a recording of a live model
+call. The TUI itself is captured headless at a fixed size, against a throwaway
+HOME, so the images are deterministic and never leak the person running the
+script.
 
 Usage:
     uv run python docs/shot.py
@@ -23,29 +24,40 @@ os.environ["HOME"] = str(_SHOT_HOME)
 os.environ.setdefault("SIDEKICK_PROVIDER", "ollama")
 os.environ.setdefault("SIDEKICK_MODEL", "qwen3-coder:30b")
 
+from rich.markdown import Markdown  # noqa: E402
+
 from sk.store import save_message  # noqa: E402
 from sk.tui import SidekickTUI, _role  # noqa: E402
+from sk.tui import helpers as _tui_helpers  # noqa: E402
+
+# The log stamps every line with the wall clock. Freeze it so re-running the
+# script changes the capture only when the demo content changes.
+_tui_helpers._now = lambda: "09:41"  # noqa: E731
 
 THEME = os.getenv("SK_SHOT_THEME", "")
 SUFFIX = "-light" if THEME == "light" else ""
-SESSION = "demo-review"
+SIZE = (100, 30)
 
 DEMO_SESSIONS = {
+    "demo-tests": [
+        ("user", "why is test_run_json failing?"),
+        ("assistant", "The fixture assumes the old error shape."),
+    ],
     "demo-refactor": [
-        ("user", "extract the retry guard into a helper"),
+        ("user", "extract the retry guard"),
         ("assistant", "I'll move the check out of the loop and add a unit test."),
     ],
-    "demo-tests": [
-        ("user", "why is test_run_json failing on 3.12?"),
-        ("assistant", "The fixture assumes the old error envelope shape."),
-    ],
     "demo-brief": [
-        ("user", "morning brief: what changed overnight?"),
+        ("user", "morning brief"),
         ("assistant", "Two CI failures, one dirty worktree, and a stale branch."),
     ],
-    SESSION: [
-        ("user", "review the retry changes in src/sk/auth.py"),
-        ("assistant", "Found one blocker and one missing test."),
+    "demo-review": [
+        ("user", "review working-tree diff"),
+        ("assistant", "One test gap and one diff to verify."),
+    ],
+    "demo-fix": [
+        ("user", "add Retry-After cap test"),
+        ("assistant", "Added the regression; production already clamps."),
     ],
 }
 
@@ -58,63 +70,114 @@ def seed_sessions() -> None:
         time.sleep(0.02)  # keep list_sessions' MAX(ts) ordering stable
 
 
-def _write_intro(log) -> None:
+def _write(log, text: str, role: str = "") -> None:
+    _role(log, role, "")
+    log.write(Markdown(text))
+
+
+def _start(log) -> None:
     log.clear()
-    log.write("sidekick online. Enter sends · ctrl+j newline · ctrl+g to talk · F3 sessions")
+    log.write("sidekick online · Enter sends · ctrl+j newline · F3 sessions")
+
+
+def _write_fix(log, app: SidekickTUI) -> None:
+    """A complete write-and-verify turn, including the plan approval card."""
+    log.clear()
+    _role(log, "you", "add the Retry-After cap test and run it")
+    _role(log, "sidekick", "I'll add one regression and run it; `_post` already clamps.")
+    # This is the same panel `_review_plan` shows for a multi-tool turn.
+    app._ask_approval(
+        "plan",
+        "2 tools",
+        "1. write_file -> tests/test_retry_after.py\n"
+        "2. shell -> pytest -q tests/test_retry_after.py",
+    )
+    _role(log, "you", "y")
+    _role(log, "sys", "approved: plan -> 2 tools")
+    _role(log, "tool", "○ tool: write_file {'path': 'tests/test_retry_after.py'}")
+    _role(log, "tool", "○ tool: shell {'cmd': 'pytest -q tests/test_retry_after.py'}")
+    _write(
+        log,
+        "Added `tests/test_retry_after.py`. It returns a 429 with "
+        "`Retry-After: 999999` and asserts the retry sleeps 30s, not 999999s.\n\n"
+        "```python\n"
+        "assert sleeps == [30]   # not 999999\n"
+        "```\n\n"
+        "`pytest -q tests/test_retry_after.py` → **1 passed in 0.31s**",
+        "sidekick",
+    )
 
 
 def _write_review(log) -> None:
-    _role(log, "you", "review the retry changes in src/sk/auth.py")
-    _role(log, "tool", "○ tool: read_file {'path': 'src/sk/auth.py'}")
-    _role(log, "sidekick", "")
-    log.write("Found one blocker. _retry_after trusts the Retry-After header without a ceiling,")
-    log.write("so a hostile upstream can park the agent for hours.")
-    log.write("")
-    log.write("Fix: clamp it to MAX_RETRY_AFTER and add a regression test for a")
-    log.write("Retry-After: 999999 response.")
+    """A review of the diff produced by the fix turn above."""
+    _start(log)
+    _role(log, "you", "/review")
+    _write(
+        log,
+        "Reviewed **1 file (+18 −0)** against `HEAD`.\n\n"
+        "**MAJOR** `tests/test_retry_after.py:14` — only `429` is covered; "
+        "`_post()` also retries `529`.\n\n"
+        "```diff\n"
+        '-@pytest.mark.parametrize("status", [429])\n'
+        '+@pytest.mark.parametrize("status", [429, 529])\n'
+        "```\n\n"
+        "**Verdict: needs work** — parametrize both retry statuses, then ship.",
+        "sidekick",
+    )
 
 
 def _write_sessions_demo(log) -> None:
     """Short enough to fit beside the 44-column drawer without clipping."""
     log.clear()
     log.write("sidekick online · F3 sessions")
-    _role(log, "you", "review src/sk/auth.py")
-    _role(log, "tool", "○ read_file")
-    _role(log, "sidekick", "")
-    log.write("Found one blocker: clamp Retry-After.")
+    _role(log, "you", "/review")
+    _write(
+        log,
+        "Reviewed **1 file (+18 −0)** against `HEAD`.\n\n"
+        "**MAJOR** `tests/test_retry_after.py:14` — add `529`.",
+        "sidekick",
+    )
+
+
+async def _apply_light_theme(app, pilot) -> None:
+    if THEME != "light":
+        return
+    from sk.tui.theme import LIGHT_NAME, install_sidekick_theme
+
+    install_sidekick_theme(app, LIGHT_NAME)
+    app.refresh(repaint=True, layout=True)
+    app.screen.refresh(repaint=True, layout=True)
+    await pilot.pause()
 
 
 async def main() -> None:
-    app = SidekickTUI(session=SESSION)
-    async with app.run_test(size=(100, 30)) as pilot:
+    app = SidekickTUI(session="demo-fix")
+    async with app.run_test(size=SIZE) as pilot:
         await pilot.pause()  # let on_mount register the themes before switching
         app._sub()  # this also applies the configured theme
-        if THEME == "light":
-            from sk.tui.theme import LIGHT_NAME, install_sidekick_theme
-
-            install_sidekick_theme(app, LIGHT_NAME)
-            app.refresh(repaint=True, layout=True)
-            app.screen.refresh(repaint=True, layout=True)
-            await pilot.pause()
+        await _apply_light_theme(app, pilot)
         log = app.query_one("#chat-log")
-        _write_intro(log)
-        _write_review(log)
-        await pilot.pause()
-        await pilot.pause()
 
+        _write_fix(log, app)
+        await pilot.pause()
+        await pilot.pause()
+        app.save_screenshot(f"docs/tui-chat{SUFFIX}.svg")
+        print("shot 1: write + verify")
+
+        app.session = "demo-review"
+        app._sub()
+        await _apply_light_theme(app, pilot)
+        _write_review(log)
         area = app.query_one("#chat-input")
         area.focus()
         area.text = "/rev"
         await pilot.pause()
         await pilot.pause()
         app.save_screenshot(f"docs/tui-complete{SUFFIX}.svg")
-        print("shot 1: complete popup")
+        print("shot 2: review + autocomplete")
 
         area.text = ""
         await pilot.pause()
-        app.save_screenshot(f"docs/tui-chat{SUFFIX}.svg")
-        print("shot 2: conversation")
-
         app.action_toggle_sessions()
         await pilot.pause()
         _write_sessions_demo(log)

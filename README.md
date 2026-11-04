@@ -35,17 +35,22 @@ local server.
 
 ## See it
 
-Slash autocomplete, now with the developer commands one keystroke away:
+**Review the working-tree diff before you commit.** `/review` sends the actual
+diff to your model and asks for `file:line`, severity, and a concrete fix.
+`/diff` prints the same diff without a model call.
 
-![Slash autocomplete showing /review](docs/tui-complete.svg)
+![Terminal showing /review autocomplete, a MAJOR finding with file and line, and a suggested diff](docs/tui-complete.svg)
 
-A grounded answer with real tools, real files, and streamed Markdown:
+**Approve the plan, then verify the result.** Sidekick reads the repo, asks you
+to approve the multi-tool plan, writes the test, runs it, and reports the
+result. Reads run automatically; writes and shell commands ask first.
 
-![Grounded answer with read_file](docs/tui-chat.svg)
+![Terminal showing plan approval, a test file write, pytest, and a passing result](docs/tui-chat.svg)
 
-*Real headless captures from [`docs/shot.py`](docs/shot.py), not mockups. The
-captures use `qwen3-coder:30b` as a display model; `sk init` picks one for your
-hardware. A marketing/docs site lives in [`website/`](website/).*
+*Real headless captures of the shipped TUI from [`docs/shot.py`](docs/shot.py).
+The demo sessions are seeded and no model is called; `qwen3-coder:30b` is a
+display model, and `sk init` picks one for your hardware. A marketing/docs site
+lives in [`website/`](website/).*
 
 ## Why Sidekick
 
