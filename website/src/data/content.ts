@@ -105,7 +105,7 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Skills & Daemon', cmd: 'sk skills · skills-search · skills-install NAME', what: 'SKILL.md packs incl. registry + superpowers.' },
   { group: 'Skills & Daemon', cmd: 'sk plugins', what: 'User-defined tools via TOOLS.md.' },
   { group: 'Skills & Daemon', cmd: 'sk daemon [--once] · daemon-install [--schedule TXT]', what: 'Background watcher (systemd/launchd, calendar schedules).' },
-  { group: 'Skills & Daemon', cmd: 'sk mcp [--allow-writes]', what: 'MCP server over stdio. 19 tools, safe defaults. Reads auto-run.' },
+  { group: 'Skills & Daemon', cmd: 'sk mcp [--allow-writes]', what: 'MCP server over stdio. 21 tools, safe defaults. Reads auto-run.' },
   { group: 'Skills & Daemon', cmd: 'sk mcp-servers', what: 'List configured MCP client servers (local stdio + remote Streamable HTTP) with a live tool check.' },
   { group: 'Skills & Daemon', cmd: 'sk hooks [--check]', what: 'Event hooks: SessionStart/PreToolUse/PostToolUse shell handlers; a PreToolUse deny blocks the tool fail-closed.' },
   { group: 'Skills & Daemon', cmd: '/your-command (custom)', what: 'Markdown files in ~/.sidekick/commands (or project .sidekick/commands) become /commands with {{args}} templates.' },
@@ -153,7 +153,7 @@ export const FEATURES = [
   },
   {
     icon: '⚙',
-    title: '19 tools, gated right',
+    title: '21 tools, gated right',
     body: 'Reads auto-run. Writes, deletes and shell need approval. HOME//tmp only, ≤100KB, hard-refusals on rm -rf /, mkfs, fork bombs. SSRF guards on fetchers.',
     tag: 'safety gates',
   },
@@ -301,7 +301,7 @@ export const FAQS = [
   },
   {
     q: 'How do I use Claude / ChatGPT with it?',
-    a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 19 tools to Claude Desktop over stdio. The reverse works too: `sk mcp-servers` consumes external MCP servers as approval-gated `mcp__*` agent tools.',
+    a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 21 tools to Claude Desktop over stdio. The reverse works too: `sk mcp-servers` consumes external MCP servers as approval-gated `mcp__*` agent tools.',
   },
   {
     q: 'Is it safe to let it run shell?',

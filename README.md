@@ -2,7 +2,7 @@
 
 # Sidekick
 
-**A local-first terminal agent for developers — chat, code, and 19 tools, on your hardware.**
+**A local-first terminal agent for developers — chat, code, and 21 tools, on your hardware.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
@@ -83,7 +83,7 @@ without handing an unattended model the keys.
 
 | Task | What you use |
 |---|---|
-| Explore a repo | `list_dir`, `read_file` (with line ranges), and the read-only `exec` allowlist |
+| Explore a repo | `list_dir`, `read_file` (with line ranges), `search_code`, `glob_files`, and the read-only `exec` allowlist |
 | Edit safely | `write_file` / `edit_file` with approval; `/plan` to propose; `/rewind` to undo |
 | Inspect changes | `/diff` and `/review` inside a session |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
@@ -92,6 +92,11 @@ without handing an unattended model the keys.
 
 The TUI and plain-text REPL share every command, so a scripted fallback and an
 interactive session behave the same way.
+
+`search_code` uses `rg` when installed, then `grep`, then a Python walker. It
+skips hidden paths, symlinks, binaries, and `.gitignore` matches; results default
+to 50 (hard cap 200) and say when they are truncated. `glob_files` returns at
+most 200 sorted paths. Neither needs approval.
 
 ## Chat
 
@@ -163,7 +168,7 @@ Recordings are temp files and are deleted after each take.
 sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps
 ```
 
-All 19 tools, same safety policy: SSRF guards, write blocklists, and hard
+All 21 tools, same safety policy: SSRF guards, write blocklists, and hard
 refusals apply unchanged. Reads auto-run; shell/writes/delete need
 `--allow-writes`, otherwise they return a clean denied error. Stdout carries
 protocol only.
@@ -261,7 +266,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 |---|---|
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` | Skill packs: registry + superpowers |
 | `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
-| `sk mcp [--allow-writes]` | MCP server over stdio (19 tools, safe defaults) |
+| `sk mcp [--allow-writes]` | MCP server over stdio (21 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see [`docs/mcp-client.md`](docs/mcp-client.md)) |
 | `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules) |
 
@@ -308,7 +313,7 @@ flowchart TB
     CLI --> AGENT[agent.py: stream → tools → synthesize]
     TUI --> AGENT
     AGENT --> GROUND[deterministic grounding: ~/paths, URLs,\nsysinfo — injected before the model sees the prompt]
-    AGENT --> TOOLS[tools/: 19 tools, allowlists,\nhard-blocks, SSRF guard]
+    AGENT --> TOOLS[tools/: 21 tools, allowlists,\nhard-blocks, SSRF guard]
     AGENT --> MEM[(store.py: history, memories FTS5,\ntodos, shell log)]
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```

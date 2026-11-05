@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .read import tool_exec, tool_list_dir, tool_read_file, tool_sysinfo
+from .search import tool_glob_files, tool_search_code
 from .shell import tool_shell, tool_shell_session
 from .web import tool_read_url, tool_web_search
 from .write import (
@@ -85,6 +86,58 @@ TOOLS_SCHEMA = [
                     },
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_code",
+            "description": "Search text files for a regex without approval. Returns file:line snippets. Uses rg when installed, then grep, then a Python walker. Respects .gitignore; skips hidden paths, symlinks, binaries, and sensitive roots. Results are capped.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex to search for, e.g. 'def tool_read_file'",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search, default '.'",
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Optional glob filter, e.g. '*.py' or '!tests/**'",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200,
+                        "description": "Maximum matches to return (default 50, hard cap 200)",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "glob_files",
+            "description": "List files matching a glob without approval. Sorted and capped. Respects .gitignore; skips hidden paths, symlinks, and sensitive roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob to match, e.g. '**/*.py' or 'src/**'",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory or file to search, default '.'",
+                    },
+                },
+                "required": ["pattern"],
             },
         },
     },
@@ -361,6 +414,18 @@ def dispatch_tool(name: str, args: dict) -> str:
             start_line=args.get("start_line"),
             end_line=args.get("end_line"),
             max_chars=args.get("max_chars", 8000),
+        )
+    if name == "search_code":
+        return tool_search_code(
+            str(args.get("pattern", "")),
+            path=str(args.get("path", ".")),
+            glob=args.get("glob"),
+            max_results=args.get("max_results", 50),
+        )
+    if name == "glob_files":
+        return tool_glob_files(
+            str(args.get("pattern", "")),
+            path=str(args.get("path", ".")),
         )
     if name == "exec":
         return tool_exec(str(args.get("cmd", "")))

@@ -26,6 +26,7 @@ from .registry import (
     missing_required,
     tools_schema,
 )
+from .search import tool_glob_files, tool_search_code
 from .shell import (
     SHELL_BLOCK_PATTERNS,
     _check_shell,
@@ -66,10 +67,12 @@ __all__ = [
     "tool_delete_file",
     "tool_edit_file",
     "tool_exec",
+    "tool_glob_files",
     "tool_list_dir",
     "tool_make_dir",
     "tool_read_file",
     "tool_read_url",
+    "tool_search_code",
     "tool_shell",
     "tool_sysinfo",
     "tool_web_search",
