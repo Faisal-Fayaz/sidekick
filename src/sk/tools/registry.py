@@ -63,10 +63,27 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a small text file. Use for inspecting config/code.",
+            "description": "Read a small text file. Use start_line/end_line for an exact 1-based numbered slice (e.g. 40-80); with no range, returns from the beginning up to max_chars.",
             "parameters": {
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "File path to read"}},
+                "properties": {
+                    "path": {"type": "string", "description": "File path to read"},
+                    "start_line": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "First line to return, 1-based. Defaults to 1 when end_line is set.",
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Last line to return, inclusive. Defaults to EOF when start_line is set.",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Maximum characters of file content returned (default 8000). Range reads keep whole numbered lines.",
+                    },
+                },
                 "required": ["path"],
             },
         },
@@ -339,7 +356,12 @@ def dispatch_tool(name: str, args: dict) -> str:
     if name == "list_dir":
         return tool_list_dir(str(args.get("path", ".")))
     if name == "read_file":
-        return tool_read_file(str(args.get("path", "")))
+        return tool_read_file(
+            str(args.get("path", "")),
+            start_line=args.get("start_line"),
+            end_line=args.get("end_line"),
+            max_chars=args.get("max_chars", 8000),
+        )
     if name == "exec":
         return tool_exec(str(args.get("cmd", "")))
     if name == "shell":
