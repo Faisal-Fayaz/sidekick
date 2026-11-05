@@ -130,7 +130,51 @@ def tool_list_dir(path: str = ".") -> str:
         return f"Error: {e}"
 
 
-def tool_read_file(path: str, max_chars: int = 8000) -> str:
+MAX_READ_BYTES = 500_000
+MAX_RANGE_LINES = 2_000
+
+
+def _parse_optional_int(value: object, name: str) -> tuple[int | None, str | None]:
+    """Parse a JSON-ish integer argument. Empty/None means absent."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None, None
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None, f"Error: {name} must be an integer."
+    try:
+        return int(value), None
+    except Exception:
+        return None, f"Error: {name} must be an integer."
+
+
+def _range_body(rows: list[str], max_chars: int) -> tuple[str, int, bool]:
+    """Join numbered rows, keeping whole lines under max_chars when possible.
+
+    Returns (body, returned_line_count, truncated). If the first row alone is
+    longer than the cap, it is cut; the header/footer still report truncation.
+    """
+    body = "\n".join(rows)
+    if len(body) <= max_chars:
+        return body, len(rows), False
+    cut = body.rfind("\n", 0, max_chars)
+    if cut < 0:
+        return body[:max_chars], 1, True
+    body = body[:cut]
+    return body, body.count("\n") + 1, True
+
+
+def tool_read_file(
+    path: str,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    max_chars: int = 8000,
+) -> str:
+    """Read a text file, optionally as an exact 1-based numbered line range.
+
+    With no range, the historical behavior is preserved: return the file from
+    the beginning, capped at max_chars chars. With start_line/end_line, return
+    only those lines, each prefixed with its line number, plus a header and
+    explicit truncation/clamping metadata. Binary and oversized files refuse.
+    """
     try:
         checked = _check_read_path(path)
         if isinstance(checked, str):
@@ -140,12 +184,81 @@ def tool_read_file(path: str, max_chars: int = 8000) -> str:
             return f"Error: {p} does not exist."
         if p.is_dir():
             return f"Error: {p} is a directory, use list_dir."
-        if p.stat().st_size > 500_000:
-            return f"Error: file too large ({p.stat().st_size} bytes), refusing."
+        size = p.stat().st_size
+        if size > MAX_READ_BYTES:
+            return f"Error: file too large ({size} bytes), refusing."
+        with p.open("rb") as fh:
+            sample = fh.read(8192)
+        if b"\x00" in sample:
+            return f"Error: {p} looks binary (NUL byte), refusing."
+
+        limit, err = _parse_optional_int(max_chars, "max_chars")
+        if err:
+            return err
+        if limit is None:
+            limit = 8000
+        if limit < 1:
+            return "Error: max_chars must be positive."
         text = p.read_text(errors="replace")
-        if len(text) > max_chars:
-            text = text[:max_chars] + f"\n... [truncated {len(text) - max_chars} chars]"
-        return text
+
+        # No range: preserve the original raw output and truncation marker.
+        if start_line is None and end_line is None:
+            if len(text) > limit:
+                text = text[:limit] + f"\n... [truncated {len(text) - limit} chars]"
+            return text
+
+        start, err = _parse_optional_int(start_line, "start_line")
+        if err:
+            return err
+        end, err = _parse_optional_int(end_line, "end_line")
+        if err:
+            return err
+        if start is None:
+            start = 1
+        if start < 1:
+            return "Error: start_line must be >= 1."
+        if end is not None and end < 1:
+            return "Error: end_line must be >= 1."
+
+        lines = text.splitlines()
+        total = len(lines)
+        if total == 0:
+            return f"Error: {p} is empty (0 lines)."
+        if start > total:
+            return f"Error: start_line {start} is beyond end of file ({total} lines)."
+
+        requested_end = end
+        if end is None:
+            end = total
+        if end < start:
+            return f"Error: end_line {end} is before start_line {start}."
+        clamped = end > total
+        if clamped:
+            end = total
+        selected = end - start + 1
+        line_capped = selected > MAX_RANGE_LINES
+        if line_capped:
+            end = start + MAX_RANGE_LINES - 1
+
+        rows = [f"{n}: {lines[n - 1]}" for n in range(start, end + 1)]
+        body, returned, char_capped = _range_body(rows, limit)
+        last = start + returned - 1
+        remaining = selected - returned
+
+        meta = f"{returned} line" + ("s" if returned != 1 else "")
+        if clamped:
+            meta += f"; end_line {requested_end} clamped to {total}"
+        if line_capped:
+            meta += f"; line cap {MAX_RANGE_LINES} reached"
+        if char_capped:
+            meta += f"; char cap {limit} reached"
+
+        out = f"{p}: lines {start}-{last} of {total} ({meta})\n{body}"
+        if remaining:
+            out += f"\n... [truncated before line {last + 1}; {remaining} lines not shown]"
+        elif char_capped:
+            out += f"\n... [line truncated at {limit} chars]"
+        return out
     except Exception as e:
         return f"Error: {e}"
 

@@ -83,7 +83,7 @@ without handing an unattended model the keys.
 
 | Task | What you use |
 |---|---|
-| Explore a repo | `list_dir`, `read_file`, and the read-only `exec` allowlist |
+| Explore a repo | `list_dir`, `read_file` (with line ranges), and the read-only `exec` allowlist |
 | Edit safely | `write_file` / `edit_file` with approval; `/plan` to propose; `/rewind` to undo |
 | Inspect changes | `/diff` and `/review` inside a session |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
