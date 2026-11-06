@@ -28,10 +28,10 @@ def test_initialized_notification_silent():
     )
 
 
-def test_tools_list_all_nineteen():
+def test_tools_list_all_twenty_one():
     out = _req("tools/list")
     tools = out["result"]["tools"]
-    assert len(tools) == 19
+    assert len(tools) == 21
     for t in tools:
         assert set(t) >= {"name", "description", "inputSchema"}
         assert isinstance(t["inputSchema"], dict)
@@ -114,7 +114,7 @@ def test_batch_mixed():
     ]
     out = json.loads(mcp.handle_line(json.dumps(batch)))
     assert isinstance(out, list) and len(out) == 2  # notification answered with silence
-    assert out[0]["id"] == 1 and len(out[0]["result"]["tools"]) == 19
+    assert out[0]["id"] == 1 and len(out[0]["result"]["tools"]) == 21
     assert out[1]["result"]["isError"] is False
 
 

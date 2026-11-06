@@ -7,7 +7,7 @@ from sk.cli.approvers import _make_approver, _make_approver_state, _make_plan_re
 from sk.config import Config
 
 WRITES = ["write_file", "edit_file", "delete_file", "make_dir", "shell"]
-READS = ["exec", "read_file", "list_dir", "sysinfo"]
+READS = ["exec", "read_file", "list_dir", "sysinfo", "search_code", "glob_files"]
 
 
 def _cfg():
