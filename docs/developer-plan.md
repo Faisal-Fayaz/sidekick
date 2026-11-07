@@ -1,53 +1,79 @@
 # Sidekick Developer Plan
 
-**Status:** Accepted for `v0.31.0` Phase 1 — no implementation started
+**Status:** Accepted for `v0.31.0` Phase 1 — implementation in progress
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Baseline:** `abfa95d` on `main` (audit baseline; accepted at `780c8bd`)
-**Baseline release:** `0.30.0`, 1,467 tests, 80.01% coverage, 19 tools
+**Revised:** 2026-11-07 — review is an additive developer workstream, not a
+product pivot; adds the advisory worth-it layer and the developer capability
+ladder.
+**Baseline:** `a46127e` on `main` (current at revision; audit baseline
+`abfa95d`, accepted at `780c8bd`)
+**Baseline release:** `0.30.0`, 1,504 tests, 21 tools
 **Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6)
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
-> holds the detailed design and accepted defaults behind `v0.31.0`. The first
-> six backlog items are tracked in the v0.31.0 milestone.
+> holds the detailed design and accepted defaults behind the developer
+> workstream. The first six review-foundation items are tracked in the v0.31.0
+> milestone.
+
+> **Revision note (2026-11-07).** The first accepted draft framed review as a
+> product pivot ("turn Sidekick into a developer agent", "the public story is
+> review, not an assistant with 19 tools"). That framing is withdrawn.
+> Sidekick stays a broad local-first terminal agent; review is the first
+> developer feature in a growing developer workstream. The engineering detail
+> below still applies, with the scope and identity corrections marked inline.
 
 ---
 
 ## 0. Executive summary
 
-Turn Sidekick from a broad local-first assistant into a **local-first developer
-agent with one defensible flagship: evidence-based code review and an editable
-review harness**.
+Add a **developer workstream** to Sidekick, beginning with **evidence-based code
+review** as its first flagship capability. Sidekick remains a broad local-first
+terminal agent: chat, code intelligence, memory, web, voice, skills, MCP, and
+the approval/audit spine stay first-class. Review is a new feature, not a new
+identity, and it must not narrow the harness to review.
 
-The plan is deliberately narrow:
+The first developer phase is deliberately narrow **in scope, not in product**:
 
 1. **See the code** — add code search, repo maps, and useful file reading.
 2. **Judge the code** — build a real review engine that produces evidence-backed
-   findings.
+   findings, plus an advisory worth-it assessment of the change itself.
 3. **Prove the code** — run project checks and feed real diagnostics back into
    the agent.
 4. **Let teams shape it** — make the review harness layered, editable,
    inspectable, and testable.
 
-The review wedge ships before sandboxing, IDE integration, team SaaS, or
+The review workstream ships before sandboxing, IDE integration, team SaaS, or
 subagents because review is **read-only** and can be made safe today. It also
-fits Sidekick's existing strengths: local-first execution, approval gates,
+extends Sidekick's existing strengths: local-first execution, approval gates,
 auditability, and small-model-friendly design.
+
+**Review is the first rung, not the whole ladder.** Later developer
+capabilities — verification, guided fixes, refactors, PR prep, codebase
+explanation — reuse the same policy packs, gates, and eval culture. The
+sequencing rule is one workflow excellent at a time; the product rule is that
+the assistant stays whole while each rung is added.
 
 **Success looks like this:**
 
 - A developer runs `sk review --base main` on a real repository and gets a
   concise review with file:line evidence, severity, and a concrete fix.
+- A branch review gets an honest, advisory answer to "is this change worth
+  making, and is this the smallest version of it?" — backed by the diff and the
+  stated intent, not by vibes.
 - A team commits `.sidekick/review.toml` and can see exactly which rules ran,
   which were ignored, and why.
 - A maintainer changes a rule and immediately sees its effect on a seeded-bug
   corpus.
 - It works fully offline with a local model; cloud models are optional.
 - The output is trustworthy enough to use in CI.
+- A user who never runs `sk review` still gets the same broad assistant; no
+  capability is removed or demoted to make room for review.
 
-**Not in this plan:** general coding-agent parity, autonomous commits/pushes, an
-IDE extension in v1, team SaaS, subagents, or Windows support. Those are later
-bets.
+**Not in this phase:** general coding-agent parity, autonomous commits/pushes,
+an IDE extension in v1, team SaaS, subagents, or Windows support. These are
+later bets, not permanent exclusions; the developer ladder in §5.1 names the
+next candidates.
 
 ---
 
@@ -63,7 +89,7 @@ bets.
   before the model; outside content fenced as untrusted data.
 - **Small-model discipline:** text-JSON tool fallback, capability profiles,
   token budgeting, compaction, failure circuit breakers.
-- **Test culture:** 1,467 tests, Hypothesis property tests, security regression
+- **Test culture:** 1,504 tests, Hypothesis property tests, security regression
   tables, coverage floor, CI watchdog, trusted PyPI publishing.
 - **Surfaces:** CLI, TUI, voice, MCP server and client, daemon/jobs, skills,
   plugins, checkpoints, profiles.
@@ -72,16 +98,14 @@ bets.
 
 | Gap | Evidence |
 |---|---|
-| No approval-free code search | `exec` has no `grep`/`rg`; the agent must run `shell rg` and interrupt the user |
-| Weak file reading | `read_file` returns the first 8KB with no line range or offset |
-| No repo map or symbols | No code-aware navigation or outline |
+| No repo map or symbols | No code-aware navigation or outline (`search_code`, `glob_files`, and line-range `read_file` shipped in #398/#399) |
 | No test/lint/typecheck loop | Post-edit verification only compiles edited Python files |
-| Review is a prompt wrapper | `/review` = `git diff HEAD`, 12k-char cap, no targets, chunking, or structured output |
+| Review is a prompt wrapper | `/review` = `git diff HEAD`, 12k-char cap, no targets, chunking, structured output, or change-level assessment |
 | Default step budget is too low | Local and unknown models get 5 steps; named frontier profiles get 15; the Harbor adapter overrides to 40 |
 | No provider abstraction | Anthropic backend reimplements the agent loop and imports private symbols (#312) |
 | Security ceiling | No OS sandbox (#329); `shell curl` bypasses egress; hooks use `shell=True` (#268) |
 | Maintainability debt | `agent.py` is 3,095 lines; TUI 1,880; broad excepts and lenient type gates (#270) |
-| Docs drift | Website says 1,399 tests; actual is 1,467. Changelog stops at 0.29.0. Portfolio says 1,212 tests/0.29.0 |
+| Docs drift | Website hero says 1,399 tests; actual is 1,504. Website roadmap done-list stops at 0.29.0. Portfolio says 1,212 tests/0.29.0 |
 
 ### Constraints to respect
 
@@ -90,7 +114,9 @@ bets.
   execute.
 - Keep small-model behavior viable; deterministic checks must carry some of the
   review burden.
-- Do not expand into five new surfaces; make one workflow excellent.
+- Ship one workflow excellently at a time, but do not remove or demote the
+  assistant surfaces to make room. Developer capabilities are added as packs on
+  the shared harness, not as a replacement for it.
 
 ---
 
@@ -98,16 +124,18 @@ bets.
 
 ### One-liner
 
-> **The local-first developer agent for code you cannot send to the cloud — with
-> review rules you can inspect and edit.**
+> **The local-first terminal agent for developers — chat, code, and
+> evidence-backed review on your hardware, with review rules you can inspect
+> and edit.**
 
 ### Target user
 
-**Primary:** an individual developer or consultant working in a privacy-sensitive
-environment, using a local model or a BYOK cloud model.
+**Primary:** an existing Sidekick developer who wants review in the same
+local-first surface as chat, code reading/editing, shell, and memory.
 
-**Secondary:** a small team that wants code review without sending source to a
-third-party service, and wants rules checked into the repo.
+**Secondary:** a privacy-sensitive individual or small team that starts with
+review (no source sent to a third-party service, rules checked into the repo)
+and stays for the assistant.
 
 **Not the initial target:** enterprises needing SSO, RBAC, and audit exports.
 That is a later phase.
@@ -117,9 +145,11 @@ That is a later phase.
 - It is **read-only**, so it can ship before sandboxing.
 - It is **recurring**, not a one-off demo.
 - It is **privacy-sensitive**, which is exactly where local-first wins.
-- It is **team-specific**, which makes an editable harness valuable.
+- It is **team-specific**, which makes an editable review pack valuable.
 - It produces a clear artifact — findings — that can be measured.
 - It demonstrates the policy spine instead of merely claiming it.
+- It **extends** the existing assistant instead of replacing it; the same repo,
+  model, approval gates, audit trail, and memory serve every workflow.
 
 ### Product principles
 
@@ -136,14 +166,23 @@ That is a later phase.
 7. **Small-model-friendly.** Deterministic checks and tight context do the
    heavy lifting; the model adds judgment.
 8. **Measure quality.** A rule change is not "better" until the corpus says so.
+9. **Additive, not reductive.** New developer features must not remove, demote,
+   or reframe the assistant. They share the same harness and the same policy
+   spine.
+10. **Advisory on judgment.** The worth-it layer may challenge, inform, and
+    recommend. It never blocks a human who has decided, and only concrete
+    evidence-backed findings may gate CI.
 
 ---
 
-## 3. The product: three loops
+## 3. The review workstream: four loops
 
 ```text
-target diff
+target diff + intent
     |
+    v
+[0] Worth-it check     --->  stated problem, alternatives, cost, case against
+    |                         (advisory; never gates)
     v
 [1] Code intelligence  --->  changed code + surrounding context + repo map
     |
@@ -151,7 +190,7 @@ target diff
 [2] Review engine      --->  findings + evidence + severity
     |          ^
     |          |
-    |     editable harness
+    |     editable review pack
     |
     v
 [3] Verification loop  --->  tests / lint / typecheck / diagnostics
@@ -160,12 +199,16 @@ target diff
 Markdown / JSON / SARIF / CI exit code
 ```
 
+- **Challenge:** is the change itself worth making, and is this the smallest
+  version of it? The review-side counterpart of the agent's CHALLENGE doctrine.
 - **See:** code search, line-range reads, repo map.
-- **Judge:** review engine plus layered harness.
+- **Judge:** review engine plus layered review pack.
 - **Prove:** project checks and real diagnostics.
 
-The harness is the moat. The engine is the product. Code intelligence and
-verification are what make the engine credible.
+The review pack is the moat for review; the engine is the product of this
+workstream. Code intelligence and verification are what make the engine
+credible. None of them define the whole Sidekick harness: the assistant loop,
+doctrines, approvals, and audit remain shared core.
 
 ---
 
@@ -187,24 +230,42 @@ of a real diff.
 | Pull request | `sk review --pr 123` | Uses `gh` when available; clean error otherwise |
 | Path filter | `sk review --path src/` | Limit scope |
 
+#### Review modes
+
+| Mode | Flag | Default | Gates CI? |
+|---|---|---|---|
+| Code review | (default) | always | yes, via `--fail-on` |
+| Change assessment (worth-it) | `--assess` / `--no-assess` | on for `--base` and `--pr`; off for working-tree and staged reviews | no — always advisory |
+
+Working-tree review stays fast. Branch/PR review gets the extra intent check
+because that is where "should this exist?" is actionable. `--assess` forces it
+on; `--no-assess` turns it off.
+
 #### Pipeline
 
+0. **Resolve intent** — PR title/body, commit messages, branch name, and an
+   optional `--intent "..."`. If intent is absent, ask one round in interactive
+   runs; in CI, record explicit assumptions. Never invent a problem statement.
 1. **Resolve target** — repo root, base/head refs, merge-base, commit metadata.
 2. **Collect diff** — file status, renames, binary detection, mode changes,
    generated/lockfile filtering.
 3. **Budget and chunk** — estimate tokens per file; prioritize source files;
    chunk large diffs by hunk; cap total diff size.
 4. **Assemble context** — changed hunks, surrounding lines, related tests,
-   project rules, and a small repo map.
+   project rules, intent artifact, and a small repo map.
 5. **Run deterministic checks** — Python AST checks, optional `ruff`/`bandit`,
    project-provided checks. These findings are labeled `source=check`.
 6. **Run model review** — per-file or per-chunk structured review; map-reduce for
    large diffs; 2–4 concurrent requests.
-7. **Validate findings** — file exists, line is in the diff or provided context,
+7. **Assess the change** — when enabled, produce the advisory worth-it
+   assessment from intent + deterministic signals + diff summary. One per
+   review, not per file.
+8. **Validate findings** — file exists, line is in the diff or provided context,
    evidence quote exists, severity is valid, no duplicates.
-8. **Aggregate** — global summary, dedupe, sort by severity and file.
-9. **Report coverage** — files reviewed, files skipped and why, changed-line
-   coverage, token/latency budget.
+9. **Aggregate** — global summary, dedupe, sort by severity and file; attach the
+   assessment separately from findings.
+10. **Report coverage** — files reviewed, files skipped and why, changed-line
+    coverage, token/latency budget, assessment on/off and intent source.
 
 #### Finding schema
 
@@ -235,22 +296,89 @@ of a real diff.
   `tests`, `style`.
 - Every finding carries rule provenance and model/check source.
 
+#### Change assessment (the worth-it layer)
+
+The finding schema reviews *the code*. The assessment reviews *the decision*:
+is this change worth making at all, and is this the smallest change that solves
+the stated problem? It is the review-side counterpart of the agent's CHALLENGE
+doctrine (#341): challenge before work, verify the premise after work.
+
+It answers, with evidence:
+
+- What problem is this change claiming to solve, and where is that stated?
+- Is the change the smallest viable fix, or does it add machinery the problem
+  does not justify?
+- What alternatives were available (reuse, config, dependency, deletion)?
+- What does it cost to keep (dependencies, API surface, migration, tests)?
+- What would make the change *not* worth it?
+
+```json
+{
+  "assessment": {
+    "stated_intent": "Replace the ad-hoc retry loop with a queue because retries lose jobs on restart.",
+    "intent_source": "pr-body",
+    "signals": [
+      "auth/ is touched",
+      "new runtime dependency: rq",
+      "no test changes for the restart path",
+      "+412/-38 lines across 9 files"
+    ],
+    "questions": [
+      {
+        "question": "Is a queue required for one restart-safe job?",
+        "evidence": "The diff adds a broker, worker, and deployment config for a single hourly job.",
+        "alternative": "Persist the pending job to SQLite and re-run it at startup; no new service."
+      }
+    ],
+    "risks": [
+      "The queue adds an always-on worker the current deployment does not run."
+    ],
+    "verdict": "proceed-with-changes",
+    "confidence": "medium",
+    "assumptions": [
+      "Intent inferred from PR body; no design doc was linked."
+    ],
+    "advisory": true
+  }
+}
+```
+
+**Hard invariants:**
+
+- `advisory` is always `true`. The assessment never contributes to `--fail-on`,
+  exit codes, or SARIF.
+- Every claim cites a diff line, metadata field, or tool result. No fabricated
+  intent and no invented alternatives.
+- If no intent is available, emit `intent_source: "inferred"` plus explicit
+  assumptions; in interactive runs ask one round (max) before reviewing.
+- One assessment per review, not per file.
+- Deterministic signals (diff size, new dependencies, missing test changes,
+  migration/rollback, public API, security-sensitive paths) are computed
+  without the model; the model adds judgment only on top of them.
+- When the change is straightforward, the assessment is one line: "no material
+  worth-it concern; proceeding to line review." No ceremony, no interrogation.
+
 #### Output
 
 - **Markdown** default for humans.
 - **JSON** for automation.
-- **SARIF** for CI/code scanning integration.
-- Summary includes counts, files skipped, coverage, model, harness hash, latency,
+- **SARIF** for CI/code scanning integration (findings only; the assessment is
+  not a SARIF result).
+- Summary includes counts, files skipped, coverage, model, review-pack hash, latency,
   and token cost.
-- `--fail-on blocker|major|never` controls exit code for CI.
-- `--explain` shows the resolved harness and rule provenance; `--check-config`
-  validates it.
+- The **change assessment** appears before the findings in Markdown and as an
+  `assessment` object in JSON; it is visibly labelled advisory.
+- `--fail-on blocker|major|never` controls exit code for CI and ignores the
+  assessment.
+- `--explain` shows the resolved review pack, rule provenance, whether assessment
+  ran, and the intent source; `--check-config` validates it.
 
 #### Safety and performance
 
 - Read-only by default: no writes, no commands, no shell.
 - Project content is fenced as untrusted input.
-- No network beyond the configured model provider.
+- No network beyond the configured model provider; `--pr` may call `gh` to read
+  PR metadata, but never uploads source or diff content.
 - Cache per-file results by content hash to avoid re-reviewing unchanged files.
 - Hard caps: max files, max diff bytes, max findings, max runtime; all reported
   when hit.
@@ -265,7 +393,7 @@ src/sk/review/
   engine.py       # orchestration
   diff.py         # target resolution + diff collection
   context.py      # context assembly + budgeting
-  schema.py       # findings, validation, serialization
+  schema.py       # findings, assessment, validation, serialization
   harness.py      # layered config load/merge/explain
   output.py       # Markdown / JSON / SARIF
   rules/          # built-in deterministic checks
@@ -286,17 +414,31 @@ Reuse existing code where possible: `gitdiff.py`, `trust.py`, `tools/read.py`,
 - `--json` schema is stable and covered by tests.
 - `--sarif` output validates against the SARIF schema.
 - `sk review` and `/review` share one engine; no duplicated review logic.
+- **Assessment never changes an exit code.** A review that would pass without
+  `--assess` still passes with it.
+- **Intent honesty:** 100% of assessments either cite a real intent artifact or
+  mark `intent_source: "inferred"` with explicit assumptions.
+- **Worth-it corpus:** seeded "should not have been built", "good change", and
+  "missing intent" cases. First-release target: ≥60% agreement with the human
+  labels; false `reconsider` on good changes ≤20%, tightening to ≤10% by v1.
+- `--assess` adds at most 15% wall-clock time to the local 7B target; it is off
+  for working-tree reviews by default.
 
 ---
 
 ### 4.2 Editable review harness
 
 **Outcome:** a team can change how Sidekick reviews code without forking the
-agent.
+agent — and without redefining the agent.
 
 #### Definition
 
-The harness is the **review policy pack**, not the agent loop. It contains:
+The review harness is a **policy pack inside Sidekick's broader harness**, not
+the whole harness. The core harness — loop, prompt assembly, doctrines
+(grounding, tool honesty, challenge), approvals, audit, context budgeting, and
+security gates — is shared by every workflow and is not owned by review.
+
+The review pack contains:
 
 - rules and guidance
 - severity policy
@@ -305,10 +447,28 @@ The harness is the **review policy pack**, not the agent loop. It contains:
 - model profile
 - output contract
 - optional deterministic checks
-- rule fixtures for evaluation
+- worth-it signals and assessment policy
+- rule and assessment fixtures for evaluation
 
-It cannot execute arbitrary code, define shell commands, or silently disable
-security checks.
+It cannot execute arbitrary code, define shell commands, silently disable
+security checks, or override core doctrines.
+
+#### Core vs pack
+
+| Layer | Owner | Review pack may change it? |
+|---|---|---|
+| Agent loop, tool dispatch, approvals, audit | core | no |
+| Grounding, tool honesty, challenge doctrine | core | no |
+| SSRF/egress, protected paths, hard refusals | core | no |
+| Review rules, severities, include/ignore | review pack | yes |
+| Review budgets, model profile, output contract | review pack | yes |
+| Worth-it signals, thresholds, assessment policy | review pack | yes |
+| Rule and assessment fixtures | review pack | yes |
+
+A new developer capability follows the same contract: it registers a pack and
+reuses the core harness; it does not fork the loop, import private agent
+symbols, or redefine the product. Review is the first pack, not the harness's
+identity.
 
 #### Layers and precedence
 
@@ -329,7 +489,7 @@ built-in defaults                  (versioned with Sidekick)
   the user global layer can disable them, with an explicit flag.
 - Project rules are **untrusted by default**. A cloned repo must not be able to
   inject instructions into a review just because the user ran `sk review`.
-  Project harness loading requires trust, or an explicit
+  Project pack loading requires trust, or an explicit
   `--trust-project-rules`.
 - All project-supplied prose is fenced as data.
 
@@ -344,6 +504,7 @@ model = "smart"
 max_findings = 25
 fail_on = "major"
 context_lines = 8
+assess = "auto"        # auto | always | never; never gates CI
 include = ["**/*.py", "**/*.ts", "**/*.tsx"]
 ignore = ["**/generated/**", "**/*.lock", "**/vendor/**"]
 
@@ -364,7 +525,8 @@ input is not a literal or is reachable from request data.
   - which were ignored and why
   - effective rules and severities
   - resolved model, budgets, include/ignore patterns
-  - harness hash for reproducibility
+  - assessment mode, worth-it signals, and intent source
+  - review-pack hash for reproducibility
 - `sk review --check-config` validates:
   - schema version
   - unknown keys
@@ -387,16 +549,20 @@ tests/review/rules/security/no-dynamic-exec/
 ```
 
 A rule change without a fixture is allowed but flagged; a protected security
-rule requires one.
+rule requires one. Worth-it assessments get the same treatment: seeded diffs
+with expected verdicts, plus negative cases where the right answer is "no
+material concern".
 
 #### Acceptance criteria
 
 - Merge/precedence tests cover every layer and conflict case.
-- Project layer cannot disable protected security rules.
-- `--explain` output is deterministic and includes the harness hash.
+- Project layer cannot disable protected security rules or core doctrines.
+- `--explain` output is deterministic and includes the review-pack hash.
 - Invalid config produces an actionable error, not a traceback.
 - A project rule cannot execute code, spawn a process, or make a network call.
 - At least 10 built-in rules have positive/negative fixtures.
+- The review pack cannot change approval behavior, tool dispatch, audit, or
+  egress policy; a test asserts the core/pack boundary.
 
 ---
 
@@ -404,6 +570,9 @@ rule requires one.
 
 **Outcome:** the agent can find and read code without interrupting the user for
 every search.
+
+**Status (2026-11-07):** `search_code` and `glob_files` shipped (#398, PR #407);
+line-range `read_file` shipped (#399, PR #406). `repo_map` remains.
 
 #### New or improved tools
 
@@ -497,6 +666,10 @@ Replace the current "compile edited Python files" behavior with:
 
 **Outcome:** the agent has enough budget and a single loop across providers.
 
+These are enablers for the whole agent, not review-only changes. Developer work
+inherits the same loop, approval gates, and audit path; there is no second agent
+loop for review or for later developer features.
+
 #### Adaptive step budgets
 
 - Coding and review tasks get more steps than chat.
@@ -574,6 +747,9 @@ pass.
 - Half contain seeded bugs; half are clean.
 - Each bug has expected file, line range, category, severity, and rule.
 - Include negative cases that should produce no findings.
+- Add 10–15 branch-level **worth-it cases** with stated intent: half are
+  well-scoped good changes, half are overbuilt or solve the wrong problem;
+  store the expected verdict and the evidence that justifies it.
 - Store expected results in JSON; run offline in CI.
 
 #### Metrics
@@ -582,7 +758,9 @@ pass.
 |---|---|
 | Blocker/major recall | ≥60% first release, ≥75% v1 |
 | False-positive rate on clean diffs | ≤20% first release, ≤15% v1 |
-| Evidence validity | 100% |
+| Worth-it assessment agreement | ≥60% first release, ≥75% v1 |
+| False "reconsider" on good changes | ≤20% first release, ≤10% v1 |
+| Evidence validity | 100% (findings and assessment claims) |
 | Invalid file/line rate | 0% |
 | Changed-line coverage | ≥90% or explicitly reported |
 | Local 7B latency | ≤60s for 500-line diff |
@@ -599,9 +777,11 @@ pass.
 #### Harness evals
 
 - Every built-in rule has positive/negative fixtures.
-- A rule change runs only that rule's fixtures in PR CI and the full corpus
-  nightly.
-- A regression in recall or precision blocks the release.
+- Worth-it assessment cases have expected verdicts and evidence fixtures.
+- A rule or assessment change runs only its fixtures in PR CI and the full
+  corpus nightly.
+- A regression in recall, precision, or assessment agreement blocks the
+  release.
 
 #### Acceptance criteria
 
@@ -617,16 +797,21 @@ pass.
 **Outcome:** the project is discoverable and the public story matches the
 product.
 
-- **Reposition the README and website:** lead with "review, test, and edit code
-  without your source leaving the machine," not "19 tools."
+- **Add a developer section to the README and website:** lead with the
+  combination — chat, code, and review without source leaving the machine — and
+  keep the existing assistant story intact. A reader must come away knowing
+  Sidekick is a broad local-first agent with a first-class review workflow, not
+  a review-only tool.
 - **Demo:** a 30–60 second terminal recording of `sk review --base main` on a
   real repo.
-- **Benchmarks:** publish the review corpus results and the local-vs-cloud
-  comparison.
+- **Benchmarks:** publish the review corpus results, the worth-it assessment
+  agreement rate, and the local-vs-cloud comparison.
 - **Docs:** a dedicated `docs/review.md` and `docs/review-harness.md` with
-  examples.
-- **Fix stale claims:** website test count (1,399 vs 1,467), changelog (stops at
-  0.29.0), portfolio card (1,212 tests, 0.29.0, "8k installs").
+  examples, including when *not* to use review and how the assessment stays
+  advisory.
+- **Fix stale claims:** website hero test count (1,399 vs 1,504), website roadmap
+  done-list (stops at 0.29.0), portfolio card (1,212 tests, 0.29.0, "8k
+  installs").
 - **Add `SECURITY.md`:** scope, supported versions, disclosure process, threat
   model link.
 - **Add issue/PR templates:** bug report, feature request, review-rule proposal.
@@ -634,9 +819,13 @@ product.
   mcp, developer-tools.
 - **Design partners:** recruit 3–5 developers with privacy-sensitive repos;
   observe real review runs; do not add telemetry in v1.
+- **Positioning test:** the homepage, README hero, and docs index all name the
+  assistant surfaces and the review workflow; no page claims review is the whole
+  product.
 
 **Acceptance criteria:** docs match the shipped feature set; website/portfolio
-claims are current; 3 design partners have run `sk review` on real repos.
+claims are current; 3 design partners have run `sk review` on real repos; a
+reader can describe Sidekick as both a broad agent and a review tool.
 
 ---
 
@@ -646,16 +835,54 @@ Estimates assume 1–2 maintainers. Calendar time will stretch if part-time.
 
 | Phase | Duration | Deliverables | Exit criteria |
 |---|---|---|---|
-| **0. Decisions and baseline** | 2–3 days | Lock positioning, scope, harness format, review schema; add corpus skeleton | Decisions signed off; no open blockers |
+| **0. Decisions and baseline** | 2–3 days | Lock positioning, scope, review-pack format, review schema; add corpus skeleton | Decisions signed off; no open blockers |
 | **1. Review foundation** | ~2 weeks | Target resolver, diff pipeline, code search/read ranges, `sk review` MVP, Markdown/JSON output | Review works on a real repo; evidence validation passes; code search shipped |
-| **2. Harness and verification** | ~2–3 weeks | Layered harness, `--explain`/`--check-config`, built-in rules, seeded corpus, project checks, `sk check` | Harness precedence tests pass; review corpus thresholds met; verification detects failures |
+| **2. Review pack and verification** | ~2–3 weeks | Layered review pack, `--explain`/`--check-config`, built-in rules, seeded corpus, project checks, `sk check` | Review-pack precedence tests pass; review corpus thresholds met; verification detects failures |
 | **3. Runtime and platform** | ~2–3 weeks | Adaptive budgets, provider abstraction, git tools, sandbox/hooks/security CI, coverage uplift | Provider parity, sandbox tests, security scans green |
 | **4. Evals and adoption** | ongoing | Nightly live eval, scoreboard, docs/demo, design partners, team/air-gapped groundwork | Public benchmark; 3 design partners; docs current |
+
+**Two tracks.**
+
+- **Assistant track (always on):** chat, code reading/editing, web, voice,
+  memory, skills, MCP, TUI, daemon. Security and bug fixes ship here without
+  waiting for the developer track.
+- **Developer track (sequenced):** review foundation → editable review pack +
+  verification → runtime/platform → evals/adoption → later developer rungs.
+
+The developer track must not freeze or demote the assistant track. Release
+notes and docs report both, and the full suite remains the regression gate for
+both.
+
+### 5.1 Developer capability ladder (post-v0.31, tentative)
+
+Review is the first rung, not the ceiling. The next developer capabilities are
+parked here so the roadmap grows in a deliberate direction without turning the
+plan into a wishlist.
+
+| Rung | Capability | Why it fits local-first | Status |
+|---|---|---|---|
+| 1 | **Review** — findings + advisory worth-it assessment | read-only, privacy-sensitive, editable rules | v0.31–0.32 |
+| 2 | **Verify** — real checks and parsed diagnostics | runs locally; no false pass | v0.32 |
+| 3 | **Navigate/explain** — repo map, search, codebase walkthrough | local model, no source upload | v0.31+ |
+| 4 | **Guided change** — fix/refactor with checkpoints and checks | approval-gated, reversible | v0.33+ |
+| 5 | **Ship** — git status/diff/commit/PR helpers | local repo, reviewed before push | v0.33+ |
+| 6 | **Team** — shared rules, memory, skills | rules checked into the repo | later |
+
+**Promotion test.** Before a new developer rung is scheduled, apply the same
+worth-it questions the review layer asks of a diff:
+
+- Does it deepen the local-first advantage (offline, privacy, weak hardware)?
+- Is it usable without a cloud account, and safe read-only-first?
+- Can its quality be measured with an offline eval?
+- Is it a real workflow, or just parity with a hosted agent?
+- Does it extend the assistant without narrowing it?
+
+If the honest answer is "parity with cloud agents", it waits.
 
 **Version mapping:**
 
 - `v0.31.0` — review foundation: code intelligence + `sk review` MVP.
-- `v0.32.0` — editable harness + verification loop.
+- `v0.32.0` — editable review pack + verification loop.
 - `v0.33.0` — provider abstraction + platform hardening.
 - `v0.34.0` — evals, benchmark, adoption.
 
@@ -673,10 +900,15 @@ A release is not ready unless:
 - Harness precedence and protected-rule tests pass.
 - Code search and line-range read tests pass.
 - Verification cannot report a false pass.
+- The worth-it assessment is advisory only; no exit code depends on it, and its
+  evidence/intent invariants hold.
 - `ruff`, `mypy`, and the full test suite pass.
 - Coverage is at or above the current gate, with no regression in the targeted
   modules.
-- Docs and changelog match the release.
+- No assistant regression: existing chat/code/web/voice/memory/MCP paths stay
+  green; review does not narrow the harness.
+- A review pack cannot disable core doctrines or protected security rules.
+- Docs and release notes match the release.
 - No known blocker in the review path.
 
 ---
@@ -689,12 +921,16 @@ A release is not ready unless:
 | Project rules inject prompts or weaken security | Untrusted by default, fencing, no execution, protected security rules, explicit trust flag |
 | Large diffs exceed context or cost | Per-file chunking, content-hash caching, max files/findings, coverage report |
 | Local 7B quality is too low | Hybrid deterministic + model review; default to smart model; publish honest benchmarks |
-| Scope expands into another general coding agent | Non-goals, one flagship, defer IDE/team/subagents |
+| Review identity swallows the assistant | Additive positioning and docs; dual-track release notes; assistant regression gate; review stays namespaced (`sk review`, `/review`) |
+| Worth-it layer becomes a nag or blocker | Advisory-only invariant; default on for branch/PR targets only; one round; `--no-assess`; no CI gating; one-line pass for straightforward changes |
+| Worth-it verdicts are noisy or wrong | Deterministic signals first, evidence validation, confidence labels, seeded assessment corpus, human-agreement tracking; labelled judgment, not a finding |
+| Review pack becomes a second agent loop | Core/pack contract in §4.2; shared dispatch, approvals, audit; no private agent imports |
+| Scope expands into general coding-agent parity | Developer ladder + promotion test in §5.1; review first; defer IDE/team/subagents |
 | Provider divergence makes review inconsistent | Provider abstraction before multi-provider marketing; parity tests |
 | Sandbox work delays the wedge | Ship read-only review first; sandbox is a prerequisite for autonomous verification, not review |
 | Tests create false confidence | Live eval harness and corpus; offline tests only prove regression safety |
 | Docs drift again | Gate version and test count, or remove hardcoded counts; docs review in release checklist |
-| Adoption remains low | Repositioning, demo, benchmark, topics, design partners; measure feedback, not stars alone |
+| Adoption remains low | Additive positioning, demo, benchmark, topics, design partners; measure feedback, not stars alone |
 
 ---
 
@@ -704,8 +940,10 @@ The recommendations below are the Phase 1 defaults. Revisit one only with a
 documented reason in the PR that changes it.
 
 1. **Is code review the flagship?**
-   Recommendation: **yes**. It is the best fit for local-first, privacy, and
-   editable rules.
+   Recommendation: **it is the flagship developer capability, not the product
+   identity.** It is the best fit for local-first, privacy, and editable rules,
+   and it is the first developer workstream we make excellent. Sidekick remains
+   a broad local-first terminal agent.
 
 2. **Who is the first user?**
    Recommendation: **privacy-sensitive individual developers first; teams
@@ -739,24 +977,39 @@ documented reason in the PR that changes it.
    Recommendation: **no telemetry in v1; use design partners and opt-in
    feedback.**
 
+10. **Is there a worth-it layer?**
+    Recommendation: **yes, as an advisory change assessment in review.** It is
+    on by default for branch/PR targets, off for quick working-tree reviews,
+    opt-out with `--no-assess`, and never gates CI.
+
+11. **Does review narrow the product or the harness?**
+    Recommendation: **no.** Review is a policy pack on the shared core harness.
+    The assistant surfaces stay first-class, and new developer capabilities
+    must pass the promotion test in §5.1.
+
 ---
 
 ## 9. First backlog
 
-Items 1–6 are scoped to `v0.31.0`. Items 7–12 remain backlog for later phases.
+Items 1–6 are scoped to `v0.31.0`. Items 7–14 remain backlog for later phases.
 
-1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests.
-2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`.
+1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests. **Shipped (PR #407).**
+2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`. **Shipped (PR #406).**
 3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap.
 4. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401) — Build review target resolver and diff model.
 5. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402) — Add finding schema, validation, and Markdown/JSON serialization.
 6. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403) — Wire `sk review` and `/review` to the same engine.
-7. Add harness loader, merge logic, `--explain`, and `--check-config`.
-8. Add built-in review rules and the first 10 seeded cases.
-9. Add project checks config, command runner, and diagnostic parsers.
-10. Add adaptive `max_steps` and `--max-steps`.
-11. Add provider protocol and Anthropic parity tests.
-12. Update README/website/portfolio; add `SECURITY.md` and issue templates.
+7. [#408](https://github.com/Faisal-Fayaz/sidekick/issues/408) — Add the
+   advisory worth-it assessment layer: intent resolution, deterministic
+   signals, assessment schema, `--assess`/`--no-assess`, and seeded cases.
+8. Add review-pack loader, merge logic, `--explain`, and `--check-config`.
+9. Add built-in review rules and the first 10 seeded cases.
+10. Add project checks config, command runner, and diagnostic parsers.
+11. Add adaptive `max_steps` and `--max-steps`.
+12. Add provider protocol and Anthropic parity tests.
+13. Update README/website/portfolio; add `SECURITY.md` and issue templates.
+14. Developer-ladder spikes (post-v0.31): `sk explain`, `sk fix`, `sk test`,
+    `sk pr`; each gated by the promotion test in §5.1.
 
 ---
 
@@ -771,9 +1024,14 @@ This plan is successful when:
 - A team can edit `.sidekick/review.toml`, run `--explain`, and see exactly what
   changed.
 - Rule changes are measured against a seeded corpus.
+- `sk review --assess` gives an evidence-backed worth-it verdict that a
+  developer finds useful, and never turns a shipping decision into an
+  interrogation.
 - `sk check` runs real project checks and feeds diagnostics back to the agent.
 - Code search and line-range reads remove the need for approval-heavy shell
   searches.
 - The agent has enough steps for developer work and a single provider loop.
-- The public story is "local-first code review with editable rules," not "an
-  assistant with 19 tools."
+- The public story is "a local-first terminal agent with first-class code
+  review," not a review-only tool or a generic cloud-agent clone.
+- The assistant remains whole: chat, code, web, voice, memory, skills, MCP, and
+  approvals still work and are still documented as first-class.

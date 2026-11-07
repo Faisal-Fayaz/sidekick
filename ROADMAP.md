@@ -12,9 +12,10 @@ The short `## Roadmap` section in `README.md` is just a pointer here.
 
 ## Vision
 
-A local-first developer agent for code you cannot send to the cloud — code
-search, evidence-backed review, and rules you can inspect and edit. No cloud
-account required by default.
+A local-first terminal agent for developers — chat, code intelligence, and
+evidence-backed review on your hardware, with rules you can inspect and edit.
+No cloud account required by default. Code review is the first developer
+workstream; the assistant stays whole.
 
 ## Principles
 
@@ -24,6 +25,7 @@ How we decide what gets in:
 - **Small-model-friendly.** Deterministic grounding (injected facts) over prompt instructions — small local models ignore rules but can't argue with facts.
 - **Zero-dep bias.** Prefer stdlib solutions (FTS5 over vectors, `argparse`-grade simplicity) so it runs on a 4GB box.
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
+- **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
 ## Next — v0.31.0 (review foundation)
 
