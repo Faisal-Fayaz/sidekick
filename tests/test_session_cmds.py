@@ -116,9 +116,36 @@ def test_slash_diff_and_review(repo, tmp_path, monkeypatch):
     (repo / "a.txt").write_text("one\ntwo\n")
     out = slash.handle("/diff", session=c["session"], cfg=c["cfg"], state=c["state"])
     assert out.handled and "+two" in out.text
+    from sk.review.schema import Finding, ReviewReport
+
+    def fake_review(**kwargs):
+        return ReviewReport(
+            target="worktree",
+            ref="HEAD",
+            repo_root=str(repo),
+            findings=[
+                Finding(
+                    id="F001",
+                    severity="major",
+                    category="correctness",
+                    file="a.txt",
+                    line=2,
+                    end_line=None,
+                    evidence="two",
+                    problem="problem",
+                )
+            ],
+            files_reviewed=1,
+            changed_lines=1,
+            reviewed_lines=1,
+        )
+
+    import sk.review.engine as eng
+
+    monkeypatch.setattr(eng, "review", fake_review)
     out = slash.handle("/review", session=c["session"], cfg=c["cfg"], state=c["state"])
-    assert out.handled and out.agent_prompt
-    assert "severity" in out.agent_prompt and "+two" in out.agent_prompt
+    assert out.handled and out.text
+    assert "MAJOR" in out.text and "a.txt:2" in out.text
 
 
 @needs_git
