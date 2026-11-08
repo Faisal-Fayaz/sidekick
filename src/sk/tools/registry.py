@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .read import tool_exec, tool_list_dir, tool_read_file, tool_sysinfo
+from .repo_map import DEFAULT_REPO_MAP_TOKENS, tool_repo_map
 from .search import tool_glob_files, tool_search_code
 from .shell import tool_shell, tool_shell_session
 from .web import tool_read_url, tool_web_search
@@ -138,6 +139,29 @@ TOOLS_SCHEMA = [
                     },
                 },
                 "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "repo_map",
+            "description": "Outline a repo without approval: directory tree, languages, file sizes, and top-level symbols. Python uses ast; other source languages use conservative regexes. Deterministic, capped by max_tokens, and reports truncation. Respects .gitignore, hidden paths, symlinks, and sensitive roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory or file to map, default '.'",
+                    },
+                    "max_tokens": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 8000,
+                        "description": "Approximate output token budget (default 1500, hard cap 8000)",
+                    },
+                },
+                "required": [],
             },
         },
     },
@@ -426,6 +450,11 @@ def dispatch_tool(name: str, args: dict) -> str:
         return tool_glob_files(
             str(args.get("pattern", "")),
             path=str(args.get("path", ".")),
+        )
+    if name == "repo_map":
+        return tool_repo_map(
+            str(args.get("path", ".")),
+            args.get("max_tokens", DEFAULT_REPO_MAP_TOKENS),
         )
     if name == "exec":
         return tool_exec(str(args.get("cmd", "")))

@@ -147,7 +147,7 @@ export default function Docs() {
           <h2 id="mcp">MCP server + client</h2>
           <CodeBlock code={`sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps`} />
           <p>
-            All 21 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run;
+            All 22 tools, same safety policy (SSRF guards, write blocklists, hard-refusals). Reads auto-run;
             shell/writes/delete need {inline('--allow-writes')}, else a clean denied error. Stdout carries
             protocol only. Claude Desktop snippet:
           </p>
@@ -243,7 +243,7 @@ export default function Docs() {
 
           <h2 id="architecture">Architecture</h2>
           <CodeBlock
-            code={`you → sk / sk run ─→ slash.py (/commands, no LLM)\n   → sk tui (autocomplete, streaming, mic pill)\n   → sk talk (arecord + faster-whisper)\n   → agent.py (stream → tools → synthesize)\n        ├─ grounding: ~/paths, URLs, sysinfo (before the model)\n        ├─ tools.py: 21 tools, allowlists, hard-blocks, SSRF guard\n        ├─ store.py: history, memories FTS5, todos, shell log\n        └─ skills: relevance-ranked SKILL.md index`}
+            code={`you → sk / sk run ─→ slash.py (/commands, no LLM)\n   → sk tui (autocomplete, streaming, mic pill)\n   → sk talk (arecord + faster-whisper)\n   → agent.py (stream → tools → synthesize)\n        ├─ grounding: ~/paths, URLs, sysinfo (before the model)\n        ├─ tools.py: 22 tools, allowlists, hard-blocks, SSRF guard\n        ├─ store.py: history, memories FTS5, todos, shell log\n        └─ skills: relevance-ranked SKILL.md index`}
           />
           <p>
             Design bets that paid off: <b>deterministic grounding beats prompt instructions</b>,{' '}

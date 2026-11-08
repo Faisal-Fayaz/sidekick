@@ -98,7 +98,7 @@ next candidates.
 
 | Gap | Evidence |
 |---|---|
-| No repo map or symbols | No code-aware navigation or outline (`search_code`, `glob_files`, and line-range `read_file` shipped in #398/#399) |
+| No diff-aware review context | `repo_map`, `search_code`, `glob_files`, and line-range `read_file` shipped (#398–#400); review still lacks a target resolver and structured context |
 | No test/lint/typecheck loop | Post-edit verification only compiles edited Python files |
 | Review is a prompt wrapper | `/review` = `git diff HEAD`, 12k-char cap, no targets, chunking, structured output, or change-level assessment |
 | Default step budget is too low | Local and unknown models get 5 steps; named frontier profiles get 15; the Harbor adapter overrides to 40 |
@@ -571,8 +571,8 @@ material concern".
 **Outcome:** the agent can find and read code without interrupting the user for
 every search.
 
-**Status (2026-11-07):** `search_code` and `glob_files` shipped (#398, PR #407);
-line-range `read_file` shipped (#399, PR #406). `repo_map` remains.
+**Status (2026-11-08):** `search_code` and `glob_files` shipped (#398, PR #407);
+line-range `read_file` shipped (#399, PR #406); `repo_map` v1 shipped (#400, PR #412).
 
 #### New or improved tools
 
@@ -594,9 +594,10 @@ line-range `read_file` shipped (#399, PR #406). `repo_map` remains.
 
 4. **`repo_map(path?, max_tokens?)`**
    - Directory tree, languages, file sizes.
-   - Python symbols via `ast`; other languages get top-level definitions via
-     regex.
-   - Capped at a small token budget.
+   - Python symbols via `ast`; other source languages get top-level
+     definitions via line-anchored regexes.
+   - Default 1,500 tokens (hard cap 8,000), with explicit token, node, and
+     scan caps. Read-only, no approval, same path/ignore/symlink guards.
 
 5. **`git_diff(target?)`** — optional; could remain part of review/diff tooling
    rather than a general tool.
@@ -995,7 +996,7 @@ Items 1–6 are scoped to `v0.31.0`. Items 7–14 remain backlog for later phase
 
 1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests. **Shipped (PR #407).**
 2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`. **Shipped (PR #406).**
-3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap.
+3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap. **Shipped (PR #412).**
 4. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401) — Build review target resolver and diff model.
 5. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402) — Add finding schema, validation, and Markdown/JSON serialization.
 6. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403) — Wire `sk review` and `/review` to the same engine.
