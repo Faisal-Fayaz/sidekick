@@ -46,7 +46,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("oops", "explain last failed shell command"),
     ("compact [focus]", "fold older turns into the saved summary now"),
     ("diff", "show working-tree git diff (stat + capped)"),
-    ("review [base]", "ask the agent to review the working-tree diff"),
+    ("review [base]", "review a diff with evidence + an advisory worth-it check"),
     ("rewind [n]", "undo an agent file edit (latest, or checkpoint n)"),
     ("redo", "re-apply the last rewound change"),
     ("research <question>", "read-only research turn; returns a digest"),
@@ -428,19 +428,7 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
         return SlashOut(handled=True, text=git_diff_text())
 
     if cmd == "review":
-        from .gitdiff import git_diff_text
-
-        ref = arg.strip() or "HEAD"
-        diff = git_diff_text(base=arg.strip(), cap=12000)
-        if "```diff" not in diff:
-            return SlashOut(handled=True, text=diff)
-        prompt = (
-            f"Review this working-tree diff (vs {ref}). For each issue give "
-            "file:line, severity (blocker/major/minor), and the suggested fix. "
-            "End with a one-line verdict: ship it / needs work."
-            f"\n\n```diff\n{diff}\n```"
-        )
-        return SlashOut(handled=True, agent_prompt=prompt)
+        return _review_slash(arg, cfg)
 
     if cmd == "rewind":
         from .checkpoints import rewind as _rewind
@@ -533,3 +521,90 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
     if rendered is not None:
         return SlashOut(handled=True, agent_prompt=rendered)
     return SlashOut(handled=True, text=f"unknown command `/{cmd}` — try `/help`")
+
+
+def _review_slash(arg: str, cfg) -> SlashOut:
+    """One engine for `/review` and `sk review`.
+
+    Accepts the legacy positional base ref plus the CLI's target flags. The
+    engine handles the model, validation, assessment, and (for --pr) posting.
+    """
+    import shlex
+
+    from .review.engine import ReviewError, ReviewOptions, review
+
+    try:
+        parts = shlex.split(arg or "")
+    except ValueError as e:
+        return SlashOut(handled=True, text=f"review: {e}")
+    base = commit = path = intent = ""
+    staged = False
+    pr = 0
+    assess = "auto"
+    post = "auto"
+    i = 0
+    try:
+        while i < len(parts):
+            tok = parts[i]
+            if tok in ("--base", "--commit", "--pr", "--path", "--intent"):
+                if i + 1 >= len(parts):
+                    return SlashOut(handled=True, text=f"review: {tok} needs a value")
+                val = parts[i + 1]
+                if tok == "--base":
+                    base = val
+                elif tok == "--commit":
+                    commit = val
+                elif tok == "--pr":
+                    pr = int(val)
+                elif tok == "--path":
+                    path = val
+                else:
+                    intent = val
+                i += 2
+                continue
+            if tok == "--staged":
+                staged = True
+            elif tok == "--assess":
+                assess = "always"
+            elif tok == "--no-assess":
+                assess = "never"
+            elif tok == "--post":
+                post = "always"
+            elif tok == "--no-post":
+                post = "never"
+            elif tok.startswith("-"):
+                return SlashOut(handled=True, text=f"review: unknown option {tok}")
+            elif not base and not commit and not pr and not staged:
+                base = tok  # legacy `/review main`
+            else:
+                return SlashOut(handled=True, text=f"review: unexpected {tok!r}")
+            i += 1
+    except ValueError:
+        return SlashOut(handled=True, text="review: --pr needs an integer")
+    if sum(bool(x) for x in (base, commit, pr, staged)) > 1:
+        return SlashOut(handled=True, text="review: choose one of --base, --commit, --pr, --staged")
+    if post == "always" and not pr:
+        return SlashOut(handled=True, text="review: --post only applies to --pr")
+    opts = ReviewOptions(
+        assess=assess,
+        post=post,
+        intent=intent,
+        session="review",
+    )
+    try:
+        report = review(
+            staged=staged,
+            base=base,
+            commit=commit,
+            pr=pr,
+            path=path,
+            options=opts,
+            cfg=cfg,
+        )
+    except ReviewError as e:
+        return SlashOut(handled=True, text=f"review: {e}")
+    except Exception as e:  # noqa: BLE001 - slash commands report, never crash the REPL
+        return SlashOut(handled=True, text=f"review failed: {str(e)[:300]}")
+    if not report.files_reviewed and not report.findings:
+        return SlashOut(handled=True, text=f"_(no changes to review — {report.ref})_")
+    return SlashOut(handled=True, text=report.to_markdown())

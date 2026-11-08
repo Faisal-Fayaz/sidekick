@@ -35,9 +35,11 @@ local server.
 
 ## See it
 
-**Review the working-tree diff before you commit.** `/review` sends the actual
-diff to your model and asks for `file:line`, severity, and a concrete fix.
-`/diff` prints the same diff without a model call.
+**Review the diff before you commit.** `sk review` and `/review` run one
+evidence-backed engine: every finding needs a real `file:line` and an exact
+evidence quote, or it is dropped. Branch and PR reviews also get an advisory
+worth-it assessment. `/diff` prints the same diff without a model call. See
+[Review](docs/review.md).
 
 ![Terminal showing /review autocomplete, a MAJOR finding with file and line, and a suggested diff](docs/tui-complete.svg)
 
@@ -85,7 +87,7 @@ without handing an unattended model the keys.
 |---|---|
 | Explore a repo | `list_dir`, `read_file` (with line ranges), `search_code`, `glob_files`, and the read-only `exec` allowlist |
 | Edit safely | `write_file` / `edit_file` with approval; `/plan` to propose; `/rewind` to undo |
-| Inspect changes | `/diff` and `/review` inside a session |
+| Inspect changes | `/diff`, and `sk review` / `/review` with evidence-backed findings |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
 | Extend | skills, custom slash commands, declarative `TOOLS.md` tools, MCP |
 | Stay in control | approval cards, hard refusals, egress allowlist, audit ledger |
@@ -123,7 +125,8 @@ last-turn stats. Approvals arrive as cards with a timeout.
 Plan mode proposes without writing: `/plan` blocks file writes in chat
 (`/build` reverts), `F4` toggles the same in the TUI, and `sk run --plan` does it
 single-shot. Sessions carry `/compact [hint]`, `/diff`, `/review`, and
-`/rewind [n]` to undo agent file edits.
+`/rewind [n]` to undo agent file edits. `sk review --pr N` can post comments to
+GitHub or Bitbucket when credentials are available; it never edits the branch.
 
 ## Install
 
@@ -226,7 +229,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | `sk mic-test [-d SECS] [--device hw:2,0]` | Mic level check: peak dB + silent/quiet/good verdict |
 | `/sessions`, `/resume <n>`, `/sessions delete <n>`, `/fork [n]` | List, switch, delete, branch past sessions |
 | `/yolo`, `/confirm`, `/readonly` | Approval modes: auto-approve writes / ask every time / block all file writes |
-| `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / review it |
+| `/compact [hint]`, `/diff`, `/review` | Summarize history on demand / inspect working-tree diff / evidence-backed review |
 | `/plan`, `/build` | Plan mode: propose without writing / back to build mode |
 | `/rewind [n]` | Undo an agent file edit (snapshots write/edit/delete targets; `shell` mutations are not tracked) |
 
@@ -235,6 +238,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | Command | What |
 |---|---|
 | `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream]` | Single-shot agent run. Auto-routes the model; `--json` emits one machine-readable document + exit codes; `--bg` detaches and notifies; `--allow shell:pytest,write_file` skips prompts for listed tools |
+| `sk review [--base REF\|--staged\|--commit SHA\|--pr N] [--path P] [--intent TEXT] [--assess\|--no-assess] [--post\|--no-post] [--json\|--sarif] [--fail-on LEVEL]` | Evidence-backed review of a diff or PR. Findings need file:line evidence; the worth-it assessment is advisory. `--pr` auto-posts comments to GitHub (via `gh`) or Bitbucket when credentials exist; it never edits the branch |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without an LLM |
 | `sk digest [--force]` | Brief + overnight failures, desktop nudge or log |
@@ -457,6 +461,7 @@ current non-secret settings — keys stay in keyring/env).
 ## Documentation
 
 - [Egress policy](docs/egress.md)
+- [Review](docs/review.md)
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)

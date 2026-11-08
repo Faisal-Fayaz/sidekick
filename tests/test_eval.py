@@ -252,7 +252,7 @@ HELP_GOLDEN = """**slash commands**
 - `/oops` — explain last failed shell command
 - `/compact [focus]` — fold older turns into the saved summary now
 - `/diff` — show working-tree git diff (stat + capped)
-- `/review [base]` — ask the agent to review the working-tree diff
+- `/review [base]` — review a diff with evidence + an advisory worth-it check
 - `/rewind [n]` — undo an agent file edit (latest, or checkpoint n)
 - `/redo` — re-apply the last rewound change
 - `/research <question>` — read-only research turn; returns a digest

@@ -84,12 +84,13 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Chat & Voice', cmd: 'sk imagine "prompt" [--out f.png]', what: 'Generate an image via the provider images endpoint.' },
   { group: 'Chat & Voice', cmd: '/sessions · /resume <n> · /fork [n]', what: 'List, switch, delete, and branch past sessions.' },
   { group: 'Chat & Voice', cmd: '/readonly', what: 'Research mode: block all file writes. /confirm reverts.' },
-  { group: 'Chat & Voice', cmd: '/compact [focus] · /diff · /review [base]', what: 'Fold history now, show the working-tree diff, ask the agent to review it.' },
+  { group: 'Chat & Voice', cmd: '/compact [focus] · /diff · /review [base]', what: 'Fold history now, show the working-tree diff, run an evidence-backed review.' },
   { group: 'Chat & Voice', cmd: '/rewind [n]', what: 'Undo an agent file edit — every write/edit/delete is snapshotted.' },
   { group: 'Chat & Voice', cmd: '/plan · /build', what: 'Propose without writing (file writes blocked) · back to build mode. F4 toggles.' },
   { group: 'Chat & Voice', cmd: 'F5 model picker', what: 'All providers in one list — selecting auto-switches provider. Filter, Enter switches.' },
   { group: 'Chat & Voice', cmd: '/init', what: 'Scaffold SIDEKICK.md repo conventions in this directory.' },
   { group: 'Runs & Jobs', cmd: 'sk run "task" [--yes] [--read-only] [--plan] [--model auto|fast|smart] [--json] [--bg]', what: 'Single-shot agent run. --json emits one machine-readable doc + exit codes.' },
+  { group: 'Runs & Jobs', cmd: 'sk review [--base REF|--staged|--commit SHA|--pr N]', what: 'Evidence-backed diff/PR review. Findings need file:line evidence; the worth-it check is advisory. --pr comments on GitHub/Bitbucket when credentials exist.' },
   { group: 'Runs & Jobs', cmd: 'sk jobs [-n N]', what: 'List background jobs from `sk run --bg`.' },
   { group: 'Runs & Jobs', cmd: 'sk brief [-p PATH] [--smart]', what: 'Morning digest: system + git + todos + memories, instant without LLM.' },
   { group: 'Runs & Jobs', cmd: 'sk digest [--force]', what: 'Teammate pilot: brief + overnight failures, desktop nudge or log.' },
@@ -187,7 +188,7 @@ export const WHATNEW = [
   {
     tag: '/compact · /diff · /review',
     title: 'Session command parity',
-    body: 'Fold history on demand, inspect the working-tree diff, and ask the agent to review it — from inside any session.',
+    body: 'Fold history on demand, inspect the working-tree diff, and run an evidence-backed review with file:line evidence — from inside any session.',
     link: '/docs#chat',
   },
   {
