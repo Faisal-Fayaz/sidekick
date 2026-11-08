@@ -26,6 +26,7 @@ from .registry import (
     missing_required,
     tools_schema,
 )
+from .repo_map import tool_repo_map
 from .search import tool_glob_files, tool_search_code
 from .shell import (
     SHELL_BLOCK_PATTERNS,
@@ -72,6 +73,7 @@ __all__ = [
     "tool_make_dir",
     "tool_read_file",
     "tool_read_url",
+    "tool_repo_map",
     "tool_search_code",
     "tool_shell",
     "tool_sysinfo",

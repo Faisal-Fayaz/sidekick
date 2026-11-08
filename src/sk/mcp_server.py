@@ -1,4 +1,4 @@
-"""MCP server over stdio: exposes the 21 sidekick tools to MCP clients.
+"""MCP server over stdio: exposes the 22 sidekick tools to MCP clients.
 
 Hand-rolled JSON-RPC 2.0, stdlib only (json + sys). No network, no new deps.
 Execution flows through dispatch_tool, so SSRF guards, write blocklists and

@@ -207,14 +207,20 @@ def _file_size(path: Path) -> int | None:
 
 
 def _iter_files(
-    root: Path, pattern: str | None = None, max_bytes: int | None = None
+    root: Path,
+    pattern: str | None = None,
+    max_bytes: int | None = None,
+    skip_dirs: frozenset[str] | None = None,
 ) -> Iterator[Path]:
     """Yield regular, non-hidden, non-symlink files under root.
 
     Traversal is lexicographic so capped glob results remain deterministic.
-    Ignore rules are applied relative to the enclosing git root.
+    Ignore rules are applied relative to the enclosing git root. ``skip_dirs``
+    lets callers prune known-heavy directories (repo_map) without changing the
+    semantics of search or glob.
     """
     matcher = _IgnoreMatcher(_ignore_base(root))
+    skipped = skip_dirs or frozenset()
 
     def walk(directory: Path) -> Iterator[Path]:
         try:
@@ -229,6 +235,8 @@ def _iter_files(
                     continue
                 path = directory / name
                 is_dir = entry.is_dir(follow_symlinks=False)
+                if is_dir and name in skipped:
+                    continue
                 if matcher.ignored(path, is_dir):
                     continue
                 if is_dir:

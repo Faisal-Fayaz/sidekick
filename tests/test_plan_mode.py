@@ -13,7 +13,15 @@ from sk.cli.approvers import (
 from sk.config import Config
 
 WRITES = ["write_file", "edit_file", "delete_file", "make_dir"]
-READS = ["exec", "read_file", "list_dir", "sysinfo", "search_code", "glob_files"]
+READS = [
+    "exec",
+    "read_file",
+    "list_dir",
+    "sysinfo",
+    "search_code",
+    "glob_files",
+    "repo_map",
+]
 
 
 def _cfg():
