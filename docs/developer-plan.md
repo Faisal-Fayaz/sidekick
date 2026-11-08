@@ -1,15 +1,17 @@
 # Sidekick Developer Plan
 
-**Status:** Accepted for `v0.31.0` Phase 1 — implementation in progress
+**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) next
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Revised:** 2026-11-07 — review is an additive developer workstream, not a
+**Revised:** 2026-11-08 — Phase 1 shipped; code intelligence and the evidence-backed review engine are on `main`
+**Prior revision:** 2026-11-07 — review is an additive developer workstream, not a
 product pivot; adds the advisory worth-it layer and the developer capability
 ladder.
 **Baseline:** `a46127e` on `main` (current at revision; audit baseline
 `abfa95d`, accepted at `780c8bd`)
 **Baseline release:** `0.30.0`, 1,504 tests, 21 tools
 **Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6)
+(closed). Phase 2 scope is listed in §9.
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
 > holds the detailed design and accepted defaults behind the developer
@@ -89,7 +91,7 @@ next candidates.
   before the model; outside content fenced as untrusted data.
 - **Small-model discipline:** text-JSON tool fallback, capability profiles,
   token budgeting, compaction, failure circuit breakers.
-- **Test culture:** 1,504 tests, Hypothesis property tests, security regression
+- **Test culture:** 1,597 tests, Hypothesis property tests, security regression
   tables, coverage floor, CI watchdog, trusted PyPI publishing.
 - **Surfaces:** CLI, TUI, voice, MCP server and client, daemon/jobs, skills,
   plugins, checkpoints, profiles.
@@ -98,14 +100,14 @@ next candidates.
 
 | Gap | Evidence |
 |---|---|
-| No diff-aware review context | `repo_map`, `search_code`, `glob_files`, and line-range `read_file` shipped (#398–#400); review still lacks a target resolver and structured context |
+| Review context is v1 | Targets, diff model, repo map, code search, and line-range reads shipped (#398–#401); no semantic retrieval or editable context policy yet |
 | No test/lint/typecheck loop | Post-edit verification only compiles edited Python files |
-| Review is a prompt wrapper | `/review` = `git diff HEAD`, 12k-char cap, no targets, chunking, structured output, or change-level assessment |
+| Review pack is built-in only | Rules, budgets, include/ignore, and worth-it policy are not project-editable yet; `--explain`/`--check-config` are Phase 2 |
 | Default step budget is too low | Local and unknown models get 5 steps; named frontier profiles get 15; the Harbor adapter overrides to 40 |
 | No provider abstraction | Anthropic backend reimplements the agent loop and imports private symbols (#312) |
 | Security ceiling | No OS sandbox (#329); `shell curl` bypasses egress; hooks use `shell=True` (#268) |
 | Maintainability debt | `agent.py` is 3,095 lines; TUI 1,880; broad excepts and lenient type gates (#270) |
-| Docs drift | Website hero says 1,399 tests; actual is 1,504. Website roadmap done-list stops at 0.29.0. Portfolio says 1,212 tests/0.29.0 |
+| Docs freshness is manual | Version, roadmap, hero count, and AUR pins are release-checklist items; prose still needs review each release |
 
 ### Constraints to respect
 
@@ -219,6 +221,11 @@ doctrines, approvals, and audit remain shared core.
 **Outcome:** `sk review` and `/review` produce a useful, evidence-backed review
 of a real diff.
 
+**Status (2026-11-08):** shipped in `v0.31.0` (PR #411): all targets, structured
+diff collection, evidence validation, Markdown/JSON/SARIF output, the advisory
+worth-it assessment, and GitHub/Bitbucket PR comments. The editable review pack
+and project checks remain Phase 2 work.
+
 #### Targets
 
 | Target | Command | Notes |
@@ -227,7 +234,7 @@ of a real diff.
 | Staged only | `sk review --staged` | Pre-commit use |
 | Branch vs base | `sk review --base main` | Merge-base diff; the developer default for PR prep |
 | Specific commit | `sk review --commit <sha>` | Review a single commit |
-| Pull request | `sk review --pr 123` | Uses `gh` when available; clean error otherwise |
+| Pull request | `sk review --pr 123` | GitHub via `gh` or token, Bitbucket Cloud/Server via API; clean error otherwise |
 | Path filter | `sk review --path src/` | Limit scope |
 
 #### Review modes
@@ -431,6 +438,8 @@ Reuse existing code where possible: `gitdiff.py`, `trust.py`, `tools/read.py`,
 **Outcome:** a team can change how Sidekick reviews code without forking the
 agent — and without redefining the agent.
 
+**Status:** planned for `v0.32.0`.
+
 #### Definition
 
 The review harness is a **policy pack inside Sidekick's broader harness**, not
@@ -616,6 +625,8 @@ line-range `read_file` shipped (#399, PR #406); `repo_map` v1 shipped (#400, PR 
 
 **Outcome:** Sidekick can run the project's real checks and use the results,
 instead of only compiling Python files.
+
+**Status:** planned for `v0.32.0`.
 
 #### Configuration
 
@@ -882,13 +893,12 @@ If the honest answer is "parity with cloud agents", it waits.
 
 **Version mapping:**
 
-- `v0.31.0` — review foundation: code intelligence + `sk review` MVP.
-- `v0.32.0` — editable review pack + verification loop.
+- `v0.31.0` — shipped: review foundation (code intelligence + `sk review` MVP).
+- `v0.32.0` — next: editable review pack + verification loop.
 - `v0.33.0` — provider abstraction + platform hardening.
 - `v0.34.0` — evals, benchmark, adoption.
 
-`v0.31.0` is scoped in `ROADMAP.md`. Later versions remain tentative until
-Phase 1 ships.
+`v0.32.0` is scoped in `ROADMAP.md`. Later versions remain tentative.
 
 ---
 
@@ -992,17 +1002,19 @@ documented reason in the PR that changes it.
 
 ## 9. First backlog
 
-Items 1–6 are scoped to `v0.31.0`. Items 7–14 remain backlog for later phases.
+Items 1–7 shipped in `v0.31.0` (PR #411). Items 8–14 remain backlog for
+`v0.32.0` and later phases.
 
 1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests. **Shipped (PR #407).**
 2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`. **Shipped (PR #406).**
 3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap. **Shipped (PR #412).**
-4. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401) — Build review target resolver and diff model.
-5. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402) — Add finding schema, validation, and Markdown/JSON serialization.
-6. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403) — Wire `sk review` and `/review` to the same engine.
+4. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401) — Build review target resolver and diff model. **Shipped (PR #411).**
+5. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402) — Add finding schema, validation, and Markdown/JSON serialization. **Shipped (PR #411).**
+6. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403) — Wire `sk review` and `/review` to the same engine. **Shipped (PR #411), with GitHub/Bitbucket PR posting ([#410](https://github.com/Faisal-Fayaz/sidekick/issues/410)).**
 7. [#408](https://github.com/Faisal-Fayaz/sidekick/issues/408) — Add the
    advisory worth-it assessment layer: intent resolution, deterministic
    signals, assessment schema, `--assess`/`--no-assess`, and seeded cases.
+   **Shipped (PR #411).**
 8. Add review-pack loader, merge logic, `--explain`, and `--check-config`.
 9. Add built-in review rules and the first 10 seeded cases.
 10. Add project checks config, command runner, and diagnostic parsers.

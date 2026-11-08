@@ -39,7 +39,7 @@ export default function Home() {
               you can <span className="accent">talk to.</span>
             </h1>
             <p className="hero-sub">
-              <b>Chat, voice, and 22 tools, on your hardware.</b> No cloud account required. No API bill by
+              <b>Chat, code review, and 22 tools, on your hardware.</b> No cloud account required. No API bill by
               default. Your files, memory, and voice never leave your machine unless you hand it a key.
             </p>
             <div className="hero-cta">
@@ -74,7 +74,7 @@ export default function Home() {
         <section className="block">
           <div className="stat-row">
             {[
-              { n: '17', l: 'gated tools · reads auto-run, writes approved' },
+              { n: '22', l: 'gated tools · reads auto-run, writes approved' },
               { n: 'offline', l: 'suite incl. prompt-regression evals' },
               { n: '11', l: 'provider presets incl. ollama + custom URL' },
               { n: '0', l: 'cloud accounts required · $0 default bill' },

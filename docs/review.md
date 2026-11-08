@@ -4,6 +4,8 @@
 developer feature, not a separate product: the same assistant, approvals,
 models, and audit trail remain available.
 
+**Status:** shipped in `v0.31.0`.
+
 Review is read-only. It never edits a branch, applies a suggestion, or pushes a
 commit. The only external write is a PR comment, and only when you review a
 pull request with working credentials.

@@ -5,6 +5,8 @@ const SECTIONS = [
   { id: 'getting-started', label: 'Getting started' },
   { id: 'chat', label: 'Chat (TUI + REPL)' },
   { id: 'voice', label: 'Voice' },
+  { id: 'review', label: 'Review' },
+  { id: 'code-intelligence', label: 'Code intelligence' },
   { id: 'providers', label: 'Providers (BYO key)' },
   { id: 'mcp', label: 'MCP server + client' },
   { id: 'memory', label: 'Memory · todos · sessions' },
@@ -118,6 +120,42 @@ export default function Docs() {
             (or the mic pill) does the same. Voice never leaves your machine; recordings are temp files, deleted
             after each take.
           </p>
+
+          <h2 id="review">Review</h2>
+          <CodeBlock
+            code={`sk review                     # working tree vs HEAD\nsk review --staged            # staged changes only\nsk review --base main         # branch vs merge-base\nsk review --commit HEAD       # one commit vs its parent\nsk review --pr 123            # PR (GitHub or Bitbucket); posts comments when credentials exist\nsk review --path src/         # limit scope\nsk review --assess            # force the advisory worth-it check\nsk review --base origin/main --fail-on major --sarif > review.sarif`}
+          />
+          <p>
+            {inline('sk review')} and {inline('/review')} share one read-only engine. Every finding must name a
+            file, a new-file line inside the diff, and an exact evidence quote; findings that fail validation are
+            dropped and counted, not shown with lower confidence. Deterministic checks (for example Python{' '}
+            {inline('eval')}/{inline('exec')} and {inline('subprocess(shell=True)')}) go through the same gate.
+          </p>
+          <p>
+            Branch, commit, and PR reviews add an advisory worth-it assessment: stated intent comes from{' '}
+            {inline('--intent')}, the PR, commit messages, or the branch name — never invented. It can ask up to
+            three evidence-backed questions and returns {inline('proceed')}, {inline('proceed-with-changes')}, or{' '}
+            {inline('reconsider')}. It never changes the exit code, SARIF output, or whether the review runs.
+          </p>
+          <p>
+            {inline('--pr N')} posts validated findings and the assessment as comments when credentials exist:
+            GitHub via authenticated {inline('gh')} or a token, Bitbucket Cloud with an app password/token, and
+            Bitbucket Server/Data Center via REST 1.0. {inline('--no-post')} disables it; {inline('--post')} makes
+            a failed post exit non-zero. Review never edits the branch. See{' '}
+            <a href="https://github.com/Faisal-Fayaz/sidekick/blob/main/docs/review.md">docs/review.md</a>.
+          </p>
+
+          <h2 id="code-intelligence">Code intelligence</h2>
+          <p>
+            Developer tools are read-only and approval-free: {inline('search_code')} (ripgrep → grep → Python
+            fallback), {inline('glob_files')}, {inline('repo_map')} (directory tree, languages, sizes, Python AST
+            symbols, token-capped), line-range {inline('read_file')}, and the {inline('exec')} allowlist. They
+            skip hidden paths, symlinks, binaries, and {inline('.gitignore')} matches where applicable; sensitive
+            roots stay blocked.
+          </p>
+          <CodeBlock
+            code={`search_code("def tool_", path="src", glob="*.py")   # file:line + snippet, capped\nrepo_map(max_tokens=1200)                       # deterministic tree + symbols\nglob_files("**/*.tsx", path="website")           # sorted paths, capped\nread_file("src/sk/agent.py", start_line=400, end_line=460)`}
+          />
 
           <h2 id="providers">Providers (BYO key)</h2>
           <CodeBlock code={`sk connect     # pick provider → paste key (hidden) → pick model → ping. Done.`} />
