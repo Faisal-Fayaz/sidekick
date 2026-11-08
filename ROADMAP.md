@@ -27,20 +27,18 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.31.0 (review foundation)
+## Next — v0.32.0 (review pack + verification)
 
-Scope for the first developer milestone. Details and accepted defaults live in
-[`docs/developer-plan.md`](docs/developer-plan.md). Tracking:
-[v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6).
+Second developer milestone. Details and accepted defaults live in
+[`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Code intelligence** — approval-free `search_code` and `glob_files`, line-range `read_file`, and `repo_map` v1 for tree/languages/Python symbols. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398), [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399), [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400)
-- **Review target and diff model** — resolve working tree, staged, commit, base ref, and path targets; collect file status, hunks, binary/rename handling, caps, and skip coverage. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401)
-- **Evidence-backed findings** — severity/category/confidence schema, validate file/line/evidence, drop invalid findings, and emit stable Markdown/JSON. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402)
-- **`sk review` MVP** — one engine for the CLI and `/review`, read-only, Markdown default, opt-in JSON and `--fail-on`. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403)
+- **Editable review pack** — layered built-in < user global < project < CLI rules, protected security rules, `--explain`, `--check-config`, and a deterministic pack hash.
+- **Built-in review rules + corpus** — grow the rule set to at least 10 rules with positive/negative fixtures and seeded worth-it assessment cases.
+- **`sk check` verification loop** — trust-gated `.sidekick/checks.toml`, approval and audit for every command, parsers for pytest/ruff/mypy/eslint/tsc/go test, and compact structured diagnostics.
+- **Post-edit verification** — syntax checks plus configured lint/typecheck for affected files; timeouts and missing commands report `unknown`, never `pass`.
 
-Out of scope for `v0.31.0`: harness layers, project checks, provider
-abstraction, sandboxing, and IDE integration. Later versions remain tentative
-until Phase 1 ships.
+Out of scope for `v0.32.0`: provider abstraction, platform sandboxing, and IDE
+integration. Later versions remain tentative.
 
 ## Later
 
@@ -90,6 +88,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.31.0` — **review foundation.** Code intelligence lands as approval-free tools: `search_code`/`glob_files` (#398), line-range `read_file` (#399), and `repo_map` for deterministic trees, languages, and top-level symbols (#400). `sk review` and `/review` now share one evidence-backed engine: working-tree/staged/commit/base/PR targets and a structured diff model (#401), validated findings with file:line evidence (#402), the CLI/slash surface (#403), an advisory worth-it assessment (#408), and optional GitHub/Bitbucket PR comments (#410). Review is read-only and never edits the branch. 22 built-in tools. Tests 1504 → 1597.
 - `v0.30.0` — **security release.** The egress allowlist is now enforced on every redirect hop, not just the initial URL: an allowlisted host could `302` anywhere and the agent fetched the target and returned it to the model, which is the exact threat #328 exists to stop (#371). The test that appeared to cover this passed before *and* after the fix, because it stubbed the guard rather than DNS and so asserted a DNS failure (#371). `PreToolUse` hooks now fail closed: a handler that raised was skipped, and an exception mid-iteration discarded denies already collected (#373). Checkpoints, the egress audit row and the FTS index report write failures instead of swallowing them, so `/rewind` can no longer report success over stale state (#373). Carries the still-unreleased `~/.sidekick` 0700/0600 fix (#301) and API-key masking (#269). Release integrity: `sk --version` now exists, the workflow can no longer strand a published version with no tag, and a burned version number fails CI (#372). MCP tool lists are cached per connection (#314). Credential storage, shell expansion and `python -m sk` are now actually tested, and coverage is a required check instead of a piped-through-`tail` no-op (#374). Docs match the shipped behaviour (#375). Tool names derive from the schema, so #368's residue detector recognises every tool instead of 17 of 19 (#376). Tests 1052 → 1389.
 - `v0.29.0` — unparsed tool-call markup is no longer posted as an answer (#367/#368): the prose is kept, the markup is dropped, and the turn is bounded at 2 corrective retries before a plain error. Alongside it on main but **not yet published**: the `~/.sidekick` 0700/0600 fix (#301) and API-key masking (#269).
 - `v0.28.0` — **burned.** Existed in `src/sk/__init__.py` for three minutes and was superseded before tagging, so the number can never be published. Listed in `BURNED_VERSIONS` in `tests/test_release_integrity.py`; a new gap now fails that test.

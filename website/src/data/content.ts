@@ -170,9 +170,33 @@ export const FEATURES = [
     body: 'One guided `sk connect` flow: numbered providers, live validation, curated models, 5-token ping. Ollama to Anthropic native API to any OpenAI-compatible URL.',
     tag: '11 presets',
   },
+  {
+    icon: '✓',
+    title: 'Review with evidence',
+    body: '`sk review` and `/review` share one read-only engine. A finding needs a real file:line and an exact evidence quote, or it is dropped. Branch and PR reviews also get an advisory worth-it check.',
+    tag: 'sk review',
+  },
+  {
+    icon: '⌕',
+    title: 'Code intelligence, no approval',
+    body: 'Search code, glob files, map a repository tree with languages and top-level symbols, and read exact line ranges — with the same hidden-path, symlink, .gitignore, and sensitive-root guards.',
+    tag: 'search_code · repo_map',
+  },
 ];
 
 export const WHATNEW = [
+  {
+    tag: 'sk review · /review',
+    title: 'Evidence-backed review, read-only',
+    body: 'Review working tree, staged changes, a commit, a base ref, or a PR. Findings without a real file:line and exact evidence are dropped; branch/PR reviews get an advisory worth-it check. `--pr` comments on GitHub/Bitbucket when credentials exist.',
+    link: '/docs#review',
+  },
+  {
+    tag: 'search_code · repo_map',
+    title: 'Code intelligence without approval',
+    body: 'Search code, glob files, map a repo tree with languages and Python symbols, and read exact line ranges — all read-only and guarded like the rest of the tools.',
+    link: '/docs#code-intelligence',
+  },
   {
     tag: '/readonly',
     title: 'Research mode that cannot write',
@@ -305,14 +329,30 @@ export const FAQS = [
     a: 'Two directions: `sk connect` points sidekick at any provider (OpenAI, Groq, Anthropic native, OpenCode Zen, custom URL), and `sk mcp` exposes all 22 tools to Claude Desktop over stdio. The reverse works too: `sk mcp-servers` consumes external MCP servers as approval-gated `mcp__*` agent tools.',
   },
   {
+    q: 'How does code review work?',
+    a: '`sk review` reuses the normal assistant, approval spine, and model. It resolves a working-tree, staged, commit, base-ref, or PR diff; validates every finding against a real file:line and an exact evidence quote; drops invalid findings; and optionally adds an advisory worth-it assessment. `--pr` posts comments to GitHub or Bitbucket when credentials exist. It never edits the branch.',
+  },
+  {
     q: 'Is it safe to let it run shell?',
     a: 'Reads auto-run; shell/writes/deletes need approval (one plan review per turn, silent only in --yes). Need zero writes? /readonly (or sk run --read-only) blocks them all, and /rewind undoes any file edit from snapshots. Shell hard-refuses rm -rf /, mkfs, dd-to-device and fork bombs even with approval. URL tools block localhost/private IPs.',
   },
 ];
 
-export const ROADMAP_NEXT: { v: string; items: string[] }[] = [];
+export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
+  {
+    v: 'v0.32.0 — review pack + verification',
+    items: [
+      'Layered review pack · --explain · --check-config',
+      'Built-in rules + seeded review corpus',
+      'sk check · parsed diagnostics',
+      'Post-edit verification',
+    ],
+  },
+];
 
 export const ROADMAP_DONE = [
+  'v0.31.0 — review foundation: search_code/glob_files, line-range read_file, repo_map, evidence-backed sk review with advisory worth-it assessment, and GitHub/Bitbucket PR comments (#398–#403, #408, #410)',
+  'v0.30.0 — security release: egress allowlist on every redirect hop, fail-closed hooks, release integrity, coverage gate (#371–#376)',
   'v0.29.0 — unparsed tool-call markup no longer posted as an answer (#367); MCP tool lists cached per connection (#314)',
   'v0.28.0 — burned: bumped then superseded before tagging, never publishable',
   'v0.27.0 — security release: hostile-repo RCE chain closed (#298), protected write paths (#305), credential redaction (#300), MCP trust tier (#302/#303), SSRF chokepoint (#304)',
