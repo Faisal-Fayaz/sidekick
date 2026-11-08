@@ -572,7 +572,7 @@ material concern".
 every search.
 
 **Status (2026-11-08):** `search_code` and `glob_files` shipped (#398, PR #407);
-line-range `read_file` shipped (#399, PR #406); `repo_map` v1 shipped (#400).
+line-range `read_file` shipped (#399, PR #406); `repo_map` v1 shipped (#400, PR #412).
 
 #### New or improved tools
 
@@ -996,7 +996,7 @@ Items 1–6 are scoped to `v0.31.0`. Items 7–14 remain backlog for later phase
 
 1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests. **Shipped (PR #407).**
 2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`. **Shipped (PR #406).**
-3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap. **Shipped.**
+3. [#400](https://github.com/Faisal-Fayaz/sidekick/issues/400) — Add `repo_map` v1: tree, languages, Python symbols, token cap. **Shipped (PR #412).**
 4. [#401](https://github.com/Faisal-Fayaz/sidekick/issues/401) — Build review target resolver and diff model.
 5. [#402](https://github.com/Faisal-Fayaz/sidekick/issues/402) — Add finding schema, validation, and Markdown/JSON serialization.
 6. [#403](https://github.com/Faisal-Fayaz/sidekick/issues/403) — Wire `sk review` and `/review` to the same engine.
