@@ -51,8 +51,9 @@ result. Reads run automatically; writes and shell commands ask first.
 
 *Real headless captures of the shipped TUI from [`docs/shot.py`](docs/shot.py).
 The demo sessions are seeded and no model is called; `qwen3-coder:30b` is a
-display model, and `sk init` picks one for your hardware. A marketing/docs site
-lives in [`website/`](website/).*
+display model, and `sk init` picks one for your hardware. The marketing/docs
+site lives at <https://faisal-fayaz.github.io/sidekick/> (source in
+[`website/`](website/)).*
 
 ## Why Sidekick
 

@@ -190,6 +190,22 @@ def test_release_is_not_triggered_by_a_bare_tag_push():
     )
 
 
+def test_release_deploys_the_website_after_the_github_release():
+    """The site's version comes from the source file, so a bump must redeploy
+    it. It runs after github-release so a failed publish never advertises an
+    unreleased version on the public site."""
+    assert "  deploy-website:" in RELEASE_YML, "the release no longer deploys the website"
+    job = RELEASE_YML.split("  deploy-website:", 1)[1]
+    assert "needs: [build, github-release]" in job, (
+        "website deployment must wait for the release to exist"
+    )
+    assert "pages: write" in job and "id-token: write" in job
+    assert "actions/configure-pages" in job
+    assert "path: website/dist" in job, "Pages must publish the built Vite output"
+    assert "actions/deploy-pages" in job
+    assert "github-pages" in job, "the deploy job needs the github-pages environment"
+
+
 def test_version_is_extracted_from_the_single_source():
     line = next(
         (ln.strip() for ln in RELEASE_YML.splitlines() if "VERSION=" in ln and "sed" in ln),

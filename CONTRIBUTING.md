@@ -131,4 +131,5 @@ GitHub auto-generates release notes from merge subjects, so write them as
       floor in `pyproject.toml`; the old test-count *badge* gate was removed
       deliberately in #319 — the count is reported, not asserted.)
 - [ ] After merge: release workflow success, PyPI shows the version,
-      GitHub Release exists with artifacts.
+      GitHub Release exists with artifacts, and the website is deployed to
+      <https://faisal-fayaz.github.io/sidekick/>.
