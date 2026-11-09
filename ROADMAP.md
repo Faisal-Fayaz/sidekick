@@ -82,6 +82,98 @@ Thesis: own the users cloud agents structurally can't serve
 - **Config profiles (#189)** — named `~/.sidekick/profiles/` switchable via flag.
 - **Session search (#190)** — full-text search across past transcripts (FTS5 already in stack).
 
+### Market-informed candidates (2026-11)
+
+Market scan: JetBrains' 2026 survey of 15,000+ professional developers found
+90% use coding agents weekly and 68% daily
+([source](https://blog.jetbrains.com/research/2026/08/ai-coding-agent-adoption-2026/)).
+The gap has moved from code generation to **intent, context, verification, and
+evidence**. The candidates below target those gaps from Sidekick's local-first
+angle. They are new — none repeat `Next`, the existing Later list, or Done — and
+none are scheduled. Each would be an optional pack on the shared harness; none
+changes the core loop, approvals, or audit. Promote one to `Next` by PR only
+after it passes the promotion test in `docs/developer-plan.md` §5.1.
+
+**Intent**
+
+- **Issue-to-branch intake** — read a GitHub/Linear/Jira issue into a scoped
+  task, then create a branch, plan, and draft PR through the planned git tools.
+  Market: Linear Agent, Codex, and Copilot now start from assigned issues;
+  Sidekick can do it without a hosted sandbox. Reads are automatic; writes and
+  pushes stay approval-gated. This is intent intake, not a duplicate of the git
+  primitives in `docs/developer-plan.md` §4.5.
+- **Spec-to-verification trail** — durable `.sidekick/specs/` artifacts
+  (requirements → design → tasks) that link each acceptance criterion to the
+  checks and review findings that prove it. Market: Kiro specs and GitHub Spec
+  Kit made spec-driven development mainstream; `/plan` is currently ephemeral.
+  Local-first fit: artifacts are diffable, reviewable, and stay in the repo.
+
+**Context**
+
+- **Adaptive code retrieval** — add an LSP bridge (definitions, references,
+  diagnostics, call graph) and an optional local semantic code index on top of
+  `repo_map`/`search_code`, routing by task instead of replacing lexical search;
+  optionally map multiple repos in a workspace. Market: JetBrains Context,
+  Cursor, and Codex invest in repo context; recent LSP research shows semantic
+  retrieval is task-dependent, so hybrid routing is the honest design. Separate
+  from #282, which covers memory/skills retrieval, not code symbols.
+  Local-first fit: on-disk index, local embeddings only, lexical fallback for
+  4GB boxes.
+- **Remote SSH workspace** — run the daemon/agent on a remote dev box while the
+  local TUI keeps approvals, policy, and the audit ledger; no inbound ports and
+  no cloud relay. Market: Codex Remote SSH and Claude remote control are now
+  standard. This is self-hosted remote execution, not the cloud-hosted version
+  ruled out below.
+
+**Verification**
+
+- **Browser verification pack** — drive a local Playwright/Chromium session to
+  verify a web change, capture an accessibility snapshot or screenshot, and
+  optionally emit an e2e test; egress stays deny-by-default. Market: Playwright
+  MCP/CLI is becoming the default way agents see UI changes. Optional pack:
+  detect an existing browser install, add no required dependency. Distinct from
+  the read-only JS page extraction shipped in v0.25.
+- **Docs co-change guard** — detect code changes that invalidate docs/ADRs and
+  propose a same-PR docs update; start with changed public APIs, CLI help, and
+  config keys. Market: a 2026 study of 29,669 AI-authored PRs found 63.2%
+  changed code without docs; OpenAI runs a doc-gardening agent. Extends the
+  existing Docs freshness gate beyond the README command table, and proposes
+  rather than auto-generating to avoid documentation sprawl.
+- **Taint-aware untrusted-content policy** — label content by origin (web,
+  issue, repo file, tool output) and require approval before untrusted text can
+  trigger writes, network egress, or secret-adjacent actions; record the
+  decision in the ledger. Market: prompt injection is the top agent risk;
+  Microsoft FIDES and recent coding-agent research show provenance beats
+  prompt-only defenses. Runtime complement to the Security threat model, not a
+  replacement for sandboxing.
+
+**Evidence**
+
+- **Review feedback memory** — learn local, inspectable rules from
+  accepted/dismissed findings and PR replies, with a reviewable diff and easy
+  rollback; protected rules can never be disabled automatically. Market: Cursor
+  Bugbot's learned rules and Greptile's feedback learning show review quality is
+  becoming a learning loop. Extends the editable review pack; feedback stays on
+  disk.
+- **Local run traces + replay** — a read-only timeline of model calls, tool
+  calls, diffs, approvals, tokens/latency, and stop reason; export as HTML/JSON
+  and replay a recorded run against a changed harness. Market: agent
+  observability is now a category (OpenTelemetry traces, local tools). The audit
+  ledger records tool runs; this adds the full run and replay. Traces stay in
+  `~/.sidekick`, redacted by default; replay never calls the network unless
+  asked.
+
+Scan sources: [JetBrains 2026 survey](https://blog.jetbrains.com/research/2026/08/ai-coding-agent-adoption-2026/),
+[Claude Code extension model](https://code.claude.com/docs/en/features-overview),
+[Codex CLI](https://developers.openai.com/codex/cli),
+[Kiro specs](https://kiro.dev/docs/specs/),
+[GitHub Spec Kit](https://github.com/github/spec-kit),
+[JetBrains Context](https://blog.jetbrains.com/ai/2026/07/introducing-jetbrains-context-repository-intelligence-for-coding-agents),
+[Playwright MCP](https://playwright.dev/mcp/introduction),
+[Bugbot learned rules](https://cursor.com/blog/bugbot-learning),
+[docs-drift study](https://arxiv.org/pdf/2610.27381), and the
+[prompt-injection SoK](https://arxiv.org/abs/2601.17548).
+
 Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobile apps.
 
 ## Done
