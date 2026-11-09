@@ -269,3 +269,53 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: false
           generate_release_notes: true
+
+  deploy-website:
+    name: Deploy website to GitHub Pages
+    # The site's version is read from src/sk/__init__.py at build time, so a
+    # release is the one place it must be redeployed. Run after the GitHub
+    # Release exists: never advertise a version that failed to publish.
+    # `reconcile` can redeploy manually after a Pages failure, but a Test PyPI
+    # dispatch must not touch production.
+    needs: [build, github-release]
+    if: >-
+      github.repository == 'Faisal-Fayaz/sidekick'
+      && (github.event_name == 'push'
+        || (github.event_name == 'workflow_dispatch' && inputs.reconcile == 'true'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Report deployed URL
+        run: |
+          echo "Website v${{ needs.build.outputs.version }} deployed to ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
