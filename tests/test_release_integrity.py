@@ -207,6 +207,9 @@ def test_release_deploys_the_website_after_the_github_release():
     assert "needs: [build, github-release]" in job, (
         "website deployment must wait for the release to exist"
     )
+    assert "always()" in job and "needs.github-release.result == 'success'" in job, (
+        "the recovery path's skipped publish would otherwise skip the deploy"
+    )
     assert "pages: write" in job and "id-token: write" in job
     assert "actions/configure-pages" in job
     assert "path: website/dist" in job, "Pages must publish the built Vite output"

@@ -288,10 +288,17 @@ jobs:
     # `reconcile` can redeploy manually after a Pages failure, but a Test PyPI
     # dispatch must not touch production.
     needs: [build, github-release]
+    # Gate on the release result, not the event or the dispatch input. A
+    # Test PyPI dispatch never produces a github-release, so it cannot deploy
+    # production; a reconcile dispatch does, so it can redeploy manually.
+    # `always()` is required for the same reason as github-release: the
+    # recovery path skips `publish` upstream, and implicit success() otherwise
+    # skips this job before the condition is evaluated.
     if: >-
-      github.repository == 'Faisal-Fayaz/sidekick'
-      && (github.event_name == 'push'
-        || (github.event_name == 'workflow_dispatch' && inputs.reconcile))
+      always()
+      && github.repository == 'Faisal-Fayaz/sidekick'
+      && needs.build.result == 'success'
+      && needs.github-release.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
