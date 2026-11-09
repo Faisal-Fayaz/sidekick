@@ -167,6 +167,10 @@ def test_github_release_runs_when_the_version_is_already_on_pypi():
         "github-release must also run when the version is already on PyPI, "
         "otherwise a failed tag step after a successful upload is unrecoverable"
     )
+    assert "always()" in job and "needs.build.result == 'success'" in job, (
+        "the recovery path skips `publish`; without always() the dependent job "
+        "inherits success() and is skipped before its condition is considered"
+    )
     assert "continue-on-error" in job, (
         "the artifact download must be optional: on the recovery path nothing "
         "was built, so requiring it is what makes recovery unreachable"

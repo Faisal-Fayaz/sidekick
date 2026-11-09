@@ -228,12 +228,22 @@ jobs:
     # release, the repo had no tag and no GitHub Release, and the only manual
     # escape was pushing a tag, which no workflow validates. `reconcile` above
     # makes the same path reachable by hand.
+    #
+    # `always()` is load-bearing: on the recovery path `publish` is skipped,
+    # and without a status-check function the dependent job inherits
+    # success(), which is false for a skipped need — so this job would be
+    # skipped before its own condition was considered. `build.result` restores
+    # the build gate that `always()` would otherwise bypass.
     if: >-
-      (github.event_name == 'push'
-        && (needs.publish.result == 'success' || needs.build.outputs.publish == 'false'))
-      || (github.event_name == 'workflow_dispatch'
-        && inputs.reconcile == 'true'
-        && needs.build.outputs.target == 'pypi')
+      always()
+      && needs.build.result == 'success'
+      && (
+        (github.event_name == 'push'
+          && (needs.publish.result == 'success' || needs.build.outputs.publish == 'false'))
+        || (github.event_name == 'workflow_dispatch'
+          && inputs.reconcile == 'true'
+          && needs.build.outputs.target == 'pypi')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
