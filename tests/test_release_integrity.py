@@ -181,7 +181,11 @@ def test_github_release_runs_when_the_version_is_already_on_pypi():
 def test_release_trigger_has_a_manual_recovery_path():
     """A recovery that can only fire on the next version bump is not a recovery."""
     assert "reconcile:" in RELEASE_YML
-    assert "inputs.reconcile == 'true'" in RELEASE_YML
+    assert "inputs.reconcile" in RELEASE_YML
+    assert "inputs.reconcile == 'true'" not in RELEASE_YML, (
+        "reconcile is declared as a boolean input; comparing it to the string "
+        "'true' is false in GitHub expressions, so the recovery path never runs"
+    )
 
 
 def test_release_is_not_triggered_by_a_bare_tag_push():
