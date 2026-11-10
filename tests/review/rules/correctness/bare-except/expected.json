@@ -1,0 +1,7 @@
+{
+  "rule_id": "correctness/bare-except",
+  "severity": "minor",
+  "category": "correctness",
+  "positive_lines": [4],
+  "negative_lines": []
+}

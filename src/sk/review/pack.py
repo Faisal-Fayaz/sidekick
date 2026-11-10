@@ -93,8 +93,8 @@ BUILTIN_RULES: tuple[ReviewRule, ...] = (
         category="security",
         applies_to=("**/*.py",),
         guidance=(
-            "Flag eval() when its input is not a literal. String evaluation can turn "
-            "untrusted data into arbitrary code execution."
+            "Flag eval() calls. Evaluating a string as Python code can turn untrusted "
+            "data into arbitrary code execution; use a parser or ast.literal_eval for data."
         ),
         protected=True,
     ),
@@ -104,8 +104,8 @@ BUILTIN_RULES: tuple[ReviewRule, ...] = (
         category="security",
         applies_to=("**/*.py",),
         guidance=(
-            "Flag exec() on non-literal input. It executes a string as Python code; "
-            "use an explicit dispatch table instead."
+            "Flag exec() calls. Executing a string as Python code is hard to audit; "
+            "use an explicit dispatch table or a normal function call."
         ),
         protected=True,
     ),
@@ -131,11 +131,78 @@ BUILTIN_RULES: tuple[ReviewRule, ...] = (
         ),
         protected=True,
     ),
+    ReviewRule(
+        id="security/unsafe-yaml-load",
+        severity="major",
+        category="security",
+        applies_to=("**/*.py",),
+        guidance=(
+            "Flag yaml.load() without a safe loader. The default loader can construct "
+            "arbitrary Python objects from untrusted YAML; use yaml.safe_load()."
+        ),
+        protected=True,
+    ),
+    ReviewRule(
+        id="security/tls-verify-disabled",
+        severity="major",
+        category="security",
+        applies_to=("**/*.py",),
+        guidance=(
+            "Flag verify=False on HTTP/TLS clients and session config. Disabling "
+            "certificate verification allows network attackers to impersonate servers."
+        ),
+        protected=True,
+    ),
+    ReviewRule(
+        id="security/weak-hash",
+        severity="major",
+        category="security",
+        applies_to=("**/*.py",),
+        guidance=(
+            "Flag MD5 and SHA-1 for security use. Both are collision-broken; use "
+            "SHA-256, or a password hash such as scrypt/argon2. Allow an explicit "
+            "usedforsecurity=False cache-key exception."
+        ),
+        protected=True,
+    ),
+    ReviewRule(
+        id="security/sql-injection",
+        severity="major",
+        category="security",
+        applies_to=("**/*.py",),
+        guidance=(
+            "Flag SQL built with f-strings, % interpolation, concatenation, or "
+            ".format(). Use bound parameters: execute(sql, params)."
+        ),
+        protected=True,
+    ),
+    ReviewRule(
+        id="correctness/mutable-default",
+        severity="minor",
+        category="correctness",
+        applies_to=("**/*.py",),
+        guidance=(
+            "Flag mutable default arguments such as [] or {}. The container is shared "
+            "across calls; default to None and create it inside the function."
+        ),
+        protected=False,
+    ),
+    ReviewRule(
+        id="correctness/bare-except",
+        severity="minor",
+        category="correctness",
+        applies_to=("**/*.py",),
+        guidance=(
+            "Flag bare except: handlers. They hide real bugs and swallow "
+            "KeyboardInterrupt/SystemExit; catch the specific exceptions you handle."
+        ),
+        protected=False,
+    ),
 )
 
 # A protected ID stays protected even if the user layer disables it: a later
 # project layer must not be able to re-add the ID as an unprotected rule.
-_PROTECTED_IDS = frozenset(r.id for r in BUILTIN_RULES)
+_PROTECTED_IDS = frozenset(r.id for r in BUILTIN_RULES if r.protected)
 
 
 @dataclass(frozen=True)

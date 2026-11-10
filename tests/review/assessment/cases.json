@@ -1,0 +1,163 @@
+{
+  "cases": [
+    {
+      "name": "docs-only-no-material-concern",
+      "intent": "Clarify the review pack docs",
+      "target": "base:main",
+      "files": [
+        {
+          "path": "docs/review.md",
+          "lines": [
+            "# Review",
+            "",
+            "Review policy is editable without forking the engine."
+          ]
+        }
+      ],
+      "assessment": {
+        "stated_intent": "invented intent",
+        "intent_source": "pr-body",
+        "signals": ["invented signal"],
+        "questions": [],
+        "risks": [],
+        "verdict": "proceed",
+        "confidence": "high",
+        "assumptions": []
+      },
+      "expect": {
+        "verdict": "proceed",
+        "intent_source": "user",
+        "signals_include": ["Docs changed: docs/review.md."],
+        "questions": 0,
+        "question_evidence": [],
+        "risks": []
+      }
+    },
+    {
+      "name": "risky-migration-grounded-question",
+      "intent": "Add a lock flag for staged account deletion",
+      "target": "base:main",
+      "files": [
+        {
+          "path": "db/migrations/0007_add_lock.sql",
+          "lines": [
+            "ALTER TABLE users ADD COLUMN locked BOOLEAN NOT NULL DEFAULT false;"
+          ]
+        }
+      ],
+      "assessment": {
+        "stated_intent": "Add a lock flag",
+        "intent_source": "user",
+        "signals": [],
+        "questions": [
+          {
+            "question": "Can this run without a table rewrite?",
+            "evidence": "ALTER TABLE users ADD COLUMN locked BOOLEAN NOT NULL DEFAULT false;",
+            "alternative": "Add a nullable column, backfill, then set NOT NULL."
+          },
+          {
+            "question": "Was this approved by the security team?",
+            "evidence": "this sentence is not in the diff",
+            "alternative": "Ask for approval first."
+          }
+        ],
+        "risks": ["A NOT NULL default on a large table may lock writes."],
+        "verdict": "proceed-with-changes",
+        "confidence": "medium",
+        "assumptions": []
+      },
+      "expect": {
+        "verdict": "proceed-with-changes",
+        "intent_source": "user",
+        "signals_include": [
+          "Database/schema migration paths changed: db/migrations/0007_add_lock.sql."
+        ],
+        "questions": 1,
+        "question_evidence": [
+          "ALTER TABLE users ADD COLUMN locked BOOLEAN NOT NULL DEFAULT false;"
+        ],
+        "risks": ["A NOT NULL default on a large table may lock writes."]
+      }
+    },
+    {
+      "name": "dependency-bump-without-tests",
+      "intent": "Bump httpx to pick up connection fixes",
+      "target": "base:main",
+      "files": [
+        {
+          "path": "pyproject.toml",
+          "lines": ["httpx>=0.28", "h11>=0.16"]
+        }
+      ],
+      "assessment": {
+        "stated_intent": "Bump httpx",
+        "intent_source": "commit",
+        "signals": [],
+        "questions": [
+          {
+            "question": "Which behavior changes in this bump?",
+            "evidence": "httpx>=0.28",
+            "alternative": "Pin the current version until a test covers the new behavior."
+          }
+        ],
+        "risks": ["Dependency bump has no test changes."],
+        "verdict": "reconsider",
+        "confidence": "medium",
+        "assumptions": []
+      },
+      "expect": {
+        "verdict": "reconsider",
+        "intent_source": "user",
+        "signals_include": [
+          "Dependency/build files changed: pyproject.toml",
+          "No test files were changed alongside code changes."
+        ],
+        "questions": 1,
+        "question_evidence": ["httpx>=0.28"],
+        "risks": ["Dependency bump has no test changes."]
+      }
+    },
+    {
+      "name": "small-bugfix-with-test",
+      "intent": "Fix off-by-one in pagination",
+      "target": "base:main",
+      "files": [
+        {
+          "path": "src/app/pagination.py",
+          "lines": [
+            "def page_count(total, size):",
+            "    return (total + size - 1) // size"
+          ]
+        },
+        {
+          "path": "tests/test_pagination.py",
+          "lines": [
+            "from app.pagination import page_count",
+            "",
+            "",
+            "def test_page_count():",
+            "    assert page_count(10, 3) == 4"
+          ]
+        }
+      ],
+      "assessment": {
+        "stated_intent": "Fix pagination",
+        "intent_source": "inferred",
+        "signals": [],
+        "questions": [],
+        "risks": [],
+        "verdict": "proceed",
+        "confidence": "high",
+        "assumptions": []
+      },
+      "expect": {
+        "verdict": "proceed",
+        "intent_source": "user",
+        "signals_include": ["Tests were changed: tests/test_pagination.py."],
+        "questions": 0,
+        "question_evidence": [],
+        "risks": []
+      }
+    }
+  ]
+}

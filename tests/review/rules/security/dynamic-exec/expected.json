@@ -1,0 +1,7 @@
+{
+  "rule_id": "security/dynamic-exec",
+  "severity": "major",
+  "category": "security",
+  "positive_lines": [2],
+  "negative_lines": []
+}
