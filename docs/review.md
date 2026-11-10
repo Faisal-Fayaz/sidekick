@@ -41,6 +41,80 @@ A small set of deterministic checks runs without a model (for example Python
 `eval`/`exec` and `subprocess(..., shell=True)`). Deterministic findings go
 through the same evidence validation.
 
+## Review pack
+
+Review policy is editable without forking the engine. The effective pack is
+merged in this order:
+
+```
+built-in < ~/.sidekick/review.toml < <repo>/.sidekick/review.toml < CLI flags
+```
+
+Scalars take the highest layer. `include` and `ignore` append unique patterns.
+Rules merge by ID, so a layer can tighten one field without copying the whole
+rule.
+
+```toml
+# ~/.sidekick/review.toml (user layer)
+schema = 1
+
+[review]
+model = "qwen2.5-coder:7b"   # optional; otherwise the configured model
+fail_on = "major"            # exit-code threshold; default "never"
+assess = "auto"              # auto | always | never
+max_findings = 25
+context_lines = 3
+max_chars = 12000
+max_files = 200
+max_diff_bytes = 400000
+include = ["src/**"]         # keep only these paths
+ignore = ["vendor/**"]       # drop these paths
+allow_protected_override = false
+
+[[rules]]
+id = "project/migration-lock"
+severity = "major"
+category = "correctness"
+applies_to = ["db/migrations/**"]
+guidance = "Migrations must be reversible; flag destructive steps."
+```
+
+Use `disable = true` (or `enabled = false`) to remove a rule. Rule IDs are
+stable: the deterministic checks use `security/dynamic-eval`,
+`security/dynamic-exec`, `security/os-system`, and
+`security/subprocess-shell`.
+
+### Trust
+
+Project packs are **untrusted by default**. A cloned repository must not be able
+to change how its own review runs. Load `<repo>/.sidekick/review.toml` only with
+`--trust-project-rules` or `SIDEKICK_TRUST_REPO=1` in your own shell
+environment. The project layer is discovered at the git root, not at an
+arbitrary parent directory.
+
+The four built-in `security/*` rules are protected. A project layer can never
+disable or weaken them. The user layer can — but only with an explicit
+`[review] allow_protected_override = true`. CLI overrides cannot bypass that
+gate.
+
+### Inspect and validate
+
+```bash
+sk review --explain             # layers, effective options/rules, warnings, hash
+sk review --check-config        # exit 1 on schema/rule/glob errors
+sk review --trust-project-rules --explain
+sk review --disable project/migration-lock
+sk review --severity project/migration-lock=blocker
+```
+
+`/review` accepts the same pack flags. `--check-config` prints warnings for
+missing built-in rule fixtures but only fails on errors. Rejected project packs
+do not block a review; malformed user packs do, with the error shown.
+
+The report includes a deterministic `review_pack_hash` of the effective policy
+(provenance and file paths are excluded). The effective `fail_on` also controls
+the CLI exit code when `--fail-on` is not given.
+
 ## Worth-it assessment
 
 For branch, commit, and PR reviews, Sidekick adds an advisory assessment before
@@ -94,20 +168,19 @@ never includes the raw diff, secrets, or unfiltered model output.
 sk review --base origin/main --fail-on major --sarif > review.sarif
 ```
 
-`--fail-on` accepts `blocker`, `major`, `minor`, `nit`, or `never` (the
-default). `--json` emits the full machine-readable report. Review warnings
-(model chunk failures, skipped files, truncation) are in the report; they do
-not erase the findings that were validated.
+`--fail-on` accepts `blocker`, `major`, `minor`, `nit`, or `never`. Without
+the flag, the effective review pack controls the threshold (built-in default:
+`never`). `--json` emits the full machine-readable report, including the pack
+hash and any pack warnings. Review warnings (model chunk failures, skipped
+files, truncation) are in the report; they do not erase the findings that were
+validated.
 
 ## Limits
 
 - The diff is capped (200 files / 400 KB by default). Truncation is reported
-  and coverage is marked partial.
+  and coverage is marked partial. The pack can raise or lower both budgets.
 - Large diffs are split into model chunks; cross-file reasoning is therefore
   limited to what fits in each chunk.
-- The review prompt/rules are built in for now. The editable review pack and
-  project-level `review.toml` are planned follow-ups; the engine boundary is
-  already in `src/sk/review/`.
-- Review uses the configured provider/model. Point it at a local model with
-  `sk model` or `--model`; no source leaves the machine unless the model
-  provider is remote.
+- Review uses the configured provider/model or `[review] model`. Point it at a
+  local model with `sk model` or `--model`; no source leaves the machine unless
+  the model provider is remote.

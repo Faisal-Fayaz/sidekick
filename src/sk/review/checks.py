@@ -8,10 +8,12 @@ validation as a model finding.
 from __future__ import annotations
 
 import ast
+import dataclasses
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .diff import DiffModel, FileDiff
+from .pack import ReviewRule, rule_applies
 from .schema import Finding
 
 
@@ -129,16 +131,44 @@ def _python_checks(fd: FileDiff, repo_root: str) -> list[Finding]:
     return out
 
 
-def deterministic_findings(diff: DiffModel) -> list[Finding]:
-    """Run all non-model checks. Never raises on a malformed file."""
+def deterministic_findings(
+    diff: DiffModel,
+    rules: Iterable[ReviewRule] | Mapping[str, ReviewRule] | None = None,
+) -> list[Finding]:
+    """Run all non-model checks under the effective review-pack rules.
+
+    Disabled rules disappear; overridden severities and categories are applied
+    here rather than at report time so every downstream consumer (JSON, SARIF,
+    fail-on) sees one canonical finding.
+    """
+    if rules is None:
+        from .pack import BUILTIN_RULES
+
+        rule_map: Mapping[str, ReviewRule] = {r.id: r for r in BUILTIN_RULES}
+    elif isinstance(rules, Mapping):
+        rule_map = rules
+    else:
+        rule_map = {r.id: r for r in rules}
+
     out: list[Finding] = []
     for fd in diff.files:
         if fd.binary or fd.skipped:
             continue
         try:
-            out.extend(_python_checks(fd, diff.repo_root))
+            findings = _python_checks(fd, diff.repo_root)
         except Exception:
             continue
+        for finding in findings:
+            rule = rule_map.get(finding.rule_id)
+            if rule is None or not rule_applies(rule, fd.path):
+                continue
+            out.append(
+                dataclasses.replace(
+                    finding,
+                    severity=rule.severity,
+                    category=rule.category,
+                )
+            )
     return _dedupe(out)
 
 

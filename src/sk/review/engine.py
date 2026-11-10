@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -19,6 +18,7 @@ from . import model as model_mod
 from . import signals as signals_mod
 from .diff import DiffModel, collect_diff, iter_chunks
 from .intent import resolve_intent
+from .pack import filter_diff, load_review_pack
 from .providers import ProviderError, post_review
 from .schema import (
     Assessment,
@@ -37,17 +37,37 @@ class ReviewError(RuntimeError):
 
 @dataclass
 class ReviewOptions:
-    max_findings: int = 25
-    context_lines: int = 3
-    fail_on: str = "never"
-    assess: str = "auto"  # auto | always | never
+    # None means "defer to the review pack". Only values the caller explicitly
+    # set become the highest (CLI) layer.
+    max_findings: int | None = None
+    context_lines: int | None = None
+    fail_on: str = ""
+    assess: str = ""  # "" -> pack; otherwise auto | always | never
     intent: str = ""
     model: str = ""
-    max_chars: int = 12_000
-    max_files: int = 200
-    max_diff_bytes: int = 400_000
+    max_chars: int | None = None
+    max_files: int | None = None
+    max_diff_bytes: int | None = None
     post: str = "auto"  # auto | always | never
     session: str = ""
+    trust_project: bool = False
+    disable_rules: tuple[str, ...] = ()
+    severity_overrides: tuple[str, ...] = ()
+
+    def pack_overrides(self) -> dict[str, Any]:
+        """Only explicitly set options become the CLI layer; None defers to the pack."""
+        return {
+            "model": self.model or None,
+            "max_findings": self.max_findings,
+            "context_lines": self.context_lines,
+            "fail_on": self.fail_on or None,
+            "assess": self.assess or None,
+            "max_chars": self.max_chars,
+            "max_files": self.max_files,
+            "max_diff_bytes": self.max_diff_bytes,
+            "disable_rules": self.disable_rules,
+            "severity_overrides": self.severity_overrides,
+        }
 
 
 Completer = Callable[..., str]
@@ -97,13 +117,20 @@ def review(
 ) -> ReviewReport:
     """Run one review. Raises ReviewError for a bad target; model failures are reported."""
     opts = options or ReviewOptions()
+    pack = load_review_pack(
+        cwd=diff.repo_root if diff is not None else cwd,
+        trust_project=opts.trust_project,
+        overrides=opts.pack_overrides(),
+    )
+    if pack.errors:
+        raise ReviewError("invalid review pack: " + "; ".join(pack.errors))
     if cfg is None:
         from ..config import Config
 
         cfg = Config.load()
-    if opts.model.strip():
+    if pack.model:
         cfg = copy.copy(cfg)
-        cfg.model = opts.model.strip()
+        cfg.model = pack.model
     started = time.time()
     try:
         if diff is None:
@@ -114,19 +141,21 @@ def review(
                 commit=commit,
                 pr=pr,
                 path=path,
-                max_files=opts.max_files,
-                max_bytes=opts.max_diff_bytes,
+                max_files=pack.max_files,
+                max_bytes=pack.max_diff_bytes,
             )
     except Exception as e:
         raise ReviewError(str(e)) from e
 
-    findings: list[Finding] = checks.deterministic_findings(diff)
+    diff = filter_diff(diff, pack.include, pack.ignore)
+    findings: list[Finding] = checks.deterministic_findings(diff, pack.rules)
     errors: list[str] = []
-    chunks = list(iter_chunks(diff, max_chars=opts.max_chars))
+    chunks = list(iter_chunks(diff, max_chars=pack.max_chars))
     call = completer or model_mod.complete
     total = len(chunks)
+    rules_text = pack.rule_prompt()
     for i, chunk in enumerate(chunks, 1):
-        prompt = _review_prompt(diff, chunk, i, total)
+        prompt = _review_prompt(diff, chunk, i, total, rules_text=rules_text)
         try:
             raw = call(cfg, system=SYSTEM_PROMPT, user=prompt, max_tokens=4096)
         except Exception as e:  # noqa: BLE001 - a chunk failure must not lose the report
@@ -138,14 +167,14 @@ def review(
                 findings.append(f)
 
     valid, dropped = validate_findings(
-        findings, diff, repo_root=diff.repo_root, context_lines=opts.context_lines
+        findings, diff, repo_root=diff.repo_root, context_lines=pack.context_lines
     )
     valid = _dedupe_findings(valid)
-    valid = _cap(valid, opts.max_findings)
+    valid = _cap(valid, pack.max_findings)
     valid = [dataclasses.replace(f, id=f"F{idx:03d}") for idx, f in enumerate(valid, 1)]
 
     assessment: Assessment | None = None
-    if _should_assess(opts.assess, diff.target):
+    if _should_assess(pack.assess, diff.target):
         assessment, assess_error = _assess(diff, cfg, call, opts, valid)
         if assess_error:
             errors.append(assess_error)
@@ -167,7 +196,9 @@ def review(
         dropped=len(dropped),
         model=str(getattr(cfg, "model", "")),
         provider=str(getattr(cfg, "provider", "")),
-        review_pack_hash=_pack_hash(opts),
+        review_pack_hash=pack.hash,
+        fail_on=pack.fail_on,
+        pack_warnings=list(pack.warnings),
         latency_ms=int((time.time() - started) * 1000),
         token_cost=0.0,
         truncated=diff.truncated,
@@ -204,7 +235,14 @@ def _should_assess(mode: str, target: str) -> bool:
     return target.startswith(("base:", "commit:", "pr:"))
 
 
-def _review_prompt(diff: DiffModel, chunk: str, index: int, total: int) -> str:
+def _review_prompt(
+    diff: DiffModel,
+    chunk: str,
+    index: int,
+    total: int,
+    *,
+    rules_text: str = "",
+) -> str:
     meta = diff.meta
     title = meta.get("title") or ""
     body = (meta.get("body") or "")[:1500]
@@ -213,8 +251,10 @@ def _review_prompt(diff: DiffModel, chunk: str, index: int, total: int) -> str:
         context += f"PR title: {title}\n"
     if body:
         context += f"PR description (untrusted):\n<<<UNTRUSTED PR BODY\n{body}\nEND-UNTRUSTED>>>\n"
+    if rules_text:
+        context += f"\nEffective review rules (policy):\n{rules_text}\n"
     context += (
-        f"Chunk {index}/{total}. Changed lines: {diff.changed_lines}. "
+        f"\nChunk {index}/{total}. Changed lines: {diff.changed_lines}. "
         "Review only the files below.\n\n"
     )
     return (
@@ -329,10 +369,3 @@ def _reviewed_lines(diff: DiffModel) -> int:
     # For a truncated diff, count changed lines in files whose hunks survived
     # the parse. This is conservative and never claims more than was sent.
     return sum(len(f.changed_new_lines()) for f in diff.files)
-
-
-def _pack_hash(opts: ReviewOptions) -> str:
-    raw = (
-        f"{SYSTEM_PROMPT}|{ASSESS_SYSTEM}|{opts.max_chars}|{opts.max_findings}|{opts.context_lines}"
-    )
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]

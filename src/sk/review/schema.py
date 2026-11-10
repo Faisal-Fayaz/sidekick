@@ -106,6 +106,8 @@ class ReviewReport:
     model: str = ""
     provider: str = ""
     review_pack_hash: str = ""
+    fail_on: str = "never"
+    pack_warnings: list[str] = field(default_factory=list)
     latency_ms: int = 0
     token_cost: float = 0.0
     truncated: bool = False
@@ -140,6 +142,8 @@ class ReviewReport:
             "model": self.model,
             "provider": self.provider,
             "review_pack_hash": self.review_pack_hash,
+            "fail_on": self.fail_on,
+            "pack_warnings": list(self.pack_warnings),
             "latency_ms": self.latency_ms,
             "token_cost": round(self.token_cost, 6),
             "errors": list(self.errors),
@@ -161,6 +165,10 @@ class ReviewReport:
             f"{counts['blocker']} blocker / {counts['major']} major / "
             f"{counts['minor']} minor / {counts['nit']} nit",
         ]
+        if self.review_pack_hash:
+            lines.append(f"Review pack: `{self.review_pack_hash}`")
+        if self.pack_warnings:
+            lines.append("Review pack warnings: " + "; ".join(self.pack_warnings[:3]))
         if self.changed_lines:
             pct = round(100.0 * self.reviewed_lines / self.changed_lines, 1)
             lines.append(

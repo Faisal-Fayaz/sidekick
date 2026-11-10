@@ -46,7 +46,10 @@ COMMANDS: list[tuple[str, str]] = [
     ("oops", "explain last failed shell command"),
     ("compact [focus]", "fold older turns into the saved summary now"),
     ("diff", "show working-tree git diff (stat + capped)"),
-    ("review [base]", "review a diff with evidence + an advisory worth-it check"),
+    (
+        "review [base] [--explain|--check-config]",
+        "review a diff with evidence + an advisory worth-it check",
+    ),
     ("rewind [n]", "undo an agent file edit (latest, or checkpoint n)"),
     ("redo", "re-apply the last rewound change"),
     ("research <question>", "read-only research turn; returns a digest"),
@@ -532,21 +535,34 @@ def _review_slash(arg: str, cfg) -> SlashOut:
     import shlex
 
     from .review.engine import ReviewError, ReviewOptions, review
+    from .review.pack import load_review_pack
 
     try:
         parts = shlex.split(arg or "")
     except ValueError as e:
         return SlashOut(handled=True, text=f"review: {e}")
-    base = commit = path = intent = ""
+    base = commit = path = intent = fail_on = ""
     staged = False
     pr = 0
-    assess = "auto"
+    assess = ""
     post = "auto"
+    explain = check_config = trust_project = False
+    disable: list[str] = []
+    severity: list[str] = []
     i = 0
     try:
         while i < len(parts):
             tok = parts[i]
-            if tok in ("--base", "--commit", "--pr", "--path", "--intent"):
+            if tok in (
+                "--base",
+                "--commit",
+                "--pr",
+                "--path",
+                "--intent",
+                "--fail-on",
+                "--disable",
+                "--severity",
+            ):
                 if i + 1 >= len(parts):
                     return SlashOut(handled=True, text=f"review: {tok} needs a value")
                 val = parts[i + 1]
@@ -558,8 +574,14 @@ def _review_slash(arg: str, cfg) -> SlashOut:
                     pr = int(val)
                 elif tok == "--path":
                     path = val
-                else:
+                elif tok == "--intent":
                     intent = val
+                elif tok == "--fail-on":
+                    fail_on = val.strip().lower()
+                elif tok == "--disable":
+                    disable.append(val.strip())
+                else:
+                    severity.append(val.strip())
                 i += 2
                 continue
             if tok == "--staged":
@@ -572,6 +594,12 @@ def _review_slash(arg: str, cfg) -> SlashOut:
                 post = "always"
             elif tok == "--no-post":
                 post = "never"
+            elif tok == "--explain":
+                explain = True
+            elif tok == "--check-config":
+                check_config = True
+            elif tok == "--trust-project-rules":
+                trust_project = True
             elif tok.startswith("-"):
                 return SlashOut(handled=True, text=f"review: unknown option {tok}")
             elif not base and not commit and not pr and not staged:
@@ -581,16 +609,43 @@ def _review_slash(arg: str, cfg) -> SlashOut:
             i += 1
     except ValueError:
         return SlashOut(handled=True, text="review: --pr needs an integer")
+    if fail_on and fail_on not in ("blocker", "major", "minor", "nit", "never"):
+        return SlashOut(
+            handled=True,
+            text="review: --fail-on must be blocker, major, minor, nit, or never",
+        )
     if sum(bool(x) for x in (base, commit, pr, staged)) > 1:
         return SlashOut(handled=True, text="review: choose one of --base, --commit, --pr, --staged")
     if post == "always" and not pr:
         return SlashOut(handled=True, text="review: --post only applies to --pr")
     opts = ReviewOptions(
+        fail_on=fail_on,
         assess=assess,
         post=post,
         intent=intent,
         session="review",
+        trust_project=trust_project,
+        disable_rules=tuple(disable),
+        severity_overrides=tuple(severity),
     )
+    if explain or check_config:
+        pack = load_review_pack(
+            cwd="",
+            trust_project=trust_project,
+            overrides=opts.pack_overrides(),
+        )
+        chunks: list[str] = []
+        if explain:
+            chunks.append(f"```\n{pack.explain()}\n```")
+        if check_config:
+            issues = pack.check()
+            if not issues:
+                chunks.append("Review pack: **OK**")
+            else:
+                lines = [f"Review pack: **{len(issues)} issue(s)**", ""]
+                lines.extend(f"- `{level}`: {message}" for level, message in issues)
+                chunks.append("\n".join(lines))
+        return SlashOut(handled=True, text="\n\n".join(chunks))
     try:
         report = review(
             staged=staged,

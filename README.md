@@ -241,7 +241,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | Command | What |
 |---|---|
 | `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream]` | Single-shot agent run. Auto-routes the model; `--json` emits one machine-readable document + exit codes; `--bg` detaches and notifies; `--allow shell:pytest,write_file` skips prompts for listed tools |
-| `sk review [--base REF\|--staged\|--commit SHA\|--pr N] [--path P] [--intent TEXT] [--assess\|--no-assess] [--post\|--no-post] [--json\|--sarif] [--fail-on LEVEL]` | Evidence-backed review of a diff or PR. Findings need file:line evidence; the worth-it assessment is advisory. `--pr` auto-posts comments to GitHub (via `gh`) or Bitbucket when credentials exist; it never edits the branch |
+| `sk review [--base REF\|--staged\|--commit SHA\|--pr N] [--path P] [--intent TEXT] [--assess\|--no-assess] [--post\|--no-post] [--json\|--sarif] [--fail-on LEVEL] [--explain\|--check-config] [--trust-project-rules] [--disable RULE] [--severity RULE=LEVEL]` | Evidence-backed review of a diff or PR. Findings need file:line evidence; the worth-it assessment is advisory. Policy comes from layered review packs (`~/.sidekick/review.toml`, then a trusted repo pack). `--pr` auto-posts comments to GitHub (via `gh`) or Bitbucket when credentials exist; it never edits the branch |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without an LLM |
 | `sk digest [--force]` | Brief + overnight failures, desktop nudge or log |
@@ -410,14 +410,17 @@ the rest. Data stays home: `history.db`, `skills/`, `nudges.log`,
 | `SIDEKICK_VERIFY_REPAIRS` | post-edit verify repair rounds (default `2`, `0` disables) |
 | `SIDEKICK_PROFILE` | load a named config profile |
 | `OPENCODE_API_KEY` | key for the `opencode` provider |
-| `SIDEKICK_TRUST_REPO=1` | **opt in to repo-supplied slash commands** |
+| `SIDEKICK_TRUST_REPO=1` | **opt in to repo-supplied slash commands and review rules** |
 
-> **`SIDEKICK_TRUST_REPO` — why your repo's commands do nothing.** A cloned repo
-> can ship `.sidekick/commands/*.md`, and a `!`cmd`` expansion inside one reaches
-> `sh -c` with no approval prompt. Those templates are ignored unless you set
-> `SIDEKICK_TRUST_REPO=1` in your own shell. It is read from the environment and
-> never from repo config, so a repository cannot self-authorize (#287). Commands
-> in `~/.sidekick/commands/` always load.
+> **`SIDEKICK_TRUST_REPO` — why your repo's commands and review rules do nothing.**
+> A cloned repo can ship `.sidekick/commands/*.md`, and a `!`cmd`` expansion
+> inside one reaches `sh -c` with no approval prompt. Review is the same shape:
+> `.sidekick/review.toml` can change severities, budgets, and rule guidance.
+> Both are ignored unless you set `SIDEKICK_TRUST_REPO=1` in your own shell (or
+> pass `--trust-project-rules` to `sk review`). The flag is read from the
+> environment and never from repo config, so a repository cannot self-authorize
+> (#287). Commands in `~/.sidekick/commands/` and the review pack in
+> `~/.sidekick/review.toml` always load. See [Review](docs/review.md#review-pack).
 
 **History budget:** the prompt budget bounds the whole assembled prompt — system
 prompt, auto-context, tool schemas, and the reply reservation — then history gets
