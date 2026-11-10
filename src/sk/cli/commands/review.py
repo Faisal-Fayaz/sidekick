@@ -8,9 +8,12 @@ import typer
 from rich.markdown import Markdown
 
 from sk.review.engine import ReviewError, ReviewOptions, review
+from sk.review.pack import load_review_pack
 from sk.review.schema import fail_on_threshold
 
 from ..base import _cfg, app, console
+
+_FAIL_VALUES = ("blocker", "major", "minor", "nit", "never")
 
 
 @app.command("review")
@@ -32,17 +35,36 @@ def review_cmd(
     as_json: bool = typer.Option(False, "--json", help="Emit the full report as JSON"),
     sarif: bool = typer.Option(False, "--sarif", help="Emit SARIF 2.1.0 for CI"),
     fail_on: str = typer.Option(
-        "never", "--fail-on", help="Exit 1 at or above: blocker|major|minor|nit|never"
+        "", "--fail-on", help="Exit 1 at or above: blocker|major|minor|nit|never (default: pack)"
     ),
     model: str = typer.Option("", "--model", help="Override the review model"),
-    max_findings: int = typer.Option(25, "--max-findings", help="Cap the finding list"),
-    context_lines: int = typer.Option(3, "--context-lines", help="Evidence context window"),
+    max_findings: int | None = typer.Option(None, "--max-findings", help="Cap the finding list"),
+    context_lines: int | None = typer.Option(
+        None, "--context-lines", help="Evidence context window"
+    ),
+    explain: bool = typer.Option(False, "--explain", help="Show the merged review pack and exit"),
+    check_config: bool = typer.Option(
+        False, "--check-config", help="Validate review-pack files and exit"
+    ),
+    trust_project_rules: bool = typer.Option(
+        False,
+        "--trust-project-rules",
+        help="Load repo-supplied review rules (untrusted by default)",
+    ),
+    disable: list[str] = typer.Option([], "--disable", help="Disable a rule ID (repeatable)"),
+    severity: list[str] = typer.Option(
+        [], "--severity", help="Override a rule severity as RULE=LEVEL (repeatable)"
+    ),
 ):
     """Review a diff with evidence-backed findings and an advisory worth-it check.
 
     Defaults to the working tree. Use `--base main` before a PR, `--staged`
     before committing, or `--pr N` to review and (when credentials exist)
     comment on the pull request. Review never edits source files.
+
+    Policy comes from `~/.sidekick/review.toml` and, with
+    `--trust-project-rules`, `<repo>/.sidekick/review.toml`. Use `--explain`
+    to see the merged policy and `--check-config` to validate it.
     """
     if sum(bool(x) for x in (base.strip(), commit.strip(), pr, staged)) > 1:
         console.print("[red]choose one target: --base, --commit, --pr, or --staged[/red]")
@@ -59,22 +81,53 @@ def review_cmd(
     if as_json and sarif:
         console.print("[red]--json and --sarif are mutually exclusive[/red]")
         raise typer.Exit(1)
-    fail = (fail_on or "never").strip().lower()
-    if fail not in ("blocker", "major", "minor", "nit", "never"):
+    fail = (fail_on or "").strip().lower()
+    if fail and fail not in _FAIL_VALUES:
         console.print("[red]--fail-on must be blocker, major, minor, nit, or never[/red]")
         raise typer.Exit(1)
+    if max_findings is not None and max_findings < 1:
+        console.print("[red]--max-findings must be at least 1[/red]")
+        raise typer.Exit(1)
+    if context_lines is not None and context_lines < 0:
+        console.print("[red]--context-lines must be zero or greater[/red]")
+        raise typer.Exit(1)
 
-    cfg = _cfg()
     opts = ReviewOptions(
-        max_findings=max(0, int(max_findings)),
-        context_lines=max(0, int(context_lines)),
+        max_findings=max_findings,
+        context_lines=context_lines,
         fail_on=fail,
-        assess="always" if assess else "never" if no_assess else "auto",
+        assess="always" if assess else "never" if no_assess else "",
         intent=intent,
         model=model,
         post="always" if post else "never" if no_post else "auto",
         session="review",
+        trust_project=trust_project_rules,
+        disable_rules=tuple(disable or ()),
+        severity_overrides=tuple(severity or ()),
     )
+
+    if explain or check_config:
+        pack = load_review_pack(
+            cwd="",
+            trust_project=trust_project_rules,
+            overrides=opts.pack_overrides(),
+        )
+        if explain:
+            typer.echo(pack.explain())
+        if check_config:
+            issues = pack.check()
+            for level, message in issues:
+                color = "red" if level == "error" else "yellow"
+                console.print(f"[{color}]{level}[/{color}]: {message}")
+            if not issues:
+                console.print("[green]Review pack OK[/green]")
+            elif not any(level == "error" for level, _ in issues):
+                console.print("[green]Review pack OK (warnings only)[/green]")
+            if any(level == "error" for level, _ in issues):
+                raise typer.Exit(1)
+        return
+
+    cfg = _cfg()
     try:
         report = review(
             cwd="",
@@ -104,5 +157,5 @@ def review_cmd(
             console.print(f"[red]{report.post_note or 'review was not posted'}[/red]")
         raise typer.Exit(1)
 
-    if fail_on_threshold(report.findings, fail):
+    if fail_on_threshold(report.findings, fail or report.fail_on):
         raise typer.Exit(1)
