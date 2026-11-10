@@ -1,0 +1,7 @@
+{
+  "rule_id": "correctness/mutable-default",
+  "severity": "minor",
+  "category": "correctness",
+  "positive_lines": [1],
+  "negative_lines": []
+}

@@ -1,0 +1,7 @@
+{
+  "rule_id": "security/os-system",
+  "severity": "major",
+  "category": "security",
+  "positive_lines": [3],
+  "negative_lines": []
+}

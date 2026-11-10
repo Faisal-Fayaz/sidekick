@@ -37,9 +37,11 @@ local server.
 
 **Review the diff before you commit.** `sk review` and `/review` run one
 evidence-backed engine: every finding needs a real `file:line` and an exact
-evidence quote, or it is dropped. Branch and PR reviews also get an advisory
-worth-it assessment. `/diff` prints the same diff without a model call. See
-[Review](docs/review.md).
+evidence quote, or it is dropped. Ten built-in rules cover common security and
+correctness footguns, each with a positive/negative fixture; the eight
+`security/*` rules are protected from project overrides. Branch and PR reviews
+also get an advisory worth-it assessment. `/diff` prints the same diff without a
+model call. See [Review](docs/review.md).
 
 ![Terminal showing /review autocomplete, a MAJOR finding with file and line, and a suggested diff](docs/tui-complete.svg)
 

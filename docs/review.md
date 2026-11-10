@@ -80,9 +80,27 @@ guidance = "Migrations must be reversible; flag destructive steps."
 ```
 
 Use `disable = true` (or `enabled = false`) to remove a rule. Rule IDs are
-stable: the deterministic checks use `security/dynamic-eval`,
-`security/dynamic-exec`, `security/os-system`, and
-`security/subprocess-shell`.
+stable. The built-in pack ships ten rules, each with a positive and negative
+fixture:
+
+| Rule | Severity | Category |
+|---|---|---|
+| `security/dynamic-eval` | major | security |
+| `security/dynamic-exec` | major | security |
+| `security/os-system` | major | security |
+| `security/subprocess-shell` | major | security |
+| `security/unsafe-yaml-load` | major | security |
+| `security/tls-verify-disabled` | major | security |
+| `security/weak-hash` | major | security |
+| `security/sql-injection` | major | security |
+| `correctness/mutable-default` | minor | correctness |
+| `correctness/bare-except` | minor | correctness |
+
+The checks are deterministic AST checks over changed Python lines; a model can
+report the same issue separately, but the deterministic finding wins the dedupe.
+`security/weak-hash` allows the explicit `usedforsecurity=False` cache-key
+exception. `security/unsafe-yaml-load` accepts `yaml.safe_load()` or an explicit
+`Loader=SafeLoader`.
 
 ### Trust
 
@@ -92,10 +110,11 @@ to change how its own review runs. Load `<repo>/.sidekick/review.toml` only with
 environment. The project layer is discovered at the git root, not at an
 arbitrary parent directory.
 
-The four built-in `security/*` rules are protected. A project layer can never
+The eight built-in `security/*` rules are protected. A project layer can never
 disable or weaken them. The user layer can — but only with an explicit
 `[review] allow_protected_override = true`. CLI overrides cannot bypass that
-gate.
+gate. The two `correctness/*` rules are ordinary rules: any layer can tune or
+disable them.
 
 ### Inspect and validate
 
@@ -110,6 +129,13 @@ sk review --severity project/migration-lock=blocker
 `/review` accepts the same pack flags. `--check-config` prints warnings for
 missing built-in rule fixtures but only fails on errors. Rejected project packs
 do not block a review; malformed user packs do, with the error shown.
+
+Built-in rule fixtures live under `tests/review/rules/<rule-id>/` as
+`positive.py`, `negative.py`, and `expected.json`. The test suite runs them
+offline and asserts the exact rule ID, severity, category, and line numbers.
+Seeded worth-it cases live in `tests/review/assessment/cases.json`; each case
+supplies a scripted model response, including docs-only and bugfix cases whose
+correct outcome is “no material concern.” Neither corpus touches the network.
 
 The report includes a deterministic `review_pack_hash` of the effective policy
 (provenance and file paths are excluded). The effective `fail_on` also controls

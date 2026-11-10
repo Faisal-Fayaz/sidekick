@@ -1,0 +1,7 @@
+{
+  "rule_id": "security/weak-hash",
+  "severity": "major",
+  "category": "security",
+  "positive_lines": [3, 4],
+  "negative_lines": []
+}

@@ -1,0 +1,7 @@
+{
+  "rule_id": "security/unsafe-yaml-load",
+  "severity": "major",
+  "category": "security",
+  "positive_lines": [4],
+  "negative_lines": []
+}

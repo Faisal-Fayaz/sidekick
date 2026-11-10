@@ -103,6 +103,9 @@ ignore = ["UP035", "E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "F401", "I001"]
+# Rule fixtures are deliberately vulnerable/incomplete code. Linting them for
+# the exact pattern under test would defeat the fixture.
+"tests/review/rules/**" = ["E501", "E722", "F401", "I001", "UP031"]
 
 # Coverage is gated. It was 79% and reported but never enforced: the CI job
 # piped pytest into `tail -n 40` without `pipefail`, so the pipeline returned
