@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "root": "",
+  "diagnostics": [
+    {
+      "file": "math_test.go",
+      "line": 12,
+      "column": null,
+      "severity": "error",
+      "code": "TestAdd",
+      "message_contains": "got 3, want 4"
+    },
+    {
+      "file": "math_test.go",
+      "line": 20,
+      "column": null,
+      "severity": "error",
+      "code": "TestDiv",
+      "message_contains": "division by zero"
+    }
+  ]
+}

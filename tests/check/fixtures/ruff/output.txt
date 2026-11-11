@@ -1,0 +1,4 @@
+src/app.py:12:5: F401 [*] `os` imported but unused
+src/app.py:20:1: E501 Line too long (101 > 100)
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
