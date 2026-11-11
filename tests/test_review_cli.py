@@ -204,3 +204,99 @@ def test_review_cli_markdown_post_note(monkeypatch):
     result = CliRunner().invoke(app, ["review", "--pr", "1"])
     assert result.exit_code == 0, result.output
     assert "credentials unavailable" in result.output
+
+
+def test_review_cli_verify_is_opt_in_and_passes_an_approver(monkeypatch):
+    import sk.cli.commands.review as mod
+
+    seen = {}
+
+    def fake_review(**kwargs):
+        seen.update(kwargs)
+        return _report()
+
+    monkeypatch.setattr(mod, "_cfg", _cfg)
+    monkeypatch.setattr(mod, "review", fake_review)
+
+    result = CliRunner().invoke(app, ["review", "--verify", "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    assert seen["options"].verify is True
+    assert callable(seen["approve"])
+
+    result = CliRunner().invoke(app, ["review", "--json"])
+    assert result.exit_code == 0, result.output
+    assert seen["options"].verify is False
+    assert seen["approve"] is None
+
+
+def test_review_cli_verification_fail_or_unknown_exits_1(monkeypatch):
+    import sk.cli.commands.review as mod
+
+    monkeypatch.setattr(mod, "_cfg", _cfg)
+    for status in ("fail", "unknown"):
+        report = _report()
+        report.verification = {
+            "status": status,
+            "counts": {status: 1},
+            "results": [],
+            "errors": [],
+            "warnings": [],
+        }
+        monkeypatch.setattr(mod, "review", lambda **kwargs: report)
+        result = CliRunner().invoke(app, ["review", "--verify", "--json"])
+        assert result.exit_code == 1, (status, result.output)
+
+
+def test_review_cli_verification_pass_does_not_change_exit(monkeypatch):
+    import sk.cli.commands.review as mod
+
+    report = _report()
+    report.verification = {
+        "status": "pass",
+        "counts": {"pass": 1},
+        "results": [],
+        "errors": [],
+        "warnings": [],
+    }
+    monkeypatch.setattr(mod, "_cfg", _cfg)
+    monkeypatch.setattr(mod, "review", lambda **kwargs: report)
+    result = CliRunner().invoke(app, ["review", "--verify", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["verification"]["status"] == "pass"
+
+
+def test_review_cli_renders_verification_markdown(monkeypatch):
+    import sk.cli.commands.review as mod
+
+    report = _report()
+    report.verification = {
+        "status": "fail",
+        "counts": {"fail": 1},
+        "results": [
+            {
+                "id": "lint",
+                "status": "fail",
+                "command": "ruff check app.py",
+                "note": "",
+                "raw": "",
+                "diagnostics": [
+                    {
+                        "file": "app.py",
+                        "line": 1,
+                        "column": 1,
+                        "code": "F401",
+                        "message": "unused import",
+                    }
+                ],
+            }
+        ],
+        "errors": [],
+        "warnings": [],
+    }
+    monkeypatch.setattr(mod, "_cfg", _cfg)
+    monkeypatch.setattr(mod, "review", lambda **kwargs: report)
+    result = CliRunner().invoke(app, ["review", "--verify"])
+    assert result.exit_code == 1
+    assert "Verification" in result.output
+    assert "F401" in result.output

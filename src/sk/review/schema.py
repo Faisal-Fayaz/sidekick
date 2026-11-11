@@ -91,6 +91,51 @@ class Skip:
     reason: str
 
 
+def _verification_lines(verification: dict[str, Any]) -> list[str]:
+    """Render the check verdict without pretending it is a review finding."""
+    status = str(verification.get("status") or "unknown")
+    counts = verification.get("counts") or {}
+    summary = (
+        ", ".join(f"{count} {name}" for name, count in counts.items() if count) or "no checks ran"
+    )
+    lines = ["", "### Verification", "", f"**Status: {status.upper()}** ({summary})"]
+    for result in list(verification.get("results") or [])[:20]:
+        check_id = str(result.get("id") or "check")
+        check_status = str(result.get("status") or "unknown")
+        command = str(result.get("command") or "")
+        if len(command) > 160:
+            command = command[:157] + "..."
+        note = str(result.get("note") or "")
+        suffix = f" — {note}" if note else ""
+        lines.append("")
+        lines.append(f"- `{check_id}` **{check_status.upper()}** `{command}`{suffix}")
+        diagnostics = list(result.get("diagnostics") or [])
+        for diagnostic in diagnostics[:10]:
+            location = str(diagnostic.get("file") or "(no file)")
+            line_no = diagnostic.get("line")
+            if line_no:
+                location += f":{line_no}"
+                column = diagnostic.get("column")
+                if column:
+                    location += f":{column}"
+            code = str(diagnostic.get("code") or "")
+            message = str(diagnostic.get("message") or "")
+            lines.append(f"  - `{location}` {code} {message}".rstrip())
+        if len(diagnostics) > 10:
+            lines.append(f"  - ... {len(diagnostics) - 10} more diagnostics")
+        if check_status in ("fail", "unknown") and not diagnostics:
+            raw = str(result.get("raw") or "").strip()
+            if raw:
+                lines.append("  ```")
+                lines.extend(f"  {raw_line}" for raw_line in raw.splitlines()[:6])
+                lines.append("  ```")
+    for error in list(verification.get("errors") or [])[:5]:
+        lines.append(f"- **CONFIG ERROR:** {error}")
+    for warning in list(verification.get("warnings") or [])[:5]:
+        lines.append(f"- warning: {warning}")
+    return lines
+
+
 @dataclass
 class ReviewReport:
     target: str
@@ -115,6 +160,7 @@ class ReviewReport:
     skipped: list[Skip] = field(default_factory=list)
     posted_url: str = ""
     post_note: str = ""
+    verification: dict[str, Any] | None = None
 
     def counts(self) -> dict[str, int]:
         out = {s: 0 for s in SEVERITIES}
@@ -150,6 +196,7 @@ class ReviewReport:
             "skipped": [{"path": s.path, "reason": s.reason} for s in self.skipped],
             "posted_url": self.posted_url,
             "post_note": self.post_note,
+            "verification": self.verification,
         }
 
     def to_json(self) -> str:
@@ -204,6 +251,8 @@ class ReviewReport:
             if a.assumptions:
                 lines.append("")
                 lines.append("Assumptions: " + "; ".join(a.assumptions))
+        if self.verification:
+            lines.extend(_verification_lines(self.verification))
         lines.append("")
         if not self.findings:
             lines.append("_No evidence-backed findings._")

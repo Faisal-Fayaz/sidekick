@@ -112,6 +112,57 @@ Default `applies_to` values are language-scoped: Python files for pytest/ruff/
 mypy, JS/TS files for eslint, TypeScript files for tsc, and Go files for
 `go test`. `raw` checks default to `**/*`.
 
+## Post-edit verification
+
+After the agent edits files, it runs a fast verification pass before shipping
+the answer:
+
+1. A syntax check for the edited files: Python and `.pyi` via `tokenize.open` +
+   `compile`, JSON via `json.load`, TOML via `tomllib`, shell via `bash -n`,
+   and JavaScript/`.mjs`/`.cjs` via `node --check`. TypeScript relies on the
+   configured `tsc` check.
+2. The project's configured `lint` and `typecheck` checks for the affected
+   files, when a trusted `.sidekick/checks.toml` provides them.
+
+Every command still goes through the same shell approval and audit path as
+`sk check`. A failing configured check is a **failed verification**, not a
+generic tool error. The compact diagnostics are fed back to the model for up to
+two targeted repair rounds (`SIDEKICK_VERIFY_REPAIRS`, default `2`; `0`
+disables verification).
+
+Missing tools, timeouts, denials, and an untrusted checks file are `unknown`,
+never `pass`. Unknown-only results do not trigger a repair round; they are
+appended to the final answer so the user knows verification did not happen.
+
+```bash
+sk run "fix the failing test" --trust-project-checks
+sk run "fix the failing test" --trust-project-checks --verify-full
+SIDEKICK_VERIFY_FULL=1 sk run "fix the failing test"
+```
+
+- `--trust-project-checks` (or `SIDEKICK_TRUST_REPO=1`) loads the project
+  checks for verification. Without it, only the built-in syntax checks run and
+  a declared but untrusted checks file makes the verdict `unknown`.
+- `--verify-full` (or `SIDEKICK_VERIFY_FULL=1`) runs every configured check,
+  including tests and builds. The default runs only `lint` and `typecheck` for
+  the edited files.
+
+### Review verification
+
+`sk review --verify` runs the same verification for the files in the reviewed
+diff and adds a separate `verification` section to the Markdown and JSON
+report. It does not turn check diagnostics into review findings.
+
+```bash
+sk review --staged --verify --trust-project-rules
+sk review --staged --verify --yes --json
+```
+
+Verification commands use the normal approval gate. `--yes`, `--allow`, and
+`--deny` have the same meaning as on `sk run`; `--deny` wins. A `fail` or
+`unknown` verification makes `sk review --verify` exit `1`, even when the
+`--fail-on` finding threshold is not met.
+
 ## Diagnostics and statuses
 
 Parsers are pure functions over captured output and never invent a pass. Each

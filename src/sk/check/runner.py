@@ -253,10 +253,15 @@ def _run_one(
     if approve is None:
         return replace(
             base,
+            approved=False,
             note="; ".join(x for x in (note, "no approval callback; refusing to run") if x),
         )
 
-    args = {"cmd": command, "timeout": max(1, min(120, int(round(check.timeout))))}
+    args = {
+        "cmd": command,
+        "timeout": max(1, min(120, int(round(check.timeout)))),
+        "cwd": root,
+    }
     started = time.monotonic()
     try:
         if dispatch is None:
@@ -380,6 +385,7 @@ def run_checks(
     dispatch: Callable[..., tuple[str, bool]] | None = None,
     pack: CheckPack | None = None,
     config_path: str | Path | None = None,
+    on_command: Callable[[str], None] | None = None,
 ) -> CheckReport:
     """Load and run checks. A missing ``approve`` callback runs nothing.
 
@@ -481,6 +487,11 @@ def run_checks(
             command, omitted = _substitute_files(template, matching)
             if omitted:
                 note = f"{omitted} of {len(matching)} changed files omitted to fit the shell limit"
+        if on_command is not None:
+            try:
+                on_command(command)
+            except Exception:
+                pass
         results.append(
             _run_one(
                 check,

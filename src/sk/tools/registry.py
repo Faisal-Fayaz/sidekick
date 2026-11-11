@@ -463,7 +463,7 @@ def dispatch_tool(name: str, args: dict) -> str:
             timeout = int(args.get("timeout", 30) or 30)
         except Exception:
             timeout = 30
-        return tool_shell(str(args.get("cmd", "")), timeout)
+        return tool_shell(str(args.get("cmd", "")), timeout, str(args.get("cwd", "") or ""))
     if name == "shell_session":
         try:
             timeout = int(args.get("timeout", 30) or 30)

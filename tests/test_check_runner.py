@@ -167,7 +167,7 @@ def test_dispatch_receives_shell_args_and_approver():
     report = _run(_pack(check), _dispatch(_shell(0, ""), seen=seen))
     assert report.status == "pass"
     assert seen["name"] == "shell"
-    assert seen["args"] == {"cmd": "ruff check .", "timeout": 33}
+    assert seen["args"] == {"cmd": "ruff check .", "timeout": 33, "cwd": "/tmp/repo"}
     assert seen["session"] == "check-test"
     assert seen["approve"]("shell", seen["args"]) is True
 
@@ -320,6 +320,26 @@ def test_default_dispatch_uses_the_gated_shell_path_and_audit(tmp_path, monkeypa
     assert rows[0]["tool"] == "shell"
     assert rows[0]["approved"] == 1
     assert "printf ok" in rows[0]["target"]
+
+
+def test_checks_run_from_the_project_root_not_the_invocation_directory(tmp_path, monkeypatch):
+    if shutil.which("bash") is None or shutil.which("git") is None:
+        pytest.skip("needs bash and git")
+    repo = tmp_path / "repo"
+    sub = repo / "src" / "pkg"
+    sub.mkdir(parents=True)
+    (repo / ".sidekick").mkdir()
+    (repo / ".sidekick" / "checks.toml").write_text('schema = 1\n[checks]\nwhere = "pwd"\n')
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    monkeypatch.chdir(sub)
+
+    from sk.check.config import load_checks_pack
+
+    pack = load_checks_pack(cwd=str(sub), trust_project=True, env={})
+    report = run_checks(pack=pack, approve=lambda name, args: True, session="cwd-check")
+    assert report.status == "pass", format_compact(report)
+    assert report.repo_root == str(repo)
+    assert str(repo) in report.results[0].raw
 
 
 def test_default_dispatch_logs_a_denied_check(tmp_path, monkeypatch):

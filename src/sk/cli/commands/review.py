@@ -11,6 +11,7 @@ from sk.review.engine import ReviewError, ReviewOptions, review
 from sk.review.pack import load_review_pack
 from sk.review.schema import fail_on_threshold
 
+from ..approvers import _make_approver
 from ..base import _cfg, app, console
 
 _FAIL_VALUES = ("blocker", "major", "minor", "nit", "never")
@@ -49,8 +50,20 @@ def review_cmd(
     trust_project_rules: bool = typer.Option(
         False,
         "--trust-project-rules",
-        help="Load repo-supplied review rules (untrusted by default)",
+        help="Load repo-supplied review rules and checks (untrusted by default)",
     ),
+    verify: bool = typer.Option(
+        False,
+        "--verify",
+        help="Run fast syntax + configured lint/typecheck checks for the reviewed files",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Auto-approve verification commands (only with --verify)"
+    ),
+    allow: str = typer.Option(
+        "", "--allow", help="Auto-approve verification list, e.g. --allow shell:ruff"
+    ),
+    deny: str = typer.Option("", "--deny", help="Never approve verification commands"),
     disable: list[str] = typer.Option([], "--disable", help="Disable a rule ID (repeatable)"),
     severity: list[str] = typer.Option(
         [], "--severity", help="Override a rule severity as RULE=LEVEL (repeatable)"
@@ -65,6 +78,9 @@ def review_cmd(
     Policy comes from `~/.sidekick/review.toml` and, with
     `--trust-project-rules`, `<repo>/.sidekick/review.toml`. Use `--explain`
     to see the merged policy and `--check-config` to validate it.
+
+    With `--verify`, fast syntax checks and configured lint/typecheck checks
+    run for the reviewed files through the normal approval and audit path.
     """
     if sum(bool(x) for x in (base.strip(), commit.strip(), pr, staged)) > 1:
         console.print("[red]choose one target: --base, --commit, --pr, or --staged[/red]")
@@ -102,6 +118,7 @@ def review_cmd(
         post="always" if post else "never" if no_post else "auto",
         session="review",
         trust_project=trust_project_rules,
+        verify=verify,
         disable_rules=tuple(disable or ()),
         severity_overrides=tuple(severity or ()),
     )
@@ -128,6 +145,16 @@ def review_cmd(
         return
 
     cfg = _cfg()
+    from sk.config import parse_allow_list
+
+    approve = None
+    if verify:
+        approve = _make_approver(
+            yes,
+            cfg.approved_commands,
+            parse_allow_list(allow),
+            deny=parse_allow_list(deny),
+        )
     try:
         report = review(
             cwd="",
@@ -138,6 +165,7 @@ def review_cmd(
             path=path,
             options=opts,
             cfg=cfg,
+            approve=approve,
         )
     except ReviewError as e:
         console.print(f"[red]{e}[/red]")
@@ -155,6 +183,10 @@ def review_cmd(
     if post and not report.posted_url:
         if not as_json and not sarif:
             console.print(f"[red]{report.post_note or 'review was not posted'}[/red]")
+        raise typer.Exit(1)
+
+    verification = report.verification or {}
+    if verification.get("status") in ("fail", "unknown"):
         raise typer.Exit(1)
 
     if fail_on_threshold(report.findings, fail or report.fail_on):
