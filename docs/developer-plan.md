@@ -1,22 +1,21 @@
 # Sidekick Developer Plan
 
-**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) next
+**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Revised:** 2026-11-08 — Phase 1 shipped; code intelligence and the evidence-backed review engine are on `main`
-**Prior revision:** 2026-11-07 — review is an additive developer workstream, not a
-product pivot; adds the advisory worth-it layer and the developer capability
-ladder.
+**Revised:** 2026-11-11 — Phase 2 shipped; editable review packs, `sk check`, and post-edit verification are on `main`
+**Prior revision:** 2026-11-08 — Phase 1 shipped; code intelligence and the evidence-backed review engine are on `main`
 **Baseline:** `a46127e` on `main` (current at revision; audit baseline
 `abfa95d`, accepted at `780c8bd`)
 **Baseline release:** `0.30.0`, 1,504 tests, 21 tools
 **Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6)
-(closed). Phase 2 scope is listed in §9.
+and [v0.32.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/7)
+(both closed). Phase 2 items are listed in §9.
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
 > holds the detailed design and accepted defaults behind the developer
-> workstream. The first six review-foundation items are tracked in the v0.31.0
-> milestone.
+> workstream. The first six review-foundation items were tracked in the v0.31.0
+> milestone; items 8–10 shipped in v0.32.0.
 
 > **Revision note (2026-11-07).** The first accepted draft framed review as a
 > product pivot ("turn Sidekick into a developer agent", "the public story is
@@ -224,7 +223,7 @@ of a real diff.
 **Status (2026-11-08):** shipped in `v0.31.0` (PR #411): all targets, structured
 diff collection, evidence validation, Markdown/JSON/SARIF output, the advisory
 worth-it assessment, and GitHub/Bitbucket PR comments. The editable review pack
-and project checks remain Phase 2 work.
+and verification loop shipped in `v0.32.0` (#420–#423).
 
 #### Targets
 
@@ -438,7 +437,7 @@ Reuse existing code where possible: `gitdiff.py`, `trust.py`, `tools/read.py`,
 **Outcome:** a team can change how Sidekick reviews code without forking the
 agent — and without redefining the agent.
 
-**Status:** planned for `v0.32.0`.
+**Status (2026-11-11):** shipped in `v0.32.0` (#420).
 
 #### Definition
 
@@ -626,7 +625,7 @@ line-range `read_file` shipped (#399, PR #406); `repo_map` v1 shipped (#400, PR 
 **Outcome:** Sidekick can run the project's real checks and use the results,
 instead of only compiling Python files.
 
-**Status:** planned for `v0.32.0`.
+**Status (2026-11-11):** shipped in `v0.32.0` (#422–#423).
 
 #### Configuration
 
@@ -894,11 +893,11 @@ If the honest answer is "parity with cloud agents", it waits.
 **Version mapping:**
 
 - `v0.31.0` — shipped: review foundation (code intelligence + `sk review` MVP).
-- `v0.32.0` — next: editable review pack + verification loop.
-- `v0.33.0` — provider abstraction + platform hardening.
+- `v0.32.0` — shipped: editable review pack + verification loop.
+- `v0.33.0` — next: provider abstraction + platform hardening.
 - `v0.34.0` — evals, benchmark, adoption.
 
-`v0.32.0` is scoped in `ROADMAP.md`. Later versions remain tentative.
+`v0.33.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
 
 ---
 
@@ -1002,8 +1001,8 @@ documented reason in the PR that changes it.
 
 ## 9. First backlog
 
-Items 1–7 shipped in `v0.31.0` (PR #411). Items 8–14 remain backlog for
-`v0.32.0` and later phases.
+Items 1–7 shipped in `v0.31.0` (PR #411); items 8–10 shipped in `v0.32.0`
+(#420–#423). Items 11–14 remain backlog for later phases.
 
 1. [#398](https://github.com/Faisal-Fayaz/sidekick/issues/398) — Add `search_code` and `glob_files` tools with path-guard and fallback tests. **Shipped (PR #407).**
 2. [#399](https://github.com/Faisal-Fayaz/sidekick/issues/399) — Add line-range support to `read_file`. **Shipped (PR #406).**
@@ -1016,8 +1015,13 @@ Items 1–7 shipped in `v0.31.0` (PR #411). Items 8–14 remain backlog for
    signals, assessment schema, `--assess`/`--no-assess`, and seeded cases.
    **Shipped (PR #411).**
 8. Add review-pack loader, merge logic, `--explain`, and `--check-config`.
+   **Shipped ([#420](https://github.com/Faisal-Fayaz/sidekick/issues/420), PR #425).**
 9. Add built-in review rules and the first 10 seeded cases.
+   **Shipped ([#421](https://github.com/Faisal-Fayaz/sidekick/issues/421), PR #426).**
 10. Add project checks config, command runner, and diagnostic parsers.
+    **Shipped ([#422](https://github.com/Faisal-Fayaz/sidekick/issues/422), PR #427); post-edit
+    verification and `sk review --verify` shipped in
+    [#423](https://github.com/Faisal-Fayaz/sidekick/issues/423) (PR #428).**
 11. Add adaptive `max_steps` and `--max-steps`.
 12. Add provider protocol and Anthropic parity tests.
 13. Update README/website/portfolio; add `SECURITY.md` and issue templates.

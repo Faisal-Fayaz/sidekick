@@ -6,6 +6,7 @@ const SECTIONS = [
   { id: 'chat', label: 'Chat (TUI + REPL)' },
   { id: 'voice', label: 'Voice' },
   { id: 'review', label: 'Review' },
+  { id: 'checks', label: 'Checks & verification' },
   { id: 'code-intelligence', label: 'Code intelligence' },
   { id: 'providers', label: 'Providers (BYO key)' },
   { id: 'mcp', label: 'MCP server + client' },
@@ -123,7 +124,7 @@ export default function Docs() {
 
           <h2 id="review">Review</h2>
           <CodeBlock
-            code={`sk review                     # working tree vs HEAD\nsk review --staged            # staged changes only\nsk review --base main         # branch vs merge-base\nsk review --commit HEAD       # one commit vs its parent\nsk review --pr 123            # PR (GitHub or Bitbucket); posts comments when credentials exist\nsk review --path src/         # limit scope\nsk review --assess            # force the advisory worth-it check\nsk review --base origin/main --fail-on major --sarif > review.sarif`}
+            code={`sk review                     # working tree vs HEAD\nsk review --staged            # staged changes only\nsk review --base main         # branch vs merge-base\nsk review --commit HEAD       # one commit vs its parent\nsk review --pr 123            # PR (GitHub or Bitbucket); posts comments when credentials exist\nsk review --path src/         # limit scope\nsk review --assess            # force the advisory worth-it check\nsk review --staged --verify   # syntax + configured checks for the diff\nsk review --base origin/main --fail-on major --sarif > review.sarif`}
           />
           <p>
             {inline('sk review')} and {inline('/review')} share one read-only engine. Every finding must name a
@@ -143,6 +144,31 @@ export default function Docs() {
             Bitbucket Server/Data Center via REST 1.0. {inline('--no-post')} disables it; {inline('--post')} makes
             a failed post exit non-zero. Review never edits the branch. See{' '}
             <a href="https://github.com/Faisal-Fayaz/sidekick/blob/main/docs/review.md">docs/review.md</a>.
+          </p>
+
+          <h2 id="checks">Checks &amp; verification</h2>
+          <CodeBlock
+            code={`sk check                              # project checks are untrusted by default\nsk check --trust-project-checks       # load .sidekick/checks.toml (each command still asks)\nsk check --trust-project-checks --yes # approve the check commands for this run\nsk check --changed --json             # affected checks/files as machine-readable output\nsk run "fix the test" --trust-project-checks --verify-full\nsk review --staged --verify --trust-project-rules`}
+          />
+          <p>
+            {inline('.sidekick/checks.toml')} declares shell commands, so it is ignored until you pass{' '}
+            {inline('--trust-project-checks')} (or set {inline('SIDEKICK_TRUST_REPO=1')}). Every command runs
+            through the same hard refusals, hooks, approval prompt, checkpoints, and audit ledger as an agent
+            shell call. pytest, ruff, mypy, eslint, tsc, and {inline('go test')} output becomes compact
+            diagnostics; unparsed output stays raw.
+          </p>
+          <p>
+            The four-way contract is {inline('pass')}, {inline('fail')}, {inline('unknown')}, and{' '}
+            {inline('skipped')}. A timeout, missing tool, denial, or untrusted checks file is{' '}
+            {inline('unknown')} — never {inline('pass')} — and {inline('sk check')} exits {inline('1')} on fail
+            or unknown, {inline('2')} on config/trust errors.
+          </p>
+          <p>
+            After an edit, Sidekick runs fast syntax checks plus the project’s lint/typecheck checks for the
+            affected files; {inline('--verify-full')} runs every configured check. A failing check gets up to
+            two repair rounds. {inline('sk review --verify')} adds a separate verification section to the review
+            and exits {inline('1')} on fail or unknown. See{' '}
+            <a href="https://github.com/Faisal-Fayaz/sidekick/blob/main/docs/checks.md">docs/checks.md</a>.
           </p>
 
           <h2 id="code-intelligence">Code intelligence</h2>

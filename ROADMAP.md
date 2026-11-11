@@ -27,18 +27,16 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.32.0 (review pack + verification)
+## Next — v0.33.0 (provider + platform hardening)
 
-Second developer milestone. Details and accepted defaults live in
-[`docs/developer-plan.md`](docs/developer-plan.md).
+Next milestone; scope stays tentative until its issues are filed. Details live
+in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Editable review pack** — layered built-in < user global < project < CLI rules, protected security rules, `--explain`, `--check-config`, and a deterministic pack hash.
-- **Built-in review rules + corpus** — grow the rule set to at least 10 rules with positive/negative fixtures and seeded worth-it assessment cases.
-- **`sk check` verification loop** — trust-gated `.sidekick/checks.toml`, approval and audit for every command, parsers for pytest/ruff/mypy/eslint/tsc/go test, and compact structured diagnostics.
-- **Post-edit verification** — syntax checks plus configured lint/typecheck for affected files; timeouts and missing commands report `unknown`, never `pass`.
+- **Provider abstraction** — one agent loop across backends, so the Anthropic path stops reimplementing it (#312).
+- **Platform hardening** — shell sandboxing independent of the permission gate (#329), plus security and supply-chain scanning in CI (#271).
 
-Out of scope for `v0.32.0`: provider abstraction, platform sandboxing, and IDE
-integration. Later versions remain tentative.
+Out of scope for now: IDE integration and the developer-ladder spikes
+(`sk fix`, `sk test`, `sk pr`). Later versions remain tentative.
 
 ## Later
 
@@ -180,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.32.0` — **editable review pack + verification.** Review policy is now layered built-in < user global < project < CLI, the eight `security/*` rules are protected from project overrides, and `--explain`/`--check-config` report the effective pack and its deterministic hash (#420). Ten built-in rules (eight security, two correctness) ship with positive/negative fixtures and seeded corpus cases (#421). `sk check` runs trust-gated `.sidekick/checks.toml` through the normal approval and audit path, parses pytest/ruff/mypy/eslint/tsc/`go test`, and reports timeouts, denials, and missing tools as `unknown` — never `pass` (#422). Post-edit verification now runs fast syntax checks plus the project's lint/typecheck checks for affected files; `--verify-full` runs every configured check, and `sk review --verify` adds a separate verification section with its own exit code (#423). Tests 1598 → 1761.
 - `v0.31.0` — **review foundation.** Code intelligence lands as approval-free tools: `search_code`/`glob_files` (#398), line-range `read_file` (#399), and `repo_map` for deterministic trees, languages, and top-level symbols (#400). `sk review` and `/review` now share one evidence-backed engine: working-tree/staged/commit/base/PR targets and a structured diff model (#401), validated findings with file:line evidence (#402), the CLI/slash surface (#403), an advisory worth-it assessment (#408), and optional GitHub/Bitbucket PR comments (#410). Review is read-only and never edits the branch. 22 built-in tools. Tests 1504 → 1597.
 - `v0.30.0` — **security release.** The egress allowlist is now enforced on every redirect hop, not just the initial URL: an allowlisted host could `302` anywhere and the agent fetched the target and returned it to the model, which is the exact threat #328 exists to stop (#371). The test that appeared to cover this passed before *and* after the fix, because it stubbed the guard rather than DNS and so asserted a DNS failure (#371). `PreToolUse` hooks now fail closed: a handler that raised was skipped, and an exception mid-iteration discarded denies already collected (#373). Checkpoints, the egress audit row and the FTS index report write failures instead of swallowing them, so `/rewind` can no longer report success over stale state (#373). Carries the still-unreleased `~/.sidekick` 0700/0600 fix (#301) and API-key masking (#269). Release integrity: `sk --version` now exists, the workflow can no longer strand a published version with no tag, and a burned version number fails CI (#372). MCP tool lists are cached per connection (#314). Credential storage, shell expansion and `python -m sk` are now actually tested, and coverage is a required check instead of a piped-through-`tail` no-op (#374). Docs match the shipped behaviour (#375). Tool names derive from the schema, so #368's residue detector recognises every tool instead of 17 of 19 (#376). Tests 1052 → 1389.
 - `v0.29.0` — unparsed tool-call markup is no longer posted as an answer (#367/#368): the prose is kept, the markup is dropped, and the turn is bounded at 2 corrective retries before a plain error. Alongside it on main but **not yet published**: the `~/.sidekick` 0700/0600 fix (#301) and API-key masking (#269).

@@ -89,8 +89,9 @@ export const COMMANDS: CommandRow[] = [
   { group: 'Chat & Voice', cmd: '/plan · /build', what: 'Propose without writing (file writes blocked) · back to build mode. F4 toggles.' },
   { group: 'Chat & Voice', cmd: 'F5 model picker', what: 'All providers in one list — selecting auto-switches provider. Filter, Enter switches.' },
   { group: 'Chat & Voice', cmd: '/init', what: 'Scaffold SIDEKICK.md repo conventions in this directory.' },
-  { group: 'Runs & Jobs', cmd: 'sk run "task" [--yes] [--read-only] [--plan] [--model auto|fast|smart] [--json] [--bg]', what: 'Single-shot agent run. --json emits one machine-readable doc + exit codes.' },
-  { group: 'Runs & Jobs', cmd: 'sk review [--base REF|--staged|--commit SHA|--pr N]', what: 'Evidence-backed diff/PR review. Findings need file:line evidence; the worth-it check is advisory. --pr comments on GitHub/Bitbucket when credentials exist.' },
+  { group: 'Runs & Jobs', cmd: 'sk run "task" [--yes] [--read-only] [--plan] [--model auto|fast|smart] [--json] [--bg] [--trust-project-checks] [--verify-full]', what: 'Single-shot agent run. --json emits one machine-readable doc + exit codes. After edits it runs syntax + trusted lint/typecheck checks; --verify-full runs every configured check.' },
+  { group: 'Runs & Jobs', cmd: 'sk review [--base REF|--staged|--commit SHA|--pr N] [--verify]', what: 'Evidence-backed diff/PR review. Findings need file:line evidence; the worth-it check is advisory. --verify adds syntax + configured checks and exits 1 on fail/unknown. --pr comments on GitHub/Bitbucket when credentials exist.' },
+  { group: 'Runs & Jobs', cmd: 'sk check [--changed] [--json] [--trust-project-checks]', what: 'Run .sidekick/checks.toml through approval + audit. Parses pytest, ruff, mypy, eslint, tsc, and go test; timeouts and missing tools are unknown, never pass.' },
   { group: 'Runs & Jobs', cmd: 'sk jobs [-n N]', what: 'List background jobs from `sk run --bg`.' },
   { group: 'Runs & Jobs', cmd: 'sk brief [-p PATH] [--smart]', what: 'Morning digest: system + git + todos + memories, instant without LLM.' },
   { group: 'Runs & Jobs', cmd: 'sk digest [--force]', what: 'Teammate pilot: brief + overnight failures, desktop nudge or log.' },
@@ -185,6 +186,12 @@ export const FEATURES = [
 ];
 
 export const WHATNEW = [
+  {
+    tag: 'sk check · --verify',
+    title: 'Verification that can say “unknown”',
+    body: 'Run the project’s own checks through the normal approval and audit path, parse pytest/ruff/mypy/eslint/tsc/go test diagnostics, and verify edits with syntax + lint/typecheck. Missing tools and timeouts report `unknown` — never a false pass.',
+    link: '/docs#checks',
+  },
   {
     tag: 'sk review · /review',
     title: 'Evidence-backed review, read-only',
@@ -330,7 +337,11 @@ export const FAQS = [
   },
   {
     q: 'How does code review work?',
-    a: '`sk review` reuses the normal assistant, approval spine, and model. It resolves a working-tree, staged, commit, base-ref, or PR diff; validates every finding against a real file:line and an exact evidence quote; drops invalid findings; and optionally adds an advisory worth-it assessment. `--pr` posts comments to GitHub or Bitbucket when credentials exist. It never edits the branch.',
+    a: '`sk review` reuses the normal assistant, approval spine, and model. It resolves a working-tree, staged, commit, base-ref, or PR diff; validates every finding against a real file:line and an exact evidence quote; drops invalid findings; and optionally adds an advisory worth-it assessment. `--verify` also runs syntax + configured checks. `--pr` posts comments to GitHub or Bitbucket when credentials exist. It never edits the branch.',
+  },
+  {
+    q: 'What runs after the agent edits a file?',
+    a: 'Fast syntax checks plus the project’s lint/typecheck checks for the affected files, when a trusted .sidekick/checks.toml provides them. `--verify-full` runs every configured check. A failing check gets up to two repair rounds; missing tools, timeouts, and denials are reported as `unknown`, never `pass`.',
   },
   {
     q: 'Is it safe to let it run shell?',
@@ -340,17 +351,17 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.32.0 — review pack + verification',
+    v: 'v0.33.0 — provider + platform hardening',
     items: [
-      'Layered review pack · --explain · --check-config',
-      'Built-in rules + seeded review corpus',
-      'sk check · parsed diagnostics',
-      'Post-edit verification',
+      'One agent loop across providers',
+      'Shell sandbox independent of the permission gate',
+      'Security + supply-chain scanning in CI',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.32.0 — editable review pack + verification: layered built-in < user < project < CLI rules (#420), 10 built-in rules + corpus (#421), trust-gated sk check with parsed diagnostics (#422), and post-edit + sk review --verify checks that report unknown, never pass (#423)',
   'v0.31.0 — review foundation: search_code/glob_files, line-range read_file, repo_map, evidence-backed sk review with advisory worth-it assessment, and GitHub/Bitbucket PR comments (#398–#403, #408, #410)',
   'v0.30.0 — security release: egress allowlist on every redirect hop, fail-closed hooks, release integrity, coverage gate (#371–#376)',
   'v0.29.0 — unparsed tool-call markup no longer posted as an answer (#367); MCP tool lists cached per connection (#314)',
