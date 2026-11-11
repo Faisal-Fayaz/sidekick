@@ -6,10 +6,11 @@ import json
 import os
 import platform
 import re
-from collections.abc import Container
+from collections.abc import Callable, Container
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from openai import OpenAI
 
@@ -2216,6 +2217,18 @@ def _verify_passed(result: str) -> bool:
         return False
 
 
+def _verify_full_requested() -> bool:
+    """True when the user opted into a full `sk check` after edits.
+
+    Env-only for TUI/chat callers that have no verify flag; `sk run` also
+    exposes `--verify-full`. Garbage/absent means targeted verification.
+    """
+    try:
+        return os.environ.get("SIDEKICK_VERIFY_FULL", "").strip() == "1"
+    except Exception:
+        return False
+
+
 def _verify_turn(
     edited: list[str],
     repairs_used: int,
@@ -2226,36 +2239,61 @@ def _verify_turn(
     read_only: bool = False,
     plan_mode: bool = False,
     on_tool=None,
+    trust_project_checks: bool = False,
+    verify_full: bool = False,
 ) -> tuple[bool, int, str]:
-    """Post-edit verification gate (refs #280).
+    """Post-edit verification gate (refs #280, #423).
+
+    Runs fast syntax checks plus the project's configured lint/typecheck
+    checks for the edited files; with ``verify_full`` (or
+    ``SIDEKICK_VERIFY_FULL=1``) it runs every configured check instead.
 
     Returns (done, repairs_used, note). done=True → caller breaks with the
-    model's final text. done=False → caller appends note to messages and
-    continues the loop for a targeted repair round (capped). Skips
-    (done=True, empty note) when nothing verifiable was edited, in
-    read-only/plan mode, or when the user declines the verify prompt.
-    The check runs through _gated_dispatch, so hooks, audit rows, and the
-    normal shell approval apply. Never raises.
+    model's final text; a non-empty note is a verification warning the caller
+    should surface. done=False → caller appends note and continues for a
+    targeted repair round (capped). Skips (done=True, empty note) when nothing
+    verifiable was edited or in read-only/plan mode. A denial is reported as
+    `unknown`, not silently treated as a pass. The check runs through the same
+    approval/audit path as `sk check`. Never raises.
     """
     try:
         if repairs_used >= _verify_budget() or read_only or plan_mode:
             return (True, repairs_used, "")
-        cmd = _verify_command(edited)
-        if cmd is None:
+        if not edited:
             return (True, repairs_used, "")
-        if on_tool is not None:
-            try:
-                on_tool("shell", {"cmd": cmd})
-            except Exception:
-                pass
-        result, approved = _gated_dispatch(
-            "shell", {"cmd": cmd, "timeout": 60}, approve, session, provider, host
+
+        from .verify import verify_files
+
+        callback: Callable[[str, dict], bool] = (
+            cast(Callable[[str, dict], bool], approve)
+            if callable(approve)
+            else (lambda name, args: True)
         )
-        if not approved:
-            return (True, repairs_used, "")  # user declined verification
-        if _verify_passed(result):
+        on_command = None
+        if on_tool is not None:
+
+            def on_command(cmd: str) -> None:
+                try:
+                    on_tool("shell", {"cmd": cmd})
+                except Exception:
+                    pass
+
+        report = verify_files(
+            edited,
+            cwd=os.getcwd(),
+            trust_project=trust_project_checks,
+            full=bool(verify_full) or _verify_full_requested(),
+            approve=callback,
+            session=session,
+            provider=provider,
+            host=host,
+            on_command=on_command,
+        )
+        if report.status in ("pass", "skipped"):
             return (True, repairs_used, "")
-        return (False, repairs_used + 1, result[:2000])
+        if report.repairable:
+            return (False, repairs_used + 1, report.compact())
+        return (True, repairs_used, report.compact())
     except Exception:
         return (True, repairs_used, "")
 
@@ -2642,6 +2680,8 @@ def run_agent(
     review_plan=None,
     read_only: bool = False,
     plan_mode: bool = False,
+    trust_project_checks: bool = False,
+    verify_full: bool = False,
     cancel=None,
 ) -> str:
     """One agent turn with up to the effective step budget (explicit user
@@ -2657,8 +2697,11 @@ def run_agent(
     callback must still deny writes (see sk.cli.approvers).
     plan_mode switches the prompt line to propose-a-plan; the caller's approve
     callback must still deny file writes (shell keeps asking).
-    Edited Python files get a post-answer syntax check through the normal
-    shell approval; failures buy up to 2 targeted repair rounds (refs #280).
+    Edited files get fast syntax checks plus the project's configured
+    lint/typecheck checks through the normal shell approval; failures buy up to
+    2 targeted repair rounds (refs #280, #423). ``trust_project_checks`` loads
+    `.sidekick/checks.toml`; ``verify_full`` runs every configured check
+    instead of only lint/typecheck for the edited files.
     session tags audit rows (tool_runs) for `sk audit`. Empty session falls
     back to the audit_session context var (used by the TUI worker path).
     review_plan(plan_text, calls) -> bool: one confirmation for multi-tool
@@ -2985,8 +3028,12 @@ def run_agent(
                 read_only,
                 plan_mode,
                 on_tool,
+                trust_project_checks,
+                verify_full,
             )
             if done:
+                if note:
+                    final_text = (final_text.rstrip() + "\n\n" + note).strip()
                 break
             messages.append(
                 {

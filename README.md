@@ -91,7 +91,7 @@ without handing an unattended model the keys.
 | Explore a repo | `list_dir`, `repo_map`, `read_file` (with line ranges), `search_code`, `glob_files`, and the read-only `exec` allowlist |
 | Edit safely | `write_file` / `edit_file` with approval; `/plan` to propose; `/rewind` to undo |
 | Inspect changes | `/diff`, and `sk review` / `/review` with evidence-backed findings |
-| Verify changes | `sk check` / `sk check --changed` with structured lint, typecheck, and test diagnostics |
+| Verify changes | Automatic post-edit syntax + lint/typecheck verification, `sk check` / `sk check --changed` for the full suite, and `sk review --verify` for a diff |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
 | Extend | skills, custom slash commands, declarative `TOOLS.md` tools, MCP |
 | Stay in control | approval cards, hard refusals, egress allowlist, audit ledger |
@@ -243,8 +243,8 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 
 | Command | What |
 |---|---|
-| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream]` | Single-shot agent run. Auto-routes the model; `--json` emits one machine-readable document + exit codes; `--bg` detaches and notifies; `--allow shell:pytest,write_file` skips prompts for listed tools |
-| `sk review [--base REF\|--staged\|--commit SHA\|--pr N] [--path P] [--intent TEXT] [--assess\|--no-assess] [--post\|--no-post] [--json\|--sarif] [--fail-on LEVEL] [--explain\|--check-config] [--trust-project-rules] [--disable RULE] [--severity RULE=LEVEL]` | Evidence-backed review of a diff or PR. Findings need file:line evidence; the worth-it assessment is advisory. Policy comes from layered review packs (`~/.sidekick/review.toml`, then a trusted repo pack). `--pr` auto-posts comments to GitHub (via `gh`) or Bitbucket when credentials exist; it never edits the branch |
+| `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream] [--trust-project-checks] [--verify-full]` | Single-shot agent run. Auto-routes the model; `--json` emits one machine-readable document + exit codes; `--bg` detaches and notifies; `--allow shell:pytest,write_file` skips prompts for listed tools. After edits it runs syntax checks plus trusted lint/typecheck checks; `--verify-full` runs every configured check |
+| `sk review [--base REF\|--staged\|--commit SHA\|--pr N] [--path P] [--intent TEXT] [--assess\|--no-assess] [--post\|--no-post] [--json\|--sarif] [--fail-on LEVEL] [--explain\|--check-config] [--trust-project-rules] [--verify [--yes\|--allow LIST\|--deny LIST]] [--disable RULE] [--severity RULE=LEVEL]` | Evidence-backed review of a diff or PR. Findings need file:line evidence; the worth-it assessment is advisory. Policy comes from layered review packs (`~/.sidekick/review.toml`, then a trusted repo pack). `--pr` auto-posts comments to GitHub (via `gh`) or Bitbucket when credentials exist; it never edits the branch. `--verify` adds syntax + configured lint/typecheck verification for the reviewed files and exits `1` on `fail`/`unknown` |
 | `sk check [--changed] [--json] [--yes] [--allow LIST] [--deny LIST] [--trust-project-checks] [--check-config\|--explain] [--max-diagnostics N] [--session S]` | Run `.sidekick/checks.toml` through the normal approval and audit path. Parses pytest, ruff, mypy, eslint, tsc, and `go test` into compact diagnostics; unparsed output stays raw. Exits `1` on failure **or** unknown (timeout, missing tool, denial), `2` on config/trust errors. Untrusted by default. See [Checks](docs/checks.md) |
 | `sk jobs [-n N]` | List background jobs from `sk run --bg` |
 | `sk brief [-p PATH] [--smart]` | Morning digest: system + git + todos + memories, instant without an LLM |
@@ -412,6 +412,7 @@ the rest. Data stays home: `history.db`, `skills/`, `nudges.log`,
 | `SIDEKICK_SPEND_CAP` | per-session USD cap, `0` = unlimited |
 | `SIDEKICK_REASONING_EFFORT` | reasoning effort for backends that support it |
 | `SIDEKICK_VERIFY_REPAIRS` | post-edit verify repair rounds (default `2`, `0` disables) |
+| `SIDEKICK_VERIFY_FULL=1` | after edits, run every configured check instead of syntax + lint/typecheck |
 | `SIDEKICK_PROFILE` | load a named config profile |
 | `OPENCODE_API_KEY` | key for the `opencode` provider |
 | `SIDEKICK_TRUST_REPO=1` | **opt in to repo-supplied slash commands, review rules, and check commands** |
@@ -423,8 +424,8 @@ the rest. Data stays home: `history.db`, `skills/`, `nudges.log`,
 > `.sidekick/checks.toml` declares shell commands for `sk check`. All are ignored
 > unless you set `SIDEKICK_TRUST_REPO=1` in your own shell (or pass
 > `--trust-project-rules` to `sk review` / `--trust-project-checks` to
-> `sk check`). Trust only loads the configuration; every check command still
-> goes through approval and the audit ledger. The flag is read from the
+> `sk check` or `sk run`). Trust only loads the configuration; every check
+> command still goes through approval and the audit ledger. The flag is read from the
 > environment and never from repo config, so a repository cannot self-authorize
 > (#287). Commands in `~/.sidekick/commands/` and the review pack in
 > `~/.sidekick/review.toml` always load. See [Review](docs/review.md#review-pack)

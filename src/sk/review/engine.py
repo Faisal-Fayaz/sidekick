@@ -51,6 +51,7 @@ class ReviewOptions:
     post: str = "auto"  # auto | always | never
     session: str = ""
     trust_project: bool = False
+    verify: bool = False
     disable_rules: tuple[str, ...] = ()
     severity_overrides: tuple[str, ...] = ()
 
@@ -114,6 +115,7 @@ def review(
     cfg: Any = None,
     diff: DiffModel | None = None,
     completer: Completer | None = None,
+    approve: Callable[[str, dict], bool] | None = None,
 ) -> ReviewReport:
     """Run one review. Raises ReviewError for a bad target; model failures are reported."""
     opts = options or ReviewOptions()
@@ -148,6 +150,22 @@ def review(
         raise ReviewError(str(e)) from e
 
     diff = filter_diff(diff, pack.include, pack.ignore)
+    verification = None
+    if opts.verify:
+        from ..verify import verify_files
+
+        verify_paths = [
+            f.path for f in diff.files if not f.binary and f.status != "D" and not f.skipped
+        ]
+        verification = verify_files(
+            verify_paths,
+            cwd=diff.repo_root,
+            trust_project=opts.trust_project,
+            approve=approve,
+            session=opts.session or "review",
+            provider=str(getattr(cfg, "provider", "")),
+            host="",
+        ).to_dict()
     findings: list[Finding] = checks.deterministic_findings(diff, pack.rules)
     errors: list[str] = []
     chunks = list(iter_chunks(diff, max_chars=pack.max_chars))
@@ -204,6 +222,7 @@ def review(
         truncated=diff.truncated,
         errors=errors,
         skipped=[Skip(path=s.path, reason=s.reason) for s in diff.skipped],
+        verification=verification,
     )
 
     if pr and opts.post != "never" and (opts.post == "always" or opts.post == "auto"):

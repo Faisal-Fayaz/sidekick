@@ -75,8 +75,12 @@ def irreversible_refusal(name: str, args: dict) -> str | None:
     return None
 
 
-def tool_shell(cmd: str, timeout: int = 30) -> str:
-    """General shell via bash -c. Approval-gated; catastrophic patterns hard-blocked."""
+def tool_shell(cmd: str, timeout: int = 30, cwd: str = "") -> str:
+    """General shell via bash -c. Approval-gated; catastrophic patterns hard-blocked.
+
+    ``cwd`` is for internal callers (checks, verification) that need the
+    project root. The model-facing tool schema does not expose it.
+    """
     blocked = _check_shell(cmd)
     if blocked:
         return blocked
@@ -84,7 +88,7 @@ def tool_shell(cmd: str, timeout: int = 30) -> str:
     # Bounded capture (#315): `yes` / `cat /dev/urandom` would otherwise buffer
     # gigabytes in this process before the 6000-char cut below ever applies.
     try:
-        res = run_bounded(["bash", "-c", cmd], timeout=timeout)
+        res = run_bounded(["bash", "-c", cmd], timeout=timeout, cwd=cwd or None)
         out = (res.stdout or "") + (("\n[stderr]\n" + res.stderr) if res.stderr else "")
         out = out.strip() or "(no output)"
         if len(out) > 6000:

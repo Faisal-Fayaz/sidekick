@@ -43,6 +43,16 @@ def run(
     deny: str = typer.Option(
         "", "--deny", help="Never-approve list, e.g. --deny shell,write_file (beats --allow)"
     ),
+    trust_project_checks: bool = typer.Option(
+        False,
+        "--trust-project-checks",
+        help="Load repo-supplied .sidekick/checks.toml for post-edit verification",
+    ),
+    verify_full: bool = typer.Option(
+        False,
+        "--verify-full",
+        help="After edits, run every configured check (default: syntax + lint/typecheck)",
+    ),
 ):
     """Run a one-shot task: sk run "summarize disk usage in ~/" """
     import json as _json
@@ -176,6 +186,8 @@ def run(
             review_plan=_make_plan_reviewer({"yolo": yes, "readonly": read_only, "plan": plan}),
             read_only=read_only,
             plan_mode=plan,
+            trust_project_checks=trust_project_checks,
+            verify_full=verify_full,
         )
         # Fast→smart escalation (refs #275): when the router owned the pick
         # (auto) and chose fast, a failed turn retries once on smart. Single
@@ -207,6 +219,8 @@ def run(
                     ),
                     read_only=read_only,
                     plan_mode=plan,
+                    trust_project_checks=trust_project_checks,
+                    verify_full=verify_full,
                 )
     except Exception as e:
         if as_json:

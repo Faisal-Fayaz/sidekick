@@ -166,6 +166,28 @@ output, or whether the review runs.
 - The default is on for `--base`, `--commit`, and `--pr`, off for working-tree
   and staged reviews.
 
+## Verification
+
+`sk review --verify` runs post-edit verification for the reviewed files: fast
+syntax checks plus the project's configured lint/typecheck checks. It uses the
+same approval gate and audit ledger as `sk check`; project checks are loaded
+only with `--trust-project-rules` (or `SIDEKICK_TRUST_REPO=1`).
+
+The result is a separate `verification` section in the Markdown and JSON
+report, never a synthetic review finding. A failing configured check is a
+failed verification rather than a tool error. Missing tools, timeouts, denials,
+and an untrusted checks file are `unknown`, never `pass`.
+
+```bash
+sk review --staged --verify --trust-project-rules
+sk review --staged --verify --yes --json
+```
+
+`--yes`, `--allow`, and `--deny` control verification approvals; `--deny`
+always wins. `sk review --verify` exits `1` when verification is `fail` or
+`unknown`, independently of the `--fail-on` finding threshold. See
+[Checks](checks.md#post-edit-verification) for the full status contract.
+
 ## Posting to pull requests
 
 `sk review --pr N` posts comments automatically when credentials are available:

@@ -1,4 +1,7 @@
-"""Post-edit verify + capped repair (refs #280). Offline, fully mocked."""
+"""Post-edit verify + capped repair (refs #280, #423). Offline, fully mocked."""
+
+import json
+from pathlib import Path
 
 import sk.agent as agent
 import sk.store as store
@@ -64,10 +67,14 @@ def _scripted(monkeypatch, tmp_path, texts, shell_results):
     return calls
 
 
-def _write_turn():
+def _write_turn(tmp_path: Path | None = None):
+    path = "/tmp/x.py"
+    if tmp_path is not None:
+        path = str(tmp_path / "x.py")
+        Path(path).write_text("x = 1\n")
     return agent._Msg(
         "",
-        [agent._TC("1", "write_file", '{"path": "/tmp/x.py", "content": "x = 1"}')],
+        [agent._TC("1", "write_file", json.dumps({"path": path, "content": "x = 1"}))],
         "",
         "tool_calls",
     )
@@ -78,7 +85,7 @@ def test_repair_green_after_one_failure(tmp_path, monkeypatch):
         monkeypatch,
         tmp_path,
         [
-            _write_turn(),
+            _write_turn(tmp_path),
             agent._Msg("draft", None, "", "stop"),
             agent._Msg("all fixed", None, "", "stop"),
         ],
@@ -94,7 +101,7 @@ def test_repair_budget_caps_at_two(tmp_path, monkeypatch):
         monkeypatch,
         tmp_path,
         [
-            _write_turn(),
+            _write_turn(tmp_path),
             agent._Msg("v1", None, "", "stop"),
             agent._Msg("v2", None, "", "stop"),
             agent._Msg("v3", None, "", "stop"),
@@ -127,7 +134,7 @@ def test_verify_skipped_without_edits_and_in_plan_mode(tmp_path, monkeypatch):
     def fake_stream(client, model, messages, tools, *a, **k):
         calls["n"] += 1
         if calls["n"] == 1:
-            return _write_turn()
+            return _write_turn(tmp_path)
         return agent._Msg("plan draft", None, "", "stop")
 
     monkeypatch.setattr(agent, "_stream_chat", fake_stream)

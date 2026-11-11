@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 
@@ -423,3 +424,63 @@ def test_assessment_drops_questions_with_invented_evidence(repo):
     )
     assert report.assessment is not None
     assert [q.question for q in report.assessment.questions] == ["Grounded?"]
+
+
+def test_review_verify_runs_for_reviewed_files(repo, monkeypatch):
+    import sk.verify as verify_mod
+    from sk.verify import VerificationResult
+
+    (repo / "app.py").write_text("x = 2\n")
+    diff = DiffModel(
+        target="worktree",
+        repo_root=str(repo),
+        ref="HEAD",
+        changed_lines=1,
+        files=(FileDiff(path="app.py", status="M", additions=1),),
+    )
+    seen: dict = {}
+
+    def fake_verify(files, **kwargs):
+        seen.update({"files": files, **kwargs})
+        return VerificationResult(status="fail", root=str(repo), files=tuple(files))
+
+    monkeypatch.setattr(verify_mod, "verify_files", fake_verify)
+
+    def approve(name, args):
+        return True
+
+    report = review(
+        diff=diff,
+        cfg=_cfg(),
+        completer=_completer('{"findings":[]}'),
+        options=ReviewOptions(assess="never", verify=True, trust_project=True),
+        approve=approve,
+    )
+
+    assert seen["files"] == ["app.py"]
+    assert seen["trust_project"] is True
+    assert seen["approve"] is approve
+    assert report.verification is not None
+    assert report.verification["status"] == "fail"
+    data = json.loads(report.to_json())
+    assert data["verification"]["status"] == "fail"
+    assert "### Verification" in report.to_markdown()
+    assert "**Status: FAIL**" in report.to_markdown()
+
+
+def test_review_without_verify_skips_checks(repo, monkeypatch):
+    import sk.verify as verify_mod
+
+    (repo / "app.py").write_text("x = 2\n")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("verification must be opt-in")
+
+    monkeypatch.setattr(verify_mod, "verify_files", boom)
+    report = review(
+        cwd=str(repo),
+        cfg=_cfg(),
+        completer=_completer('{"findings":[]}'),
+        options=ReviewOptions(assess="never"),
+    )
+    assert report.verification is None
