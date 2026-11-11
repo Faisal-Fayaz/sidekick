@@ -40,14 +40,17 @@ evidence-backed engine: every finding needs a real `file:line` and an exact
 evidence quote, or it is dropped. Ten built-in rules cover common security and
 correctness footguns, each with a positive/negative fixture; the eight
 `security/*` rules are protected from project overrides. Branch and PR reviews
-also get an advisory worth-it assessment. `/diff` prints the same diff without a
-model call. See [Review](docs/review.md).
+also get an advisory worth-it assessment, and `sk review --verify` runs syntax
+plus the project's configured checks with a separate verdict. `/diff` prints the
+same diff without a model call. See [Review](docs/review.md).
 
 ![Terminal showing /review autocomplete, a MAJOR finding with file and line, and a suggested diff](docs/tui-complete.svg)
 
 **Approve the plan, then verify the result.** Sidekick reads the repo, asks you
 to approve the multi-tool plan, writes the test, runs it, and reports the
-result. Reads run automatically; writes and shell commands ask first.
+result. After edits it also runs syntax checks plus the project's trusted
+lint/typecheck checks, with timeouts and missing tools reported as `unknown` —
+never `pass`. Reads run automatically; writes and shell commands ask first.
 
 ![Terminal showing plan approval, a test file write, pytest, and a passing result](docs/tui-chat.svg)
 
