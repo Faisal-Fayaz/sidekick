@@ -108,10 +108,15 @@ class VerificationResult:
                 marker = "raw (unparsed)" if result.status == "fail" else "raw"
                 raw = _clean(result.raw, 3000)
                 lines.append(f"    {marker}:")
-                for raw_line in raw.splitlines()[:MAX_RAW_LINES]:
-                    lines.append(f"      {raw_line}")
-                if len(raw.splitlines()) > MAX_RAW_LINES:
+                raw_lines = raw.splitlines()
+                # Keep the tail: tracebacks and compiler errors put the
+                # actionable line ("SyntaxError", "error TS...") last. Python
+                # 3.13+ adds source echoes that push the head past the cap.
+                if len(raw_lines) > MAX_RAW_LINES:
                     lines.append("      ...")
+                    raw_lines = raw_lines[-MAX_RAW_LINES:]
+                for raw_line in raw_lines:
+                    lines.append(f"      {raw_line}")
         if len(lines) > MAX_COMPACT_LINES:
             remaining = len(lines) - MAX_COMPACT_LINES
             lines = lines[:MAX_COMPACT_LINES] + [f"  ... ({remaining} more lines)"]

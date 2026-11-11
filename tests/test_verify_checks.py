@@ -332,6 +332,32 @@ def test_relative_paths_normalizes_from_a_subdirectory(tmp_path):
     assert _relative_paths([str(sub / "app.py")], str(repo), str(sub)) == ("src/pkg/app.py",)
 
 
+def test_compact_keeps_the_tail_of_long_raw_output():
+    from sk.check.runner import CheckResult
+
+    raw = "\n".join(['  File "<string>", line 1'] * 20 + ["SyntaxError: invalid syntax"])
+    report = VerificationResult(
+        status="fail",
+        results=(
+            CheckResult(
+                id="syntax-python",
+                command="python -c ...",
+                kind="syntax",
+                parser="raw",
+                status="fail",
+                exit_code=1,
+                duration=0.0,
+                raw=raw,
+            ),
+        ),
+    )
+
+    compact = report.compact()
+    assert "SyntaxError: invalid syntax" in compact
+    assert compact.count('File "<string>"') == 7
+    assert compact.rstrip().endswith("SyntaxError: invalid syntax")
+
+
 def test_status_precedence_unknown_beats_fail():
     from sk.check.runner import CheckResult
 
