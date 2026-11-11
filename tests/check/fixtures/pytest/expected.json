@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "root": "",
+  "diagnostics": [
+    {
+      "file": "tests/test_math.py",
+      "line": 12,
+      "column": null,
+      "severity": "error",
+      "code": "test_add",
+      "message_contains": "assert 3 == 4"
+    },
+    {
+      "file": "tests/test_math.py",
+      "line": 20,
+      "column": null,
+      "severity": "error",
+      "code": "test_div",
+      "message_contains": "ZeroDivisionError: division by zero"
+    }
+  ]
+}

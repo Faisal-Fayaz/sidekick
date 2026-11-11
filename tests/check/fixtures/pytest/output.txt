@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+collected 2 items
+
+tests/test_math.py F.F                                                      [100%]
+
+=================================== FAILURES ===================================
+_________________________________ test_add _____________________________________
+
+    def test_add():
+>       assert add(1, 2) == 4
+E       assert 3 == 4
+
+tests/test_math.py:12: AssertionError
+_________________________________ test_div _____________________________________
+
+    def test_div():
+>       assert div(1, 0) == 0
+E       ZeroDivisionError: division by zero
+
+tests/test_math.py:20: ZeroDivisionError
+=========================== short test summary info ============================
+FAILED tests/test_math.py::test_add - assert 3 == 4
+FAILED tests/test_math.py::test_div - ZeroDivisionError: division by zero
+2 failed in 0.05s

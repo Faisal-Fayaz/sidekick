@@ -1,0 +1,4 @@
+src/app.py:12: error: Incompatible return value type (got "str", expected "int")  [return-value]
+src/app.py:15: note: Revealed type is "builtins.str"
+src/util.py:8:5: warning: unused ignore  [unused-ignore]
+Found 2 errors in 2 files (checked 3 source files)

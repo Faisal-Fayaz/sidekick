@@ -1,0 +1,7 @@
+--- FAIL: TestAdd (0.00s)
+    math_test.go:12: got 3, want 4
+--- FAIL: TestDiv (0.00s)
+    math_test.go:20: division by zero
+FAIL
+FAIL	example.com/math	0.123s
+ok  	example.com/util	0.100s

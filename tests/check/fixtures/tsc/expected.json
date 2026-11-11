@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "root": "",
+  "diagnostics": [
+    {
+      "file": "src/app.ts",
+      "line": 12,
+      "column": 5,
+      "severity": "error",
+      "code": "TS2322",
+      "message_contains": "Type 'string' is not assignable"
+    },
+    {
+      "file": "src/util.ts",
+      "line": 20,
+      "column": 3,
+      "severity": "error",
+      "code": "TS7006",
+      "message_contains": "implicitly has an 'any' type"
+    }
+  ]
+}

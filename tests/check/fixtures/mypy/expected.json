@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "root": "",
+  "diagnostics": [
+    {
+      "file": "src/app.py",
+      "line": 12,
+      "column": null,
+      "severity": "error",
+      "code": "return-value",
+      "message_contains": "Incompatible return value type"
+    },
+    {
+      "file": "src/util.py",
+      "line": 8,
+      "column": 5,
+      "severity": "warning",
+      "code": "unused-ignore",
+      "message_contains": "unused ignore"
+    }
+  ]
+}

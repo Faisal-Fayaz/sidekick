@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "root": "",
+  "diagnostics": [
+    {
+      "file": "src/app.py",
+      "line": 12,
+      "column": 5,
+      "severity": "error",
+      "code": "F401",
+      "message_contains": "`os` imported but unused"
+    },
+    {
+      "file": "src/app.py",
+      "line": 20,
+      "column": 1,
+      "severity": "error",
+      "code": "E501",
+      "message_contains": "Line too long"
+    }
+  ]
+}
