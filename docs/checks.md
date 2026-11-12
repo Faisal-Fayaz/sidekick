@@ -167,6 +167,26 @@ Verification commands use the normal approval gate. `--yes`, `--allow`, and
 `unknown` verification makes `sk review --verify` exit `1`, even when the
 `--fail-on` finding threshold is not met.
 
+## Running just the tests
+
+`sk test` runs the project's tests through the same pipeline: the same approval
+gate, the same hooks, the same audit ledger, the same parsers, the same exit
+codes.
+
+```bash
+sk test                        # the declared test check, or a detected one
+sk test --yes --json           # machine-readable report
+sk test --command "pytest -q tests/cli"   # an explicit command
+```
+
+The command comes from the project, never invented: the check of kind `test` in
+`.sidekick/checks.toml` wins, and otherwise it is detected from a `Makefile`
+target, a `package.json` script, `Cargo.toml`, `go.mod`, or a Python project.
+Without either, `sk test` says so and exits `2` rather than reporting a green
+suite.
+
+A test runner that cannot be found is `unknown`, never a pass.
+
 ## Diagnostics and statuses
 
 Parsers are pure functions over captured output and never invent a pass. Each
