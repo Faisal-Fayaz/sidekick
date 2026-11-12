@@ -244,33 +244,82 @@ def render(results: list[dict], *, price_per_mtok: float = 0.0, k: int = 1) -> s
     return "\n".join(parts)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tier", default="fast", choices=("fast", "smart"))
-    parser.add_argument("--provider", default="")
-    parser.add_argument("--model", default="")
-    parser.add_argument("--base-url", default="", help="override the endpoint")
-    parser.add_argument("--task", action="append", default=[], help="run only these tasks")
-    parser.add_argument("--allow-network", action="store_true")
-    parser.add_argument("--network", action="store_true", help="allow the model to fetch")
-    parser.add_argument("--price-per-mtok", type=float, default=0.0)
-    parser.add_argument("--spend-cap", type=float, default=0.0)
-    parser.add_argument("--repeat", type=int, default=1, help="samples per task")
-    parser.add_argument("--k", type=int, default=1, help="k for pass@k")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(argv)
+def parse_target(spec: str) -> dict:
+    """``provider:model`` or ``provider:model@price_per_mtok``.
 
-    tasks = load_tasks()
-    if args.task:
-        wanted = set(args.task)
-        tasks = [t for t in tasks if t["id"] in wanted]
-        if not tasks:
-            print(f"no task matches {sorted(wanted)}", file=sys.stderr)
-            return 2
-    if not args.allow_network:
-        tasks = [t for t in tasks if t.get("kind") != "network"]
+    The price is in USD per million tokens; without one, the target is
+    reported as unmetered (which is what a local model is).
 
-    cfg = _config(args)
+    The price is separated by ``@`` rather than a colon because model names
+    carry colons themselves: ``ollama:qwen3:4b`` is one model, not a model
+    called "qwen3" priced at 4b.
+    """
+    text = str(spec or "")
+    price = 0.0
+    if "@" in text:
+        text, _, raw_price = text.rpartition("@")
+        try:
+            price = float(raw_price)
+        except ValueError:
+            price = 0.0
+    provider, _, model = text.partition(":")
+    return {"provider": provider, "model": model, "price": price, "spec": spec}
+
+
+def render_comparison(runs: list[dict]) -> str:
+    """The comparison table: local against cloud, with the cost column.
+
+    A local model costs no API bill — it costs electricity, which is not on
+    the invoice. A metered one costs what the tokens cost. That difference is
+    the point of the table.
+    """
+    rows = []
+    for run in runs:
+        results = run["results"]
+        if not results:
+            continue
+        pass1 = sum(r.get("pass_at_1", 1.0) for r in results) / len(results)
+        wall = sum(r["seconds"] for r in results) / len(results)
+        tokens = sum(r.get("total_tokens", r["tokens"]) for r in results)
+        price = run["price"]
+        if price:
+            cost = f"${tokens / 1e6 * price:.4f}"
+        else:
+            cost = "no API bill"
+        rows.append(
+            [
+                run["label"],
+                f"{pass1:.2f}",
+                f"{wall:.1f}s",
+                str(tokens),
+                cost,
+            ]
+        )
+    return _table(rows, ["target", "pass@1", "wall/task", "tokens", "cost"])
+
+
+def run_target(target: dict, tasks: list[dict], args) -> list[dict]:
+    """Run the whole task set against one target."""
+    from sk.config import Config, provider_tier
+
+    cfg = Config.load()
+    if target["provider"]:
+        cfg.provider = target["provider"]
+    if target["model"]:
+        cfg.model = target["model"]
+    elif args.tier:
+        tier = provider_tier(cfg.provider, args.tier, "")
+        if tier:
+            cfg.model = tier
+    if args.base_url:
+        cfg.base_url = args.base_url
+    if args.spend_cap:
+        cfg.spend_cap_usd = float(args.spend_cap)
+    if args.network:
+        cfg.egress_allow = tuple(cfg.egress_allow or ()) + (
+            "duckduckgo.com",
+            "html.duckduckgo.com",
+        )
     results = []
     for task in tasks:
         runs = [
@@ -286,6 +335,84 @@ def main(argv: list[str] | None = None) -> int:
         entry["pass_at_k"] = round(pass_at_k(len(runs), solved, max(1, args.k)), 3)
         entry["total_tokens"] = sum(r["tokens"] for r in runs)
         results.append(entry)
+    return results
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tier", default="fast", choices=("fast", "smart"))
+    parser.add_argument("--provider", default="")
+    parser.add_argument("--model", default="")
+    parser.add_argument("--base-url", default="", help="override the endpoint")
+    parser.add_argument("--task", action="append", default=[], help="run only these tasks")
+    parser.add_argument("--allow-network", action="store_true")
+    parser.add_argument("--network", action="store_true", help="allow the model to fetch")
+    parser.add_argument("--price-per-mtok", type=float, default=0.0)
+    parser.add_argument("--spend-cap", type=float, default=0.0)
+    parser.add_argument("--repeat", type=int, default=1, help="samples per task")
+    parser.add_argument("--k", type=int, default=1, help="k for pass@k")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="run every target and print the local-vs-cloud comparison",
+    )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="provider:model[:price_per_mtok] to compare (repeatable)",
+    )
+    args = parser.parse_args(argv)
+
+    tasks = load_tasks()
+    if args.task:
+        wanted = set(args.task)
+        tasks = [t for t in tasks if t["id"] in wanted]
+        if not tasks:
+            print(f"no task matches {sorted(wanted)}", file=sys.stderr)
+            return 2
+    if not args.allow_network:
+        tasks = [t for t in tasks if t.get("kind") != "network"]
+
+    if args.compare or args.target:
+        targets = [parse_target(spec) for spec in args.target]
+        if not targets:
+            # The default comparison: the two local tiers, which is the point
+            # of the table — the local cost column.
+            from sk.config import provider_tier
+
+            for tier in ("fast", "smart"):
+                targets.append(
+                    {
+                        "provider": "ollama",
+                        "model": provider_tier("ollama", tier, ""),
+                        "price": 0.0,
+                        "spec": f"ollama:{tier}",
+                    }
+                )
+        runs = []
+        for target in targets:
+            label = (
+                f"{target['provider']}/{target['model']}" if target["model"] else target["provider"]
+            )
+            print(f"running {label} ...", file=sys.stderr)
+            runs.append(
+                {
+                    "label": label,
+                    "price": target["price"],
+                    "results": run_target(target, tasks, args),
+                }
+            )
+        if args.json:
+            print(json.dumps(runs, indent=2))
+            return 0
+        print(render_comparison(runs))
+        return (
+            0 if all(all(r.get("pass_at_1") == 1.0 for r in run["results"]) for run in runs) else 1
+        )
+
+    results = run_target({"provider": "", "model": "", "price": 0.0}, tasks, args)
 
     if args.json:
         print(json.dumps(results, indent=2))

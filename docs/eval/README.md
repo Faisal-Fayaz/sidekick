@@ -29,7 +29,17 @@ python3 docs/probe-evals.py --task p3_grounding # one task
 python3 docs/probe-evals.py --allow-network --network
 python3 docs/probe-evals.py --repeat 5 --k 5    # pass@1 and pass@5
 python3 docs/probe-evals.py --json              # machine-readable
+
+# The comparison: local against metered, with the cost column (#157)
+python3 docs/probe-evals.py --compare
+python3 docs/probe-evals.py --compare --target openrouter:openai/gpt-4o-mini@0.15
 ```
+
+`--compare` runs the same task set against every target and prints one row
+each: pass@1, wall time per task, tokens, and the cost. A local model costs
+**no API bill** — it costs electricity, which is not on the invoice. That
+difference is the point of the table. The published snapshot and the
+methodology live in [`results.md`](results.md).
 
 `--repeat N` draws N samples per task, so the table can report how often a
 task was solved (`solved` column) instead of only whether it was. `--k` picks
@@ -51,6 +61,13 @@ plus a one-line summary. That is what goes into an issue or a release note.
 It is not part of `pytest`: it spends model time and money. The task set
 *is* checked by the offline suite (`tests/test_eval_tasks.py`), so it cannot
 rot unnoticed between live runs.
+
+## Results
+
+The published snapshot and the methodology live in [`results.md`](results.md).
+The short version, measured on a 4 GB box: the small local models answer the
+chat tasks and do not complete the tool tasks, and the harness can tell the
+difference between an answer and an action.
 
 ## Nightly
 
