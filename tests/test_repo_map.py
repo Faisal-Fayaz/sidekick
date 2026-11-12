@@ -217,7 +217,7 @@ def test_repo_map_self_fits_a_small_budget():
 def test_repo_map_schema_dispatch_and_approval_free(tmp_path):
     names = {entry["function"]["name"] for entry in TOOLS_SCHEMA}
     assert "repo_map" in names
-    assert len(names) == 22
+    assert len(names) == 27
     assert "repo_map" not in APPROVAL_TOOLS
     assert "repo_map" not in PLAN_DENIED_TOOLS
     assert "repo_map" not in READONLY_DENIED_TOOLS

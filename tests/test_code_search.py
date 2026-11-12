@@ -202,7 +202,7 @@ def test_glob_files_cap_is_explicit(tmp_path):
 def test_schema_dispatch_and_approval_free(tmp_path):
     names = {entry["function"]["name"] for entry in TOOLS_SCHEMA}
     assert {"search_code", "glob_files"} <= names
-    assert len(names) == 22
+    assert len(names) == 27
     assert not {"search_code", "glob_files"} & APPROVAL_TOOLS
     assert not {"search_code", "glob_files"} & PLAN_DENIED_TOOLS
     assert not {"search_code", "glob_files"} & READONLY_DENIED_TOOLS

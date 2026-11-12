@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from .git import (
+    tool_git_branch,
+    tool_git_commit,
+    tool_git_diff,
+    tool_git_push,
+    tool_git_status,
+)
 from .read import tool_exec, tool_list_dir, tool_read_file, tool_sysinfo
 from .repo_map import DEFAULT_REPO_MAP_TOKENS, tool_repo_map
 from .search import tool_glob_files, tool_search_code
@@ -17,7 +24,15 @@ from .write import (
 )
 
 # everything requiring user approval (writes + general shell + delete)
-APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "shell_session", "delete_file"}
+# The git writes are in here too: a commit and a push change the repository
+# and the remote, so they ask like any other write (#454).
+APPROVAL_TOOLS = WRITE_TOOLS | {
+    "shell",
+    "shell_session",
+    "delete_file",
+    "git_commit",
+    "git_push",
+}
 
 # Why predefined tools instead of bash-only: the defaults here serve weak,
 # bash-poor local models (llama3.2:3b needs the text-JSON fallback already).
@@ -35,7 +50,7 @@ APPROVAL_TOOLS = WRITE_TOOLS | {"shell", "shell_session", "delete_file"}
 # exec is approval-free but must still die in these modes: after python3's
 # removal it is read-only, yet inventory commands have no place in a mode
 # that promises zero side effects.
-PLAN_DENIED_TOOLS = set(WRITE_TOOLS) | {"delete_file", "exec"}
+PLAN_DENIED_TOOLS = set(WRITE_TOOLS) | {"delete_file", "exec", "git_commit", "git_push"}
 READONLY_DENIED_TOOLS = set(APPROVAL_TOOLS) | {"exec"}
 
 TOOLS_SCHEMA = [
@@ -45,6 +60,99 @@ TOOLS_SCHEMA = [
             "name": "sysinfo",
             "description": "Get REAL hardware + Ollama models (CPU, RAM, GPU, disk, installed models). MUST call this first for any 'my device / my machine / what LLM can I run' question. Never guess specs.",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": "Git working tree status (one line per change). Use instead of running `git status` in the shell.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Repository path, default '.'"}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": "Git diff: the working tree by default, the index with staged=true, or against a ref. Use instead of running `git diff` in the shell.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Repository path, default '.'"},
+                    "staged": {
+                        "type": "boolean",
+                        "description": "Diff the index instead of the working tree",
+                    },
+                    "ref": {
+                        "type": "string",
+                        "description": "Compare against this ref (e.g. main)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_branch",
+            "description": "List the local branches, with the current one marked.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Repository path, default '.'"}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_commit",
+            "description": "Commit staged changes (needs approval). With `paths`, those files are staged first; without, only what is already staged is committed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Commit message"},
+                    "path": {"type": "string", "description": "Repository path, default '.'"},
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Files to stage and commit",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_push",
+            "description": "Push a branch to a remote (needs approval). Refuses protected branches like main.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "remote": {"type": "string", "description": "Remote name, default 'origin'"},
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch to push, default the current one",
+                    },
+                    "path": {"type": "string", "description": "Repository path, default '.'"},
+                    "set_upstream": {
+                        "type": "boolean",
+                        "description": "Set the upstream while pushing",
+                    },
+                },
+                "required": [],
+            },
         },
     },
     {
@@ -485,6 +593,29 @@ def _dispatch_builtin(name: str, args: dict) -> str:
         return tool_repo_map(
             str(args.get("path", ".")),
             args.get("max_tokens", DEFAULT_REPO_MAP_TOKENS),
+        )
+    if name == "git_status":
+        return tool_git_status(str(args.get("path", ".") or "."))
+    if name == "git_diff":
+        return tool_git_diff(
+            str(args.get("path", "") or ""),
+            staged=bool(args.get("staged", False)),
+            ref=str(args.get("ref", "") or ""),
+        )
+    if name == "git_branch":
+        return tool_git_branch(str(args.get("path", "") or ""))
+    if name == "git_commit":
+        return tool_git_commit(
+            str(args.get("message", "") or ""),
+            path=str(args.get("path", "") or ""),
+            paths=args.get("paths") or [],
+        )
+    if name == "git_push":
+        return tool_git_push(
+            str(args.get("remote", "origin") or "origin"),
+            branch=str(args.get("branch", "") or ""),
+            path=str(args.get("path", "") or ""),
+            set_upstream=bool(args.get("set_upstream", False)),
         )
     if name == "exec":
         return tool_exec(str(args.get("cmd", "")))

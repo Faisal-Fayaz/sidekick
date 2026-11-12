@@ -2,7 +2,7 @@
 
 # Sidekick
 
-**A local-first terminal agent for developers — chat, code, and 22 tools, on your hardware.**
+**A local-first terminal agent for developers — chat, code, and 27 tools, on your hardware.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Textual TUI](https://img.shields.io/badge/TUI-textual-green.svg)](https://textual.textualize.io/)
@@ -93,7 +93,7 @@ without handing an unattended model the keys.
 |---|---|
 | Explore a repo | `list_dir`, `repo_map`, `read_file` (with line ranges), `search_code`, `glob_files`, and the read-only `exec` allowlist |
 | Edit safely | `write_file` / `edit_file` with approval; `/plan` to propose; `/rewind` to undo |
-| Inspect changes | `/diff`, and `sk review` / `/review` with evidence-backed findings |
+| Inspect changes | `/diff`, `git_status` / `git_diff` / `git_branch`, and `sk review` / `/review` with evidence-backed findings |
 | Verify changes | Automatic post-edit syntax + lint/typecheck verification, `sk check` / `sk check --changed` for the full suite, and `sk review --verify` for a diff |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
 | Extend | skills, custom slash commands, declarative `TOOLS.md` tools, MCP |
@@ -101,6 +101,12 @@ without handing an unattended model the keys.
 
 The TUI and plain-text REPL share every command, so a scripted fallback and an
 interactive session behave the same way.
+
+The git tools take typed arguments, not a command string: `git_status`,
+`git_diff`, and `git_branch` are approval-free reads; `git_commit` and
+`git_push` ask, like any other write, and `git_push` refuses a protected
+branch. Because the command line is built by the tool, there is nothing for a
+model to smuggle into it.
 
 `search_code` uses `rg` when installed, then `grep`, then a Python walker. It
 skips hidden paths, symlinks, binaries, and `.gitignore` matches; results default
@@ -180,7 +186,7 @@ Recordings are temp files and are deleted after each take.
 sk mcp [--allow-writes]   # JSON-RPC 2.0 over stdio, zero new deps
 ```
 
-All 22 tools, same safety policy: SSRF guards, write blocklists, and hard
+All 27 tools, same safety policy: SSRF guards, write blocklists, and hard
 refusals apply unchanged. Reads auto-run; shell/writes/delete need
 `--allow-writes`, otherwise they return a clean denied error. Stdout carries
 protocol only.
@@ -282,7 +288,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 |---|---|
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` | Skill packs: registry + superpowers |
 | `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
-| `sk mcp [--allow-writes]` | MCP server over stdio (22 tools, safe defaults) |
+| `sk mcp [--allow-writes]` | MCP server over stdio (27 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see [`docs/mcp-client.md`](docs/mcp-client.md)) |
 | `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules) |
 
@@ -329,7 +335,7 @@ flowchart TB
     CLI --> AGENT[agent.py: stream → tools → synthesize]
     TUI --> AGENT
     AGENT --> GROUND[deterministic grounding: ~/paths, URLs,\nsysinfo — injected before the model sees the prompt]
-    AGENT --> TOOLS[tools/: 22 tools, allowlists,\nhard-blocks, SSRF guard]
+    AGENT --> TOOLS[tools/: 27 tools, allowlists,\nhard-blocks, SSRF guard]
     AGENT --> MEM[(store.py: history, memories FTS5,\ntodos, shell log)]
     AGENT --> SKILLS[skills: relevance-ranked SKILL.md index]
 ```
