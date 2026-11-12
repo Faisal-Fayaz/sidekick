@@ -2068,6 +2068,7 @@ def _verify_turn(
     on_tool=None,
     trust_project_checks: bool = False,
     verify_full: bool = False,
+    sink: dict | None = None,
 ) -> tuple[bool, int, str]:
     """Deprecated alias — see :func:`sk.verify.verify_turn`.
 
@@ -2090,6 +2091,7 @@ def _verify_turn(
         on_tool=on_tool,
         trust_project_checks=trust_project_checks,
         verify_full=verify_full,
+        sink=sink,
     )
 
 
@@ -2434,6 +2436,7 @@ def run_agent(
     verify_full: bool = False,
     cancel=None,
     backend=None,
+    verify_sink: dict | None = None,
 ) -> str:
     """One agent turn with up to the effective step budget (explicit user
     config wins, else the model profile, else the configured default).
@@ -2464,6 +2467,9 @@ def run_agent(
     this loop running, still dispatching tools and still calling back into the
     approval prompt. A thread cannot be killed, only asked. (#311)
     backend overrides the provider seam; normally it is chosen from cfg.
+    verify_sink receives the post-edit verification verdict and report, for a
+    caller that wants to state it structurally (`sk fix`) instead of leaving it
+    in the answer text.
     """
     session = session or audit_session.get()
 
@@ -2758,6 +2764,7 @@ def run_agent(
                 on_tool,
                 trust_project_checks,
                 verify_full,
+                sink=verify_sink,
             )
             if done:
                 if note:
@@ -2867,4 +2874,7 @@ def run_agent(
             recap = ""
         final_text = _strip_recap_leak(_strip_control_leak(recap)) or "(max steps reached)"
 
+    if verify_sink is not None:
+        verify_sink.setdefault("status", "skipped")
+        verify_sink["repairs_used"] = repairs_used
     return _strip_control_leak(final_text)

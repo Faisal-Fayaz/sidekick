@@ -407,6 +407,7 @@ def verify_turn(
     on_tool: Callable[..., None] | None = None,
     trust_project_checks: bool = False,
     verify_full: bool = False,
+    sink: dict | None = None,
 ) -> tuple[bool, int, str]:
     """Post-edit verification gate (refs #280, #423).
 
@@ -451,6 +452,11 @@ def verify_turn(
             host=host,
             on_command=on_command,
         )
+        if sink is not None:
+            # The verdict, for a caller that wants to report it structurally
+            # instead of parsing prose (`sk fix`).
+            sink["status"] = report.status
+            sink["report"] = report
         if report.status in ("pass", "skipped"):
             return (True, repairs_used, "")
         if report.repairable:

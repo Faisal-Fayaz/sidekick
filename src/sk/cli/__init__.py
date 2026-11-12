@@ -17,6 +17,7 @@ from .commands import (  # noqa: F401
     chat,
     check,
     daemon,
+    fix,
     mcp,
     memory,
     review,
