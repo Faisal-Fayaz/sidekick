@@ -60,7 +60,7 @@ jobs:
     # Reproduce locally:
     #   uv export --frozen --no-emit-project --no-hashes -o /tmp/req.txt
     #   uvx pip-audit -r /tmp/req.txt
-    #   uvx bandit -r src/sk -l
+    #   uvx bandit -r src/sk -lll
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,16 +84,16 @@ jobs:
       - name: Dependency audit (pip-audit)
         run: uvx pip-audit@2.9.0 --requirement requirements-audit.txt --progress-spinner=off
 
-      # The gate is high severity: a new high-severity finding fails the job.
-      # The intentional sites carry a narrow `# nosec` with the reason next to
-      # them (the hook shell, the FTS scope clause, the macOS /tmp symlink),
-      # so nothing is skipped silently.
+      # The gate is high severity (`-lll`): a new high-severity finding fails
+      # the job. The intentional sites carry a narrow `# nosec` with the reason
+      # next to them (the hook shell, the FTS scope clause, the macOS /tmp
+      # symlink), so nothing is skipped silently.
       - name: Static security scan (bandit, high severity)
-        run: uvx bandit@1.8.6 -r src/sk -l
+        run: uvx bandit@1.8.6 -r src/sk -lll
 
-      # The rest of the findings stay visible in the log instead of being
-      # hidden by the gate above. Informational: the gate is the line above.
-      - name: Static security scan (bandit, full report)
+      # Medium findings are reported in the log too, so a new one is visible
+      # before it becomes a high one. Informational: the gate is the line above.
+      - name: Static security scan (bandit, medium and high)
         run: uvx bandit@1.8.6 -r src/sk -ll
         continue-on-error: true
 

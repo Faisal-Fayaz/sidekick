@@ -75,7 +75,7 @@ uv run --with pytest pytest tests -q --cov=sk --cov-report=term-missing  # cover
 ```bash
 uv export --frozen --no-emit-project --no-hashes -o /tmp/req.txt  # the locked runtime set
 uvx pip-audit -r /tmp/req.txt                # known vulnerable dependencies
-uvx bandit -r src/sk -l                       # high-severity static findings (the gate)
+uvx bandit -r src/sk -lll                    # high-severity static findings (the gate)
 uvx bandit -r src/sk -ll                      # medium + high, informational
 ```
 
