@@ -427,7 +427,10 @@ def _tool_target(name: str, args: dict) -> str:
         blob = json.dumps(args, sort_keys=True, default=str)
     except Exception:
         blob = str(args)
-    digest = hashlib.sha1(blob.encode()).hexdigest()[:12]
+    # A cache key, not a security hash: it identifies a call, it does not
+    # authenticate anything. `usedforsecurity=False` says so explicitly and
+    # keeps the digest available on FIPS builds where SHA-1 is restricted.
+    digest = hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()[:12]
     for key in ("url", "path", "cmd", "query", "content", "text", "id"):
         if key in args and args[key] not in ("", None):
             return f"{name}|{key}={str(args[key])[:300]}#{digest}"

@@ -46,7 +46,15 @@ def run_hook(command: str, event: str, payload: dict, timeout: float) -> dict:
     try:
         proc = subprocess.run(
             command,
-            shell=True,
+            # The handler *is* a shell command: the user configured a command
+            # line in ~/.sidekick/hooks.toml, and that is the contract the
+            # feature documents. This is not model-controlled input — a hook
+            # only runs after the user opted in — so the shell is the point,
+            # not the accident. The security boundary is elsewhere: hooks run
+            # through the approval gate and their output is untrusted data.
+            # bandit: B602 is the rule that flags shell=True; it is disabled
+            # here on purpose, not skipped globally.
+            shell=True,  # nosec B602
             input=_envelope(event, payload),
             capture_output=True,
             text=True,

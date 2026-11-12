@@ -676,7 +676,10 @@ def setup():
     cfg = _connect_flow()
     try:
         if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
-            hook_install(shell="", write=True)
+            # `shell` here selects bash or zsh for the rc file; it is not
+            # `subprocess(shell=True)`. bandit reads the parameter name and
+            # flags the call, so the rule is disabled here on purpose.
+            hook_install(shell="", write=True)  # nosec B604
     except (EOFError, KeyboardInterrupt):
         pass
     console.print("[dim]ping...[/dim]")
@@ -707,7 +710,10 @@ def init_cmd():
         cfg = _connect_flow()
         try:
             if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
-                hook_install(shell="", write=True)
+                # `shell` here selects bash or zsh for the rc file; it is not
+                # `subprocess(shell=True)`. bandit reads the parameter name and
+                # flags the call, so the rule is disabled here on purpose.
+                hook_install(shell="", write=True)  # nosec B604
         except (EOFError, KeyboardInterrupt, OSError):
             pass
         _offer_search_egress(cfg)
@@ -758,7 +764,10 @@ def init_cmd():
         raise typer.Exit(1)
     try:
         if typer.confirm("Install shell hook (logs commands for history/oops)?", default=False):
-            hook_install(shell="", write=True)
+            # `shell` here selects bash or zsh for the rc file; it is not
+            # `subprocess(shell=True)`. bandit reads the parameter name and
+            # flags the call, so the rule is disabled here on purpose.
+            hook_install(shell="", write=True)  # nosec B604
     except (EOFError, KeyboardInterrupt, OSError):
         pass
     _offer_search_egress(cfg)

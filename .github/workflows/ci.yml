@@ -53,6 +53,50 @@ jobs:
       - name: Mypy baseline (see pyproject [tool.mypy])
         run: uvx mypy@1.10 src/sk/tools src/sk/agent.py src/sk/router.py src/sk/config.py src/sk/store.py src/sk/slash.py src/sk/tui/ src/sk/cli/ src/sk/model_profiles.py src/sk/anthropic_backend.py src/sk/upgrade.py src/sk/init_wizard.py src/sk/mcp_server.py src/sk/keyring.py src/sk/auth.py src/sk/daemon.py src/sk/brief.py src/sk/jobs.py src/sk/plugins.py src/sk/skills.py src/sk/checkpoints.py src/sk/gitdiff.py src/sk/mcp_client.py src/sk/memory_files.py src/sk/trust.py src/sk/egress.py src/sk/atomic.py src/sk/procutil.py src/sk/fsperm.py src/sk/tokens.py src/sk/review src/sk/check src/sk/verify.py src/sk/toolcalls.py src/sk/backends.py
 
+  scan:
+    # Supply-chain and static security scanning (#271). The job is required on
+    # main (see .github/required-checks.json).
+    #
+    # Reproduce locally:
+    #   uv export --frozen --no-emit-project --no-hashes -o /tmp/req.txt
+    #   uvx pip-audit -r /tmp/req.txt
+    #   uvx bandit -r src/sk -l
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The lockfile is what ships, so the audit runs against exactly that set:
+      # the runtime dependencies, which is what the published wheel pulls in.
+      # The dev and test extras are CI-only and can be audited locally with
+      # `uv export --all-extras`.
+      - name: Export the locked dependency set
+        run: uv export --frozen --no-emit-project --no-hashes --format requirements-txt -o requirements-audit.txt
+
+      # A PR that pulls in a dependency with a known vulnerability fails here.
+      - name: Dependency audit (pip-audit)
+        run: uvx pip-audit@2.9.0 --requirement requirements-audit.txt --progress-spinner=off
+
+      # The gate is high severity: a new high-severity finding fails the job.
+      # The intentional sites carry a narrow `# nosec` with the reason next to
+      # them (the hook shell, the FTS scope clause, the macOS /tmp symlink),
+      # so nothing is skipped silently.
+      - name: Static security scan (bandit, high severity)
+        run: uvx bandit@1.8.6 -r src/sk -l
+
+      # The rest of the findings stay visible in the log instead of being
+      # hidden by the gate above. Informational: the gate is the line above.
+      - name: Static security scan (bandit, full report)
+        run: uvx bandit@1.8.6 -r src/sk -ll
+        continue-on-error: true
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:

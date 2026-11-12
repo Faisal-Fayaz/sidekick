@@ -70,6 +70,22 @@ pipx install pre-commit && pre-commit install   # ruff + mypy + fast subset on c
 uv run --with pytest pytest tests -q --cov=sk --cov-report=term-missing  # coverage report (informational)
 ```
 
+### Security and supply-chain scans (CI `scan` job)
+
+```bash
+uv export --frozen --no-emit-project --no-hashes -o /tmp/req.txt  # the locked runtime set
+uvx pip-audit -r /tmp/req.txt                # known vulnerable dependencies
+uvx bandit -r src/sk -l                       # high-severity static findings (the gate)
+uvx bandit -r src/sk -ll                      # medium + high, informational
+```
+
+The CI gate fails on a high-severity bandit finding or on a dependency with a
+known vulnerability. The intentional sites carry a narrow `# nosec` comment
+with the reason next to them — the hook's `shell=True`, the FTS scope clause in
+`store.py`, the macOS `/tmp` symlink check — rather than a skipped rule class.
+If a new finding is real, fix it; if it is not, annotate that one line and say
+why. Never add a blanket skip.
+
 Notes:
 
 - Tests must never touch your live `~/.sidekick/` — the suite-wide fixture in

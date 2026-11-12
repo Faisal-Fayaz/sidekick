@@ -42,6 +42,10 @@ def _ns_clause(namespace: str, alias: str = "") -> tuple[str, tuple[str, ...]]:
 
     alias must match the query's table alias ("" for unaliased FROM memories).
     """
+    # The interpolated fragment is a column name plus a fixed clause; the
+    # namespace value itself is always a bound parameter. That is why the
+    # queries below carry `# nosec B608`: the rule cannot see that the
+    # interpolation is a constant.
     col = f"{alias}.namespace" if alias else "namespace"
     if namespace:
         return (f"({col} = '' OR {col} = ?)", (namespace,))
@@ -588,7 +592,7 @@ def recall_memories(query: str, limit: int = 5, namespace: str | None = None) ->
         keys = _keywords(query)
         if not keys:
             cur = conn.execute(
-                f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",
+                f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",  # nosec B608
                 (*params, limit),
             )
             return [r[0] for r in cur.fetchall()]
@@ -599,7 +603,7 @@ def recall_memories(query: str, limit: int = 5, namespace: str | None = None) ->
                 fts_scope, fts_params = _ns_clause(ns, alias="m")
                 cur = conn.execute(
                     "SELECT m.content FROM memories_fts f JOIN memories m ON m.id = f.rowid"
-                    f" WHERE f.memories_fts MATCH ? AND {fts_scope} ORDER BY rank LIMIT ?",
+                    f" WHERE f.memories_fts MATCH ? AND {fts_scope} ORDER BY rank LIMIT ?",  # nosec B608
                     (fq, *fts_params, limit),
                 )
                 rows = [r[0] for r in cur.fetchall()]
@@ -609,7 +613,8 @@ def recall_memories(query: str, limit: int = 5, namespace: str | None = None) ->
             pass
         # 2) substring-score fallback (old behavior)
         cur = conn.execute(
-            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT 100", params
+            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT 100",  # nosec B608
+            params,
         )
         rows = [r[0] for r in cur.fetchall()]
         scored: list[tuple[int, str]] = []
@@ -633,7 +638,7 @@ def list_memories(limit: int = 50, namespace: str | None = None) -> list[str]:
     conn = _connect()
     try:
         cur = conn.execute(
-            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",
+            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",  # nosec B608
             (*params, limit),
         )
         return [r[0] for r in cur.fetchall()]
@@ -670,7 +675,7 @@ def search_sessions(
                     "SELECT m.session, m.role,"
                     " snippet(messages_fts, 0, '»', '«', '…', 12), m.ts"
                     " FROM messages_fts f JOIN messages m ON m.id = f.rowid"
-                    f" WHERE f.messages_fts MATCH ? AND {scope}"
+                    f" WHERE f.messages_fts MATCH ? AND {scope}"  # nosec B608
                     " ORDER BY m.id DESC LIMIT ?",
                     (fq, *params, limit),
                 )
@@ -685,7 +690,7 @@ def search_sessions(
         like = "%" + "%".join(keys[:4]) + "%"
         cur = conn.execute(
             f"SELECT m.session, m.role, substr(m.content, 1, 160), m.ts FROM messages m"
-            f" WHERE m.content LIKE ? AND {scope} ORDER BY m.id DESC LIMIT ?",
+            f" WHERE m.content LIKE ? AND {scope} ORDER BY m.id DESC LIMIT ?",  # nosec B608
             (like, *params, limit),
         )
         return [{"session": s, "role": r, "snippet": t, "ts": ts} for s, r, t, ts in cur.fetchall()]
@@ -706,7 +711,10 @@ def forget_memory(query: str, namespace: str | None = None) -> str:
     scope, params = _ns_clause(ns)
     conn = _connect()
     try:
-        cur = conn.execute(f"SELECT id, content FROM memories WHERE {scope}", params)
+        cur = conn.execute(
+            f"SELECT id, content FROM memories WHERE {scope}",  # nosec B608
+            params,
+        )
         rows = cur.fetchall()
         ql = query.lower()
         killed = 0
