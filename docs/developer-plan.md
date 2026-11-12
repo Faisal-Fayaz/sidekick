@@ -1,16 +1,18 @@
 # Sidekick Developer Plan
 
-**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`
+**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Revised:** 2026-11-11 — Phase 2 shipped; editable review packs, `sk check`, and post-edit verification are on `main`
-**Prior revision:** 2026-11-08 — Phase 1 shipped; code intelligence and the evidence-backed review engine are on `main`
+**Revised:** 2026-11-12 — provider + platform hardening shipped: one agent loop behind a provider seam, a required CI scan job, and the declarative sandbox are on `main`
+**Prior revision:** 2026-11-11 — Phase 2 shipped; editable review packs, `sk check`, and post-edit verification are on `main`
+**Earlier revision:** 2026-11-08 — Phase 1 shipped; code intelligence and the evidence-backed review engine are on `main`
 **Baseline:** `a46127e` on `main` (current at revision; audit baseline
 `abfa95d`, accepted at `780c8bd`)
 **Baseline release:** `0.30.0`, 1,504 tests, 21 tools
-**Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6)
-and [v0.32.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/7)
-(both closed). Phase 2 items are listed in §9.
+**Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6),
+[v0.32.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/7), and
+[v0.33.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/8)
+(all closed). Phase 2 items are listed in §9.
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
 > holds the detailed design and accepted defaults behind the developer
@@ -693,7 +695,7 @@ loop for review or for later developer features.
 
 #### Provider abstraction
 
-**Status (2026-11-12):** shipped in the `v0.33.0` milestone (#312, #431).
+**Status (2026-11-12):** shipped in `v0.33.0` (#312, #431).
 
 - Define a provider protocol for chat, streaming, tool calls, capabilities,
   context window, and cost.
@@ -903,10 +905,10 @@ If the honest answer is "parity with cloud agents", it waits.
 
 - `v0.31.0` — shipped: review foundation (code intelligence + `sk review` MVP).
 - `v0.32.0` — shipped: editable review pack + verification loop.
-- `v0.33.0` — next: provider abstraction + platform hardening.
-- `v0.34.0` — evals, benchmark, adoption.
+- `v0.33.0` — shipped: provider abstraction + platform hardening.
+- `v0.34.0` — next: evals, benchmark, adoption.
 
-`v0.33.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
+`v0.34.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
 
 ---
 

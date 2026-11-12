@@ -187,6 +187,18 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'sandbox',
+    title: 'A policy for what a command may reach',
+    body: 'Permission decides whether a call runs; the sandbox decides what it can reach. `~/.sidekick/sandbox.toml` denies reads outside the declared roots and network access from the shell — paths behind variables or inside quotes included. `sk doctor` shows the mode.',
+    link: '/docs#safety',
+  },
+  {
+    tag: 'one loop · every provider',
+    title: 'Provider parity, tested',
+    body: 'One agent loop now drives every provider through a backend seam, and a parity table runs the same scenarios against both — so a feature can no longer land on one side only.',
+    link: '/docs#architecture',
+  },
+  {
     tag: 'sk check · --verify',
     title: 'Verification that can say “unknown”',
     body: 'Run the project’s own checks through the normal approval and audit path, parse pytest/ruff/mypy/eslint/tsc/go test diagnostics, and verify edits with syntax + lint/typecheck. Missing tools and timeouts report `unknown` — never a false pass.',
@@ -355,16 +367,18 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.33.0 — provider + platform hardening',
+    v: 'v0.34.0 — evals, benchmark, adoption',
     items: [
-      'One agent loop across providers',
-      'Shell sandbox independent of the permission gate',
-      'Security + supply-chain scanning in CI',
+      'Live eval harness · pass@k · latency · cost',
+      'Golden-file suite for the busiest turns',
+      'Benchmark proof: local 4GB vs hosted agents',
+      'Per-release install smoke tests',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.33.0 — provider + platform hardening: one agent loop behind a provider seam, a cross-provider parity table, a required CI scan job (pip-audit + bandit), and a declarative sandbox for what a command may reach (#312, #271, #329)',
   'v0.32.0 — editable review pack + verification: layered built-in < user < project < CLI rules (#420), 10 built-in rules + corpus (#421), trust-gated sk check with parsed diagnostics (#422), and post-edit + sk review --verify checks that report unknown, never pass (#423)',
   'v0.31.0 — review foundation: search_code/glob_files, line-range read_file, repo_map, evidence-backed sk review with advisory worth-it assessment, and GitHub/Bitbucket PR comments (#398–#403, #408, #410)',
   'v0.30.0 — security release: egress allowlist on every redirect hop, fail-closed hooks, release integrity, coverage gate (#371–#376)',
