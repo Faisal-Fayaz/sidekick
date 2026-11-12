@@ -187,6 +187,23 @@ suite.
 
 A test runner that cannot be found is `unknown`, never a pass.
 
+## Fixing, and proving it
+
+`sk fix "<what is wrong>"` is the guided-change rung: the agent investigates
+and edits under the normal approval gate, its edits are checkpointed (so
+`/rewind` can undo them), and the changed files are verified afterwards.
+
+```bash
+sk fix "the parser drops the last token"
+sk fix "the parser drops the last token" --trust-project-checks --json
+```
+
+What the command adds over an ordinary turn is the **verdict**: the pass, fail
+or unknown of the verification is reported as a verdict rather than left in
+prose, and a change that did not verify exits `1` instead of shipping as
+"done". The checks run once — the agent owns the repair loop, so a repair
+round keeps the conversation's context.
+
 ## Diagnostics and statuses
 
 Parsers are pure functions over captured output and never invent a pass. Each
