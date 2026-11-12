@@ -59,6 +59,24 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "smoking $VERSION"
 
+      # PyPI's index lags the upload by a few seconds, and the release
+      # workflow finishes before that. Without this wait, the smoke test fails
+      # on an artifact that exists — which is how the first release of this
+      # job failed.
+      - name: Wait for the artifact to appear on PyPI
+        run: |
+          for _ in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/sidekick-agent/${{ steps.version.outputs.version }}/json")
+            if [ "$code" = "200" ]; then
+              echo "sidekick-agent ${{ steps.version.outputs.version }} is on PyPI"
+              exit 0
+            fi
+            echo "waiting for PyPI (HTTP $code)..."
+            sleep 30
+          done
+          echo "::error::the artifact never appeared on PyPI"
+          exit 1
+
       # The install is the point: a fresh environment, the published wheel, the
       # documented install command.
       - name: Install the published artifact
