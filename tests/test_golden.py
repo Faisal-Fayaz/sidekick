@@ -43,6 +43,9 @@ def _mask(text: str, tmp_path: Path) -> str:
     out = _DATE.sub("<DATE>", out)
     out = _WEEKDAY.sub("<WEEKDAY>", out)
     out = _TIME.sub("<TIME>", out)
+    # macOS resolves /etc, /var and /tmp through /private. The behaviour is the
+    # same on both platforms; only the spelling of the path differs.
+    out = re.sub(r"/private/(etc|var|tmp)\b", r"/\1", out)
     return out
 
 
@@ -174,6 +177,20 @@ PRODUCERS = {
 
 
 # --- the suite -------------------------------------------------------------
+
+
+def test_mask_normalizes_the_platform_spellings():
+    """The goldens run on Linux and macOS in CI, so the two spellings of the
+    same path have to become the same text."""
+    from pathlib import Path as _Path
+
+    out = _mask(
+        "sandbox: read denied — /private/etc/passwd is outside the roots (project=/tmp/x)",
+        _Path("/tmp/x"),
+    )
+    assert "/etc/passwd" in out
+    assert "/private/" not in out
+    assert "<TMP>" in out
 
 
 def test_manifest_and_producers_agree():
