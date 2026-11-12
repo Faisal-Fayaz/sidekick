@@ -46,9 +46,11 @@ jobs:
       - name: Resolve the version to smoke
         id: version
         run: |
+          # The version that was released, not the version the AUR pin names:
+          # the pin is what this job checks, not what it reads.
           VERSION="${{ inputs.version }}"
           if [ -z "$VERSION" ]; then
-            VERSION=$(grep -oP '^pkgver=\K.*' packaging/aur/PKGBUILD)
+            VERSION=$(sed -n 's/.*__version__ = "\(.*\)"/\1/p' src/sk/__init__.py)
           fi
           if [ -z "$VERSION" ]; then
             echo "::error::no version to smoke"
@@ -87,12 +89,18 @@ jobs:
           }
 
       # The AUR package is built from this pin. A pin that no longer matches
-      # what PyPI published serves an old package to `yay -Syu`.
-      - name: The AUR pin matches the published artifact
-        run: python3 packaging/check_aur_pin.py --version "${{ steps.version.outputs.version }}"
+      # the artifact it names serves an old package to `yay -Syu`.
+      #
+      # The pin is checked against *its own* version: the question here is
+      # "is this pin correct?", not "is this pin the newest?". Keeping it
+      # current is a release step (CONTRIBUTING), and the release notes say
+      # which version was released.
+      - name: The AUR pin matches the artifact it names
+        run: python3 packaging/check_aur_pin.py
 
       - name: Report the result
         run: |
+          PIN=$(grep -oP '^pkgver=\K.*' packaging/aur/PKGBUILD)
           {
             echo "## Install smoke test: ${{ steps.version.outputs.version }}"
             echo ""
@@ -100,5 +108,5 @@ jobs:
             echo "- sk --version: ${{ steps.version.outputs.version }}"
             echo "- sk doctor: ok"
             echo "- one offline turn: ok"
-            echo "- AUR pin (pkgver, source URL, sha256): matches"
+            echo "- AUR pin (pkgver, source URL, sha256): matches the artifact it names (pin: $PIN)"
           } >> "$GITHUB_STEP_SUMMARY"

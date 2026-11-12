@@ -130,6 +130,9 @@ def test_the_smoke_workflow_exists_and_installs_the_artifact():
     assert "sidekick-agent==" in text, "the smoke test does not pin a version"
     assert "sk doctor" in text
     assert "check_aur_pin.py" in text, "the AUR pin is not checked"
+    # The version that was released comes from the source, not from the pin:
+    # the pin is what the job checks.
+    assert '__version__ = "\\(.*\\)"' in text or "__version__" in text
     # It must not install the checkout: that would prove nothing about the
     # published artifact.
     assert "uv sync" not in text
