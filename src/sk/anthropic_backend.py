@@ -22,6 +22,11 @@ from collections.abc import Iterator
 
 from .auth import anthropic_headers
 from .errors import TurnFailure, classify_error
+from .toolcalls import (
+    CONTROL_TAG,
+    parse_text_tools,
+    strip_control_leak,
+)
 
 
 def openai_tools_to_anthropic(openai_schema: list[dict]) -> list[dict]:
@@ -449,6 +454,8 @@ def run_anthropic_agent(
     review_plan=None,
     read_only: bool = False,
     plan_mode: bool = False,
+    trust_project_checks: bool = False,
+    verify_full: bool = False,
 ) -> str:
     """One agent turn over the native Messages API. Same contract as run_agent."""
     from .agent import (
@@ -461,6 +468,7 @@ def run_anthropic_agent(
     )
     from .store import log_tool_run
     from .tools import tools_schema
+    from .verify import edited_paths, verify_turn
 
     session = session or ""
     blocked = _spend_blocked(session, cfg)
@@ -522,6 +530,9 @@ def run_anthropic_agent(
     completed: list[str] = []  # per-turn tool work done (for error reports)
     evidence: list[str] = []  # capped excerpts of what those tools returned
     continued = 0  # max_tokens continuations this turn (mirrors the OpenAI path)
+    edited: list[str] = []  # write_file/edit_file targets (post-edit verify)
+    repairs_used = 0  # verify-fail repair rounds consumed (capped)
+    thinking_turns = 0  # reasoning-only continuations this turn (capped)
 
     for _ in range(max(1, max_steps)):
         payload: dict = {
@@ -574,12 +585,69 @@ def run_anthropic_agent(
         ]
         uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
         text = "".join(texts).strip()
+        reasoning = "".join(
+            str(b.get("thinking", "") or "")
+            for b in blocks
+            if isinstance(b, dict) and b.get("type") == "thinking"
+        ).strip()
         if not streamed and text and on_token is not None and emitted.count == 0:
             try:
                 on_token(text)  # nothing reached the user: emit the whole answer once
             except Exception:
                 pass
         if not uses:
+            # Text-JSON tools: the model emitted its calls as ```json blocks
+            # instead of native `tool_use` blocks. The OpenAI path parses and
+            # dispatches those; this path used to do nothing, so the turn
+            # answered with prose and the intended calls were dropped (#432).
+            text_tools = parse_text_tools(text)
+            if text_tools:
+                from .agent import _run_tools_batch
+                from .model_profiles import max_parallel_for
+
+                batch = list(text_tools[:4])  # cap 4 per turn, like the OpenAI path
+                proceed, turn_approve = _maybe_review_plan(
+                    batch,
+                    approve,
+                    review_plan,
+                    auto_approve,
+                    session,
+                    cfg.provider,
+                    _provider_host(cfg),
+                )
+                if not proceed:
+                    return "Denied: plan denied by user — nothing was executed."
+                messages.append({"role": "assistant", "content": text})
+                outs = _run_tools_batch(
+                    batch,
+                    turn_approve,
+                    on_tool,
+                    seen,
+                    session,
+                    cfg,
+                    max_workers=max_parallel_for(getattr(cfg, "model", "")),
+                    read_only=read_only,
+                    plan_mode=plan_mode,
+                )
+                for p in edited_paths(batch):
+                    if p not in edited:
+                        edited.append(p)
+                from .agent import _record_completed
+
+                _record_completed(completed, batch, outs, evidence)
+                combined = [
+                    f"[tool {tname} result]\n{result}"
+                    for (tname, _), (result, _) in zip(batch, outs)
+                ]
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "\n".join(combined)
+                        + "\nAnswer the original question concisely using these results. "
+                        "Do not emit more tool JSON.",
+                    }
+                )
+                continue
             # Cut off mid-thought (stop_reason == "max_tokens"): ask for the tool
             # calls instead of accepting a plan with no action. Without this the
             # model returned prose that got cut mid-JSON and the turn ended with
@@ -595,9 +663,50 @@ def run_anthropic_agent(
                     }
                 )
                 continue
-            from .agent import _strip_control_leak
-
-            return _strip_control_leak(text) or "(empty)"
+            # Reasoning-only turn: the model thought and returned no content.
+            # The OpenAI path asks it to continue instead of answering "(empty)";
+            # this path used to fall straight through to the empty answer
+            # (#432).
+            if not text and reasoning and thinking_turns < 2:
+                thinking_turns += 1
+                messages.append({"role": "assistant", "content": ""})
+                messages.append(
+                    {"role": "user", "content": CONTROL_TAG + "Continue with your answer now."}
+                )
+                continue
+            # Final answer. Post-edit verification runs here, exactly as on the
+            # OpenAI path: syntax + configured checks for the edited files, with
+            # the same trust rules and repair budget (#280, #433).
+            final = strip_control_leak(text) or "(empty)"
+            done, repairs_used, note = verify_turn(
+                edited,
+                repairs_used,
+                approve=approve if callable(approve) else None,
+                session=session,
+                provider=cfg.provider,
+                host=_provider_host(cfg),
+                read_only=read_only,
+                plan_mode=plan_mode,
+                on_tool=on_tool,
+                trust_project_checks=trust_project_checks,
+                verify_full=verify_full,
+            )
+            if done:
+                if note:
+                    final = (final.rstrip() + "\n\n" + note).strip()
+                return final
+            # A failing check is a failed verification, not a final answer: ask
+            # for a targeted repair round.
+            messages.append({"role": "assistant", "content": text})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": CONTROL_TAG
+                    + "[verify failed — fix ONLY the reported errors, then answer again]\n"
+                    + note,
+                }
+            )
+            continue
         batch = [
             (
                 u.get("name", ""),
@@ -627,6 +736,9 @@ def run_anthropic_agent(
             read_only=read_only,
             plan_mode=plan_mode,
         )
+        for p in edited_paths(batch):
+            if p not in edited:
+                edited.append(p)
         for i, (u, (result, _)) in enumerate(zip(uses, outs)):
             messages.append(
                 {
@@ -705,9 +817,9 @@ def run_anthropic_agent(
                     on_token(recap_text)
                 except Exception:
                     pass
-            from .agent import _strip_control_leak
+            from .agent import _strip_recap_leak
 
-            return _strip_control_leak(recap_text)
+            return _strip_recap_leak(strip_control_leak(recap_text))
     except Exception:
         pass
     return "(max steps reached)"

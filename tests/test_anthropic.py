@@ -819,3 +819,190 @@ def test_anthropic_recap_is_grounded_in_tool_output(tmp_path, monkeypatch):
     assert "5461 total" in prompt, "tool output must reach the anthropic recap"
     assert "never estimate one" in prompt
     assert "Accomplished: <one line>" in prompt
+
+
+# --- provider parity (#312, #432, #433) -----------------------------------
+
+
+def test_text_json_tool_call_is_dispatched(tmp_path, monkeypatch):
+    """#432: a tool call that arrives as a ```json block used to do nothing here.
+
+    The OpenAI path parses those blocks and dispatches them. The Anthropic path
+    had no equivalent, so the turn answered with prose and the intended calls
+    were silently dropped.
+    """
+    _iso(tmp_path, monkeypatch)
+    calls = {"n": 0}
+
+    def fake_stream(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _stream_resp(
+                [
+                    {
+                        "type": "text",
+                        "text": "Listing now.\n```json\n"
+                        '{"name": "list_dir", "arguments": {"path": "/tmp"}}\n```',
+                    }
+                ]
+            )
+        return _stream_resp([{"type": "text", "text": "tmp has files"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    out = ab.run_anthropic_agent("list tmp", [], _cfg(), approve=lambda n, a: True, session="s")
+
+    assert out == "tmp has files"
+    tools = [r["tool"] for r in store.list_tool_runs("s")]
+    assert "list_dir" in tools, "the text-JSON tool call was never dispatched"
+
+
+def test_reasoning_only_turn_asks_to_continue(tmp_path, monkeypatch):
+    """#432: a reasoning-only turn used to fall through to "(empty)".
+
+    The OpenAI path asks the model to continue with its answer; this path
+    answered with nothing.
+    """
+    import json as _json
+
+    _iso(tmp_path, monkeypatch)
+    calls = {"n": 0}
+    payloads: list[dict] = []
+
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        calls["n"] += 1
+        payloads.append(payload)
+        if calls["n"] == 1:
+            return _stream_resp([{"type": "thinking", "thinking": "thinking about it"}])
+        return _stream_resp([{"type": "text", "text": "the answer"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    out = ab.run_anthropic_agent("why is it so", [], _cfg(), session="s")
+
+    assert out == "the answer"
+    assert calls["n"] == 2, "the turn did not ask for a continuation"
+    assert "Continue with your answer now." in _json.dumps(payloads[1]["messages"])
+
+
+def test_post_edit_verification_runs_on_anthropic(tmp_path, monkeypatch):
+    """#433: post-edit verification (#280) ran only on the OpenAI path.
+
+    An agent on Anthropic could edit a file that does not compile and still
+    answer "done". Now the same gate runs, with the same repair rounds.
+    """
+    import sk.verify as verify_mod
+    from sk.verify import VerificationResult
+
+    _iso(tmp_path, monkeypatch)
+    target = tmp_path / "app.py"
+    calls = {"n": 0}
+    payloads: list[dict] = []
+
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        calls["n"] += 1
+        payloads.append(payload)
+        if calls["n"] == 1:
+            return _stream_resp(
+                [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "write_file",
+                        "input": {"path": str(target), "content": "x = 1\n"},
+                    }
+                ],
+                stop="tool_use",
+            )
+        return _stream_resp([{"type": "text", "text": "done"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+
+    verdicts = [
+        VerificationResult(status="fail", files=(str(target),)),
+        VerificationResult(status="pass", files=(str(target),)),
+    ]
+    verified: list[list[str]] = []
+
+    def fake_verify(files, **kwargs):
+        verified.append(list(files))
+        return verdicts.pop(0) if verdicts else VerificationResult(status="pass")
+
+    monkeypatch.setattr(verify_mod, "verify_files", fake_verify)
+
+    out = ab.run_anthropic_agent(
+        "write the file",
+        [],
+        _cfg(max_steps=4),
+        approve=lambda n, a: True,
+        session="s",
+    )
+    assert out == "done"
+
+    assert verified, "verification never ran on the Anthropic path"
+    assert verified[0] == [str(target)]
+    assert calls["n"] == 3, "a failing check must buy a repair round"
+    assert "verify failed" in str(payloads[2]["messages"])
+
+
+def test_post_edit_verification_unknown_is_reported_not_hidden(tmp_path, monkeypatch):
+    """An unknown verdict (missing tool, timeout) is surfaced, never hidden."""
+    import sk.verify as verify_mod
+    from sk.verify import VerificationResult
+
+    _iso(tmp_path, monkeypatch)
+    target = tmp_path / "app.py"
+    calls = {"n": 0}
+
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _stream_resp(
+                [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "write_file",
+                        "input": {"path": str(target), "content": "x = 1\n"},
+                    }
+                ],
+                stop="tool_use",
+            )
+        return _stream_resp([{"type": "text", "text": "done"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    monkeypatch.setattr(
+        verify_mod,
+        "verify_files",
+        lambda files, **kwargs: VerificationResult(
+            status="unknown", errors=("missing tool: ruff",), files=tuple(files)
+        ),
+    )
+
+    out = ab.run_anthropic_agent(
+        "write the file",
+        [],
+        _cfg(max_steps=3),
+        approve=lambda n, a: True,
+        session="s",
+    )
+
+    assert "verification: unknown" in out
+    assert "missing tool" in out
+
+
+def test_verification_is_skipped_without_edited_files(tmp_path, monkeypatch):
+    """No edits means no verification call — nothing to check."""
+    import sk.verify as verify_mod
+
+    _iso(tmp_path, monkeypatch)
+
+    def fake_stream(*a, **k):
+        return _stream_resp([{"type": "text", "text": "nothing to do"}])
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+
+    def boom(*a, **k):
+        raise AssertionError("verification must not run when nothing was edited")
+
+    monkeypatch.setattr(verify_mod, "verify_files", boom)
+    out = ab.run_anthropic_agent("say hi", [], _cfg(), session="s")
+    assert out == "nothing to do"

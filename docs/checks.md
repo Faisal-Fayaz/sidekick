@@ -134,6 +134,10 @@ Missing tools, timeouts, denials, and an untrusted checks file are `unknown`,
 never `pass`. Unknown-only results do not trigger a repair round; they are
 appended to the final answer so the user knows verification did not happen.
 
+Verification runs on every provider path — OpenAI-compatible endpoints and the
+native Anthropic Messages API behave the same way here, so switching provider
+does not quietly switch verification off.
+
 ```bash
 sk run "fix the failing test" --trust-project-checks
 sk run "fix the failing test" --trust-project-checks --verify-full
