@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import HeroTerminal from '../components/HeroTerminal';
 import { CodeBlock, SectionHeading } from '../components/ui';
 import {
+  BENCHMARKS,
+  BENCHMARK_META,
   COMPARISON,
   FAQS,
   FEATURES,
@@ -147,6 +149,35 @@ export default function Home() {
               </Fragment>
             ))}
           </div>
+        </section>
+
+        <section className="block">
+          <SectionHeading
+            prompt="$ sk eval --"
+            title="Measured, not folklore"
+            sub={`Fixed task set, ${BENCHMARK_META.sample}. ${BENCHMARK_META.machine} · ${BENCHMARK_META.when}.`}
+          />
+          <div className="compare bench">
+            <div className="h">target</div>
+            <div className="h">pass@1</div>
+            <div className="h">wall/task</div>
+            <div className="h">cost</div>
+            {BENCHMARKS.map((r) => (
+              <Fragment key={r.target}>
+                <div>
+                  <code className="inline">{r.target}</code>
+                </div>
+                <div>{r.pass1}</div>
+                <div>{r.wall}</div>
+                <div>{r.cost}</div>
+              </Fragment>
+            ))}
+          </div>
+          <p style={{ marginTop: 12, color: 'var(--dim)', fontSize: 13.5 }}>
+            {BENCHMARK_META.note} A local model has no API bill — the cost is electricity, which is not on
+            the invoice. Methodology and the per-task detail:{' '}
+            <a href="https://github.com/Faisal-Fayaz/sidekick/blob/main/docs/eval/results.md">docs/eval/results.md</a>.
+          </p>
         </section>
 
         <section className="block">

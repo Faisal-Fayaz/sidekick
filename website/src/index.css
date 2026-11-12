@@ -257,6 +257,7 @@ table.cmd-table tr:hover td { background: rgba(52,255,158,.03); }
 .compare .h { background: rgba(255,255,255,.02); color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; }
 .compare .yes { color: var(--green); }
 .compare .no { color: var(--red); }
+.compare.bench { grid-template-columns: 1.6fr .7fr .8fr 1fr; }
 
 .faq { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .faq-item + .faq-item { border-top: 1px solid var(--line); }
@@ -349,6 +350,8 @@ footer {
   }
   .mobile-toggle { display: inline-flex; }
   .compare { grid-template-columns: 1fr 1fr; }
+  .compare.bench { grid-template-columns: 1.4fr .6fr .8fr; }
+  .compare.bench > div:nth-child(4n) { display: none; }
   .compare .col-typical { display: none; }
   .term-body { font-size: 12.5px; }
 }
