@@ -54,6 +54,25 @@ def test_mypy_gate_lists_agree():
     )
 
 
+def test_scan_job_audits_dependencies_and_code():
+    """The supply-chain gate must exist and check both halves (#271).
+
+    A job that only ran one of them would still report green while a known
+    vulnerable dependency shipped, which is the failure the job exists to
+    catch.
+    """
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "\n  scan:\n" in ci, "the scan job is gone"
+    job = ci.split("\n  scan:\n", 1)[1]
+    rest = re.search(r"\n  [a-z][a-z0-9-]*:\n", job)
+    job = job[: rest.start()] if rest else job
+    assert "pip-audit" in job, "the dependency audit is gone"
+    assert "bandit" in job, "the static security scan is gone"
+    assert "scan" in _required_manifest()["contexts"], (
+        "the scan job is not required on main, so it is advisory at best"
+    )
+
+
 def test_ruff_versions_agree():
     pc = (ROOT / ".pre-commit-config.yaml").read_text()
     ci = (ROOT / ".github/workflows/ci.yml").read_text()

@@ -21,6 +21,7 @@
     "lint",
     "test-count",
     "build",
+    "scan",
     "coverage",
     "website",
     "test (ubuntu-latest, 3.12)",

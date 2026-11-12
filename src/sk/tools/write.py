@@ -146,7 +146,10 @@ def _check_write_path(path: str) -> Path | str:
     # /tmp is a symlink to /private/tmp on macOS and may differ from gettempdir()
     if not is_tmp:
         raw_tmp = str(p)
-        is_tmp = raw_tmp.startswith("/tmp/") or raw_tmp.startswith("/private/tmp/")
+        # The literal /tmp is the macOS symlink target of gettempdir(), not a
+        # directory this code creates files in; the temp root itself comes from
+        # tempfile.gettempdir(). The rule flags any hardcoded temp path.
+        is_tmp = raw_tmp.startswith("/tmp/") or raw_tmp.startswith("/private/tmp/")  # nosec B108
     if not (is_home or is_tmp):
         return f"Error: writes are only allowed under {home} or {tmp_root} (got {p})."
     # Protected dir names anywhere below the allow-root: `<repo>/.git/hooks/x`
