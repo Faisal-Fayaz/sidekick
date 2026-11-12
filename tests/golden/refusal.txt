@@ -1,0 +1,2 @@
+Error: blocked destructive command (refused even with approval).
+sandbox: read denied — /etc/passwd is outside the sandbox roots (project=<TMP>). Declare a root in <TMP>/.sidekick/sandbox.toml to allow it.

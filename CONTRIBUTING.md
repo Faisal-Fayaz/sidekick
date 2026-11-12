@@ -95,6 +95,15 @@ Notes:
   CI fails the build if it drifts.
 - Pure refactors ship with zero test edits (green suite without touching
   `tests/` proves no behavior change).
+- Changed behaviour that a user sees goes through the golden files. The
+  reply, the grounding block, the refusals, the tool-call fallback, and the
+  review prompt are locked in `tests/golden/`; the bar for adding one is in
+  [`tests/golden/README.md`](tests/golden/README.md). Update the golden in
+  the same commit as the change, and read the diff before you commit it:
+
+  ```bash
+  uv run pytest tests/test_golden.py -q --update-goldens
+  ```
 
 ## PR conventions
 

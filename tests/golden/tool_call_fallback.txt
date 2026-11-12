@@ -1,0 +1,4 @@
+residue detected: True
+prose kept: ''
+residue parsed as calls: []
+json block parsed as calls: [('read_file', {'path': 'src/app.py'})]
