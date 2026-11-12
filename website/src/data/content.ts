@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'measured, not folklore',
+    title: 'A benchmark you can check',
+    body: 'A fixed task set, run against real models, with speed, quality and cost — and a verdict that treats an answer without the tool call as a failure. The numbers are published, with the methodology.',
+    link: '/docs#checks',
+  },
+  {
     tag: 'sandbox',
     title: 'A policy for what a command may reach',
     body: 'Permission decides whether a call runs; the sandbox decides what it can reach. `~/.sidekick/sandbox.toml` denies reads outside the declared roots and network access from the shell — paths behind variables or inside quotes included. `sk doctor` shows the mode.',
@@ -386,17 +392,18 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.34.0 — evals, benchmark, adoption',
+    v: 'v0.35.0 — the developer ladder',
     items: [
-      'Live eval harness · pass@k · latency · cost',
-      'Golden-file suite for the busiest turns',
-      'Benchmark proof: local 4GB vs hosted agents',
-      'Per-release install smoke tests',
+      'sk fix — a guided fix loop with verification',
+      'sk test — the project tests through the check pipeline',
+      'sk pr — prepare a pull request from the working tree',
+      'git status/diff/commit as first-class tools',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.34.0 — evals, benchmark, adoption: golden files for the busiest turns, a live harness with pass@k, a published benchmark on a 4 GB box, and a release smoke test that installs what was published (#112, #283, #157, #188, #443)',
   'v0.33.0 — provider + platform hardening: one agent loop behind a provider seam, a cross-provider parity table, a required CI scan job (pip-audit + bandit), and a declarative sandbox for what a command may reach (#312, #271, #329)',
   'v0.32.0 — editable review pack + verification: layered built-in < user < project < CLI rules (#420), 10 built-in rules + corpus (#421), trust-gated sk check with parsed diagnostics (#422), and post-edit + sk review --verify checks that report unknown, never pass (#423)',
   'v0.31.0 — review foundation: search_code/glob_files, line-range read_file, repo_map, evidence-backed sk review with advisory worth-it assessment, and GitHub/Bitbucket PR comments (#398–#403, #408, #410)',
