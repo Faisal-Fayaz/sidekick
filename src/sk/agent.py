@@ -18,6 +18,23 @@ from .config import Config
 from .errors import TurnFailure, classify_error
 from .model_profiles import context_window_for, max_tokens_for
 from .tokens import estimate_tokens as tokens_estimate
+from .toolcalls import (
+    CONTROL_TAG,
+    MAX_RESIDUE_RETRIES,
+    RECAP_LEAKS,
+    TEXT_ONLY_NOTICE,
+    balanced_objects,
+    coerce_args,
+    known_tool_names,
+    match_tool_obj,
+    parse_text_tool,
+    parse_text_tools,
+    strip_control_leak,
+    strip_recap_leak,
+    strip_tool_residue,
+    synthetic_call_id,
+    tool_residue,
+)
 from .tools import (
     approval_tools,
     dispatch_tool,
@@ -27,6 +44,11 @@ from .tools import (
     tools_schema,
 )
 from .trust import fence_block
+from .verify import VERIFY_REPAIR_BUDGET as _VERIFY_REPAIR_BUDGET
+
+# Re-exported for callers that still import it from here; the source of truth
+# is sk.toolcalls, so both provider paths agree on the tool set.
+KNOWN_TOOL_NAMES = known_tool_names()
 
 # Audit session tag. Direct callers pass session= to run_agent; the TUI
 # dispatches via asyncio.to_thread with the pre-contextvar 8-arg signature,
@@ -290,205 +312,43 @@ def _auto_search_context(text: str) -> str:
 
 
 def _balanced_objects(text: str) -> list[str]:
-    """Extract top-level {...} spans with balanced braces (handles nesting)."""
-    spans: list[str] = []
-    depth = 0
-    start = -1
-    in_str = False
-    esc = False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    spans.append(text[start : i + 1])
-                    start = -1
-    return spans
+    """Deprecated alias — see :func:`sk.toolcalls.balanced_objects`."""
+    return balanced_objects(text)
 
 
 def _coerce_args(raw) -> dict | None:
-    import json as _json
-
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str):
-        try:
-            obj = _json.loads(raw)
-            return obj if isinstance(obj, dict) else {}
-        except Exception:
-            return {}
-    return {}
+    """Deprecated alias — see :func:`sk.toolcalls.coerce_args`."""
+    return coerce_args(raw)
 
 
 def _match_tool_obj(obj: dict, allowed: Container[str]) -> tuple[str, dict] | None:
-    if isinstance(obj, dict) and obj.get("name") in allowed:
-        for key in ("arguments", "parameters", "params", "input"):
-            if key in obj:
-                args = _coerce_args(obj.get(key))
-                if args is not None:
-                    return (obj["name"], args)
-        return (obj["name"], {})
-    if isinstance(obj, dict) and isinstance(obj.get("function"), dict):
-        fn = obj["function"]
-        if fn.get("name") in allowed:
-            for key in ("arguments", "parameters", "params", "input"):
-                if key in fn:
-                    args = _coerce_args(fn.get(key))
-                    if args is not None:
-                        return (fn["name"], args)
-            return (fn["name"], {})
-    return None
-
-
-# --- unparsed tool-call residue -------------------------------------------
-#
-# A model whose tool calls arrive in a chat-template format we do not parse
-# (observed: MiniMax's `<invoke name="...">` markup via an OpenRouter free model)
-# used to have its markup posted verbatim as the assistant's answer. Two things
-# went wrong at once: the user saw model internals, and the calls the model meant
-# to make were silently dropped, so the turn ended having done none of them.
-#
-# `_parse_text_tools` only finds JSON, so nothing downstream could catch it — and
-# the "emit tools as ```json blocks" note only fires when native tools are OFF,
-# which is not the case for a model that usually calls tools natively. There was
-# no path at all.
-#
-# These markers appear nowhere in SYSTEM_PROMPT or TOOLS_SCHEMA (asserted in
-# tests), so anchoring on a literal `<` plus a tag name cannot false-positive on
-# prose that merely mentions tool_call.
-#
-# Kept deliberately narrow. `parameter` and `function` were tried and dropped:
-# "A <parameter> is a placeholder in some frameworks" is ordinary prose, and a
-# detector that eats legitimate answers is worse than none.
-_TOOL_RESIDUE_TAGS = ("tool_call", "toolcall", "invoke")
-_TAG_RESIDUE = re.compile(r"<\s*/?\s*(?:" + "|".join(_TOOL_RESIDUE_TAGS) + r")\b[^>]*>", re.I)
-# Some providers wrap the template in its own delimiters, e.g. `<]minimax[>[<`.
-_TEMPLATE_ARTIFACT = re.compile(r"<\]?\s*[\w.-]{2,20}\s*\[>\s*\[<", re.I)
-# The `<invoke name="X">` form is residue only when X is a tool we actually have;
-# otherwise the model is quoting some *other* system's markup.
-_INVOKE_NAME = re.compile(r"<\s*invoke\s+name\s*=\s*[\"']([A-Za-z_][\w.]*)[\"']", re.I)
+    """Deprecated alias — see :func:`sk.toolcalls.match_tool_obj`."""
+    return match_tool_obj(obj, allowed)
 
 
 def _known_tool_names() -> frozenset[str]:
-    """Every tool name in the schema, derived rather than restated.
-
-    This was a hand-maintained list of 17 names, duplicated a second time as a
-    local `allowed` set inside _parse_text_tools. It had already drifted:
-    `generate_image` and `shell_session` exist in TOOLS_SCHEMA and were in
-    neither copy. Two consequences, both silent:
-
-    - a model emitting either as a ```json block had it discarded, so the tool
-      was never called and nothing said why;
-    - #368's residue detector only treats `<invoke name=X>` as unparsed markup
-      when X is in this set, so markup naming either tool was posted to the user
-      verbatim -- the exact failure that change existed to prevent.
-
-    Deriving it means a new tool cannot be half-added. Both excluded tools are
-    approval-gated, so routing them through the text-JSON fallback puts them
-    behind the same gate as a native call.
-    """
-    from .tools.registry import TOOLS_SCHEMA
-
-    names: set[str] = set()
-    for entry in TOOLS_SCHEMA:
-        if not isinstance(entry, dict):
-            continue
-        fn = entry.get("function")
-        if isinstance(fn, dict):
-            name = str(fn.get("name", ""))
-            if name:
-                names.add(name)
-    return frozenset(names)
-
-
-KNOWN_TOOL_NAMES = _known_tool_names()
+    """Deprecated alias — see :func:`sk.toolcalls.known_tool_names`."""
+    return known_tool_names()
 
 
 def _tool_residue(text: str) -> bool:
-    """True when `text` carries an unparsed tool-call attempt. Never raises.
-
-    Conservative by design: a false positive would eat a legitimate answer, so
-    this only fires on markup that cannot plausibly be prose.
-    """
-    try:
-        t = text or ""
-        if not t:
-            return False
-        names = {m.group(1) for m in _INVOKE_NAME.finditer(t)}
-        if names & KNOWN_TOOL_NAMES:
-            return True
-        if names:
-            # Some other system's markup. Only our template wrapper counts.
-            return bool(_TEMPLATE_ARTIFACT.search(t))
-        return bool(_TAG_RESIDUE.search(t) or _TEMPLATE_ARTIFACT.search(t))
-    except Exception:
-        return False
+    """Deprecated alias — see :func:`sk.toolcalls.tool_residue`."""
+    return tool_residue(text)
 
 
 def _strip_tool_residue(text: str) -> str:
-    """The prose that preceded any residue. Never raises, always returns a str."""
-    try:
-        t = text or ""
-        if not _tool_residue(t):
-            return t
-        # cut from the first marker; keep whatever came before it
-        starts = []
-        m = _INVOKE_NAME.search(t)
-        if m:
-            starts.append(m.start())
-        for rx in (_TAG_RESIDUE, _TEMPLATE_ARTIFACT):
-            g = rx.search(t)
-            if g:
-                starts.append(g.start())
-        if not starts:
-            return t
-        # Trim the delimiter debris too: the real markup often starts with the
-        # template's own bracket, which would otherwise be left sitting in front
-        # of the error we report.
-        return t[: min(starts)].strip().strip("[]<>").strip()
-    except Exception:
-        return (text or "").strip()
+    """Deprecated alias — see :func:`sk.toolcalls.strip_tool_residue`."""
+    return strip_tool_residue(text)
 
 
 def _parse_text_tools(text: str) -> list[tuple[str, dict]]:
-    """Parse ALL tool JSON objects in text (fenced or bare, any args key).
-
-    Returns list of (name, args). Only allows known tools.
-    """
-
-    allowed = KNOWN_TOOL_NAMES
-    found: list[tuple[str, dict]] = []
-    seen: set[str] = set()
-    for span in _balanced_objects(text):
-        try:
-            obj = json.loads(span)
-        except Exception:
-            continue
-        hit = _match_tool_obj(obj, allowed)
-        if hit and json.dumps(hit) not in seen:
-            seen.add(json.dumps(hit))
-            found.append(hit)
-    return found
+    """Deprecated alias — see :func:`sk.toolcalls.parse_text_tools`."""
+    return parse_text_tools(text)
 
 
 def _parse_text_tool(text: str) -> tuple[str, dict] | None:
-    """First match only (kept for compat)."""
-    hits = _parse_text_tools(text)
-    return hits[0] if hits else None
+    """Deprecated alias — see :func:`sk.toolcalls.parse_text_tool`."""
+    return parse_text_tool(text)
 
 
 def _effort_level(cfg: Config, plan_mode: bool = False) -> str:
@@ -1364,26 +1224,8 @@ def _stream_chat(
 
 
 def _synthetic_call_id(index: int, buf: dict) -> str:
-    """Deterministic, turn-local, collision-resistant id for an id-less call.
-
-    Stable for the same (index, tool, args) so a retried turn reuses the id;
-    distinct across turns because the args differ.
-
-    `buf["args"]` is a raw JSON **string** at call time, not a parsed dict. An
-    earlier version of this function assumed a dict, so every id-less provider
-    hit an AttributeError and silently degraded to the non-streaming fallback —
-    the fix looked present but did nothing. Accept both shapes (#310).
-    """
-    import hashlib
-
-    args = buf.get("args")
-    if isinstance(args, dict):
-        args_repr = repr(sorted(args.items()))
-    else:
-        args_repr = str(args or "")
-    seed = f"{index}|{buf.get('name', '')}|{args_repr}"
-    digest = hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:16]
-    return f"call_{index}_{digest}"
+    """Deprecated alias — see :func:`sk.toolcalls.synthetic_call_id`."""
+    return synthetic_call_id(index, buf)
 
 
 def estimate_tokens(text: str) -> int:
@@ -2127,28 +1969,15 @@ def build_messages(
 
 # Post-edit verify/repair budget (refs #280): at most this many extra
 # model rounds per turn are spent fixing verify failures. Never raises.
-VERIFY_REPAIR_BUDGET = 2
+# The source of truth is sk.verify, so every provider path budgets the same.
+VERIFY_REPAIR_BUDGET = _VERIFY_REPAIR_BUDGET
 
 
 def _verify_budget() -> int:
-    """Repair-round budget for post-edit verification. Never raises.
+    """Deprecated alias — see :func:`sk.verify.verify_budget`."""
+    from .verify import verify_budget
 
-    Default is VERIFY_REPAIR_BUDGET (behaviour unchanged). SIDEKICK_VERIFY_REPAIRS
-    overrides it (0 disables verification); garbage falls back to the default.
-    Env-only experimental flag, same pattern as SIDEKICK_REASONING_EFFORT:
-    Fan et al., arXiv:2609.20804 §4 traces strong-model planning savings to
-    reduced post-edit verification — verification rounds pay mostly for weak
-    models, so a frontier/BYO user can set 0/1 without touching code.
-    """
-    import os
-
-    try:
-        raw = (os.environ.get("SIDEKICK_VERIFY_REPAIRS", "") or "").strip()
-        if not raw:
-            return VERIFY_REPAIR_BUDGET
-        return max(0, int(raw))
-    except Exception:
-        return VERIFY_REPAIR_BUDGET
+    return verify_budget()
 
 
 # How many times one turn may retry after the model emits an unparseable tool
@@ -2156,7 +1985,7 @@ def _verify_budget() -> int:
 # model that needed telling; beyond that the format is not going to change, and
 # spending the rest of the budget on it would end the turn with less than
 # saying plainly that nothing ran.
-MAX_RESIDUE_RETRIES = 2
+# MAX_RESIDUE_RETRIES lives in sk.toolcalls so both provider paths agree.
 
 
 def _record_residue_failure(model: str, attempts: int) -> None:
@@ -2174,20 +2003,10 @@ def _record_residue_failure(model: str, attempts: int) -> None:
 
 
 def _edited_paths(batch: list[tuple[str, dict]]) -> list[str]:
-    """Paths touched by write_file/edit_file calls in a tool batch.
-    Deduplicated, capped. Never raises."""
-    out: list[str] = []
-    try:
-        for name, args in batch or []:
-            if name in ("write_file", "edit_file") and isinstance(args, dict):
-                p = str((args or {}).get("path", "")).strip()
-                if p and p not in out:
-                    out.append(p)
-            if len(out) >= 20:
-                break
-    except Exception:
-        pass
-    return out
+    """Deprecated alias — see :func:`sk.verify.edited_paths`."""
+    from .verify import edited_paths
+
+    return edited_paths(batch)
 
 
 def _verify_command(paths: list[str]) -> str | None:
@@ -2218,15 +2037,10 @@ def _verify_passed(result: str) -> bool:
 
 
 def _verify_full_requested() -> bool:
-    """True when the user opted into a full `sk check` after edits.
+    """Deprecated alias — see :func:`sk.verify.verify_full_requested`."""
+    from .verify import verify_full_requested
 
-    Env-only for TUI/chat callers that have no verify flag; `sk run` also
-    exposes `--verify-full`. Garbage/absent means targeted verification.
-    """
-    try:
-        return os.environ.get("SIDEKICK_VERIFY_FULL", "").strip() == "1"
-    except Exception:
-        return False
+    return verify_full_requested()
 
 
 def _verify_turn(
@@ -2242,60 +2056,28 @@ def _verify_turn(
     trust_project_checks: bool = False,
     verify_full: bool = False,
 ) -> tuple[bool, int, str]:
-    """Post-edit verification gate (refs #280, #423).
+    """Deprecated alias — see :func:`sk.verify.verify_turn`.
 
-    Runs fast syntax checks plus the project's configured lint/typecheck
-    checks for the edited files; with ``verify_full`` (or
-    ``SIDEKICK_VERIFY_FULL=1``) it runs every configured check instead.
+    The gate lives in sk.verify so every provider path reaches it the same
+    way (#312)."""
+    from .verify import verify_turn
 
-    Returns (done, repairs_used, note). done=True → caller breaks with the
-    model's final text; a non-empty note is a verification warning the caller
-    should surface. done=False → caller appends note and continues for a
-    targeted repair round (capped). Skips (done=True, empty note) when nothing
-    verifiable was edited or in read-only/plan mode. A denial is reported as
-    `unknown`, not silently treated as a pass. The check runs through the same
-    approval/audit path as `sk check`. Never raises.
-    """
-    try:
-        if repairs_used >= _verify_budget() or read_only or plan_mode:
-            return (True, repairs_used, "")
-        if not edited:
-            return (True, repairs_used, "")
-
-        from .verify import verify_files
-
-        callback: Callable[[str, dict], bool] = (
-            cast(Callable[[str, dict], bool], approve)
-            if callable(approve)
-            else (lambda name, args: True)
-        )
-        on_command = None
-        if on_tool is not None:
-
-            def on_command(cmd: str) -> None:
-                try:
-                    on_tool("shell", {"cmd": cmd})
-                except Exception:
-                    pass
-
-        report = verify_files(
-            edited,
-            cwd=os.getcwd(),
-            trust_project=trust_project_checks,
-            full=bool(verify_full) or _verify_full_requested(),
-            approve=callback,
-            session=session,
-            provider=provider,
-            host=host,
-            on_command=on_command,
-        )
-        if report.status in ("pass", "skipped"):
-            return (True, repairs_used, "")
-        if report.repairable:
-            return (False, repairs_used + 1, report.compact())
-        return (True, repairs_used, report.compact())
-    except Exception:
-        return (True, repairs_used, "")
+    callback: Callable[[str, dict], bool] | None = (
+        cast(Callable[[str, dict], bool], approve) if callable(approve) else None
+    )
+    return verify_turn(
+        edited,
+        repairs_used,
+        approve=callback,
+        session=session,
+        provider=provider,
+        host=host,
+        read_only=read_only,
+        plan_mode=plan_mode,
+        on_tool=on_tool,
+        trust_project_checks=trust_project_checks,
+        verify_full=verify_full,
+    )
 
 
 def _looks_like_prompt_echo(text: str) -> bool:
@@ -2452,19 +2234,8 @@ CANCELLED_TEXT = "(cancelled)"
 # Prefix marking loop-machinery instructions (tool-protocol notes, continue
 # prompts). They steer the immediate next call only; _drop_stale_control
 # removes older copies so dead instructions stop haunting later turns.
-CONTROL_TAG = "[sidekick-control] "
-
-# Verbatim loop instruction for text-only models (llama3.2:3b starts with it
-# pre-seeded). Small models echo context back into answers, so the tag and
-# this sentence both reached user-visible output verbatim during live probing
-# (a fenced "plan-test.txt" containing the tag). _strip_control_leak removes
-# them from every user-facing return; the in-loop messages keep them.
-TEXT_ONLY_NOTICE = (
-    "[model does not support native tool calling — emit tools as ```json blocks only]"
-)
-
-_CONTINUE_NOW = "Continue with your answer now."
-_CONTINUE_TOOLS = "Continue: emit the tool calls now, no more prose."
+# CONTROL_TAG and TEXT_ONLY_NOTICE live in sk.toolcalls so both provider paths
+# share one spelling.
 
 # Scaffolding from the exhaustion-recap prompt. Observed live 2026-10-11: a
 # reasoning model narrated the recap instruction back into its answer ("The
@@ -2472,55 +2243,17 @@ _CONTINUE_TOOLS = "Continue: emit the tool calls now, no more prose."
 # want me to reply with ONLY 3 lines … Accomplished: <one line>"), so the user
 # saw the harness's own prompt and its deliberation instead of a result. These
 # are stripped from user-facing output the same way CONTROL_TAG is.
-_RECAP_LEAKS = (
-    "You hit the step budget.",
-    "Reply with ONLY these 3 lines",
-    "Accomplished: <one line>",
-    "Blocked: <one line>",
-    "Next: <one line>",
-    "No tool ran this turn",
-    "Ground the recap in this list",
-    "do not claim anything that is not in it",
-)
+_RECAP_LEAKS = RECAP_LEAKS
 
 
 def _strip_recap_leak(text: str) -> str:
-    """Drop recap scaffolding the model echoed back. Never raises.
-
-    Applied on top of _strip_control_leak for the exhaustion path only, so an
-    ordinary answer that happens to contain these words is untouched (they are
-    distinctive harness strings, not user vocabulary).
-    """
-    try:
-        if not isinstance(text, str) or not text:
-            return text
-        out = text
-        for frag in _RECAP_LEAKS:
-            out = out.replace(frag, "")
-        return out
-    except Exception:
-        return text
+    """Deprecated alias — see :func:`sk.toolcalls.strip_recap_leak`."""
+    return strip_recap_leak(text)
 
 
 def _strip_control_leak(text: str) -> str:
-    """Remove loop-machinery control notes echoed by the model. Never raises.
-
-    Covers the tag plus the exact instruction sentences built with it: a
-    small model repeats context verbatim, and a control sentence in the
-    answer reads as product behavior ("I'll create… [sidekick-control]…").
-    Intentional user-facing errors (residue failure, exhaustion recap,
-    denials) never contain these fragments and pass through untouched.
-    """
-    try:
-        if not isinstance(text, str) or not text:
-            return text
-        out = text.replace(CONTROL_TAG, "")
-        out = out.replace(TEXT_ONLY_NOTICE, "")
-        out = out.replace(_CONTINUE_NOW, "")
-        out = out.replace(_CONTINUE_TOOLS, "")
-        return out
-    except Exception:
-        return text
+    """Deprecated alias — see :func:`sk.toolcalls.strip_control_leak`."""
+    return strip_control_leak(text)
 
 
 def _drop_stale_control(messages: list) -> None:
@@ -2760,6 +2493,8 @@ def run_agent(
             review_plan=review_plan,
             read_only=read_only,
             plan_mode=plan_mode,
+            trust_project_checks=trust_project_checks,
+            verify_full=verify_full,
         )
     client = get_client(cfg)
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.

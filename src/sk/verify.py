@@ -332,3 +332,129 @@ def verify_files(
             full=full,
             root=root,
         )
+
+
+# --- turn-level glue -------------------------------------------------------
+#
+# The gate itself lives here so every provider path can call it. It used to sit
+# in `sk.agent` as a private helper, which meant the Anthropic path could not
+# reach it without importing an underscore-prefixed symbol across modules — the
+# coupling that let a feature land on one provider only (#312).
+
+# Post-edit verify/repair budget (refs #280): at most this many extra
+# model rounds per turn are spent fixing verify failures. Never raises.
+VERIFY_REPAIR_BUDGET = 2
+
+
+def verify_budget() -> int:
+    """Repair-round budget for post-edit verification. Never raises.
+
+    Default is VERIFY_REPAIR_BUDGET (behaviour unchanged). SIDEKICK_VERIFY_REPAIRS
+    overrides it (0 disables verification); garbage falls back to the default.
+    Env-only experimental flag, same pattern as SIDEKICK_REASONING_EFFORT:
+    Fan et al., arXiv:2609.20804 §4 traces strong-model planning savings to
+    reduced post-edit verification — verification rounds pay mostly for weak
+    models, so a frontier/BYO user can set 0/1 without touching code.
+    """
+    try:
+        raw = (os.environ.get("SIDEKICK_VERIFY_REPAIRS", "") or "").strip()
+        if not raw:
+            return VERIFY_REPAIR_BUDGET
+        return max(0, int(raw))
+    except Exception:
+        return VERIFY_REPAIR_BUDGET
+
+
+def verify_full_requested() -> bool:
+    """True when the user opted into a full `sk check` after edits.
+
+    Env-only for TUI/chat callers that have no verify flag; `sk run` also
+    exposes `--verify-full`. Garbage/absent means targeted verification.
+    """
+    try:
+        return os.environ.get("SIDEKICK_VERIFY_FULL", "").strip() == "1"
+    except Exception:
+        return False
+
+
+def edited_paths(batch: list[tuple[str, dict]]) -> list[str]:
+    """Paths touched by write_file/edit_file calls in a tool batch.
+
+    Deduplicated, capped. Never raises."""
+    out: list[str] = []
+    try:
+        for name, args in batch or []:
+            if name in ("write_file", "edit_file") and isinstance(args, dict):
+                p = str((args or {}).get("path", "")).strip()
+                if p and p not in out:
+                    out.append(p)
+            if len(out) >= 20:
+                break
+    except Exception:
+        pass
+    return out
+
+
+def verify_turn(
+    edited: list[str],
+    repairs_used: int,
+    approve: Callable[[str, dict], bool] | None = None,
+    session: str = "",
+    provider: str = "",
+    host: str = "",
+    read_only: bool = False,
+    plan_mode: bool = False,
+    on_tool: Callable[..., None] | None = None,
+    trust_project_checks: bool = False,
+    verify_full: bool = False,
+) -> tuple[bool, int, str]:
+    """Post-edit verification gate (refs #280, #423).
+
+    Runs fast syntax checks plus the project's configured lint/typecheck
+    checks for the edited files; with ``verify_full`` (or
+    ``SIDEKICK_VERIFY_FULL=1``) it runs every configured check instead.
+
+    Returns (done, repairs_used, note). done=True → caller breaks with the
+    model's final text; a non-empty note is a verification warning the caller
+    should surface. done=False → caller appends note and continues for a
+    targeted repair round (capped). Skips (done=True, empty note) when nothing
+    verifiable was edited or in read-only/plan mode. A denial is reported as
+    `unknown`, not silently treated as a pass. The check runs through the same
+    approval/audit path as `sk check`. Never raises.
+    """
+    try:
+        if repairs_used >= verify_budget() or read_only or plan_mode:
+            return (True, repairs_used, "")
+        if not edited:
+            return (True, repairs_used, "")
+
+        callback: Callable[[str, dict], bool] = (
+            approve if callable(approve) else (lambda name, args: True)
+        )
+        on_command = None
+        if on_tool is not None:
+
+            def on_command(cmd: str) -> None:
+                try:
+                    on_tool("shell", {"cmd": cmd})
+                except Exception:
+                    pass
+
+        report = verify_files(
+            edited,
+            cwd=os.getcwd(),
+            trust_project=trust_project_checks,
+            full=bool(verify_full) or verify_full_requested(),
+            approve=callback,
+            session=session,
+            provider=provider,
+            host=host,
+            on_command=on_command,
+        )
+        if report.status in ("pass", "skipped"):
+            return (True, repairs_used, "")
+        if report.repairable:
+            return (False, repairs_used + 1, report.compact())
+        return (True, repairs_used, report.compact())
+    except Exception:
+        return (True, repairs_used, "")
