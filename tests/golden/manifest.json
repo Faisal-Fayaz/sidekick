@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Every golden file in this directory, and what it locks.",
+    "tests/test_golden.py reads this manifest: an entry without a producer",
+    "fails the suite, and a file the manifest does not name is not run.",
+    "See README.md for the bar for adding one."
+  ],
+  "goldens": [
+    {
+      "id": "help",
+      "file": "help.txt",
+      "locks": "the /help reply — the top-traffic turn, and the list of commands the user can actually invoke",
+      "issue": "#112"
+    },
+    {
+      "id": "grounding",
+      "file": "grounding.txt",
+      "locks": "the facts the agent is grounded in (sysinfo, cwd, project files) and the order they appear in, so a turn cannot quietly stop being told what machine it is on",
+      "issue": "#112"
+    },
+    {
+      "id": "refusal",
+      "file": "refusal.txt",
+      "locks": "the two refusals a user sees: the hard refusal for a destructive command, and the sandbox denial for a path outside the roots",
+      "issue": "#112, #329"
+    },
+    {
+      "id": "tool_call_fallback",
+      "file": "tool_call_fallback.txt",
+      "locks": "the text-JSON tool fallback: markup the agent cannot parse is stripped from the answer and reported, never posted as the answer (#367, #368)",
+      "issue": "#112, #367"
+    },
+    {
+      "id": "review_prompt",
+      "file": "review_prompt.txt",
+      "locks": "the review prompt — the rules the review engine sends, and the fencing of the diff as untrusted data",
+      "issue": "#112, #401"
+    }
+  ]
+}

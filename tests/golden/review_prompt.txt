@@ -1,0 +1,14 @@
+Target: HEAD (worktree)
+
+Effective review rules (policy):
+severity: major
+
+Chunk 1/2. Changed lines: 1. Review only the files below.
+
+<<<UNTRUSTED REVIEW DIFF
+@@ -1 +1 @@
+-x = 1
++x = 2
+END-UNTRUSTED>>>
+
+Return the JSON object now.

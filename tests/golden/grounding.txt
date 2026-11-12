@@ -1,0 +1,7 @@
+- Current working directory: <TMP> — HOME is <HOME>.
+- Today is <WEEKDAY>, <DATE>. Answer date/day questions from this, never tools or memory.
+- OS: <OS>. Platform: <PLATFORM>
+REAL SYSTEM SNAPSHOT (do not re-guess, but still call sysinfo tool if user asks about their device so the trace shows grounding):
+CPU: test-cpu
+Mem: 1.0Gi / 2.0Gi
+GPU: none
