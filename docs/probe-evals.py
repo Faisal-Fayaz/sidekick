@@ -69,6 +69,24 @@ def verdict(reply: str, expected: list[str], *, tool_ran: bool = True) -> str:
     return "FAILED"
 
 
+def pass_at_k(n: int, c: int, k: int) -> float:
+    """The unbiased pass@k estimator: 1 - C(n-c, k) / C(n, k).
+
+    `n` samples were drawn, `c` of them solved the task, and we ask for the
+    probability that a draw of `k` of them contains at least one solution. With
+    k = 1 that is the plain pass rate; with k = n it is "was it ever solved".
+    """
+    if n <= 0 or k <= 0:
+        return 0.0
+    if c <= 0:
+        return 0.0
+    if k >= n:
+        return 1.0 if c > 0 else 0.0
+    from math import comb
+
+    return 1.0 - comb(n - c, k) / comb(n, k)
+
+
 def _expected_from_tool(kind: str, results: dict[str, str]) -> str:
     """Pull the required substring out of a tool result."""
     if kind == "sysinfo_cpu":
@@ -175,7 +193,7 @@ def _table(rows: list[list[str]], headers: list[str]) -> str:
     return "\n".join(out)
 
 
-def render(results: list[dict], *, price_per_mtok: float = 0.0) -> str:
+def render(results: list[dict], *, price_per_mtok: float = 0.0, k: int = 1) -> str:
     """The paste-ready Speed / Quality / Cost tables."""
     speed = [
         [
@@ -185,9 +203,17 @@ def render(results: list[dict], *, price_per_mtok: float = 0.0) -> str:
         ]
         for r in results
     ]
-    quality = [[r["id"], r["verdict"], ",".join(r["tools"]) or "-"] for r in results]
-    cost = [[r["id"], str(r["tokens"])] for r in results]
-    total_tokens = sum(r["tokens"] for r in results)
+    quality = [
+        [
+            r["id"],
+            r["verdict"],
+            f"{r.get('solved', 1)}/{r.get('runs', 1)}",
+            ",".join(r["tools"]) or "-",
+        ]
+        for r in results
+    ]
+    cost = [[r["id"], str(r.get("total_tokens", r["tokens"]))] for r in results]
+    total_tokens = sum(r.get("total_tokens", r["tokens"]) for r in results)
     if price_per_mtok:
         cost.append(
             ["total", f"{total_tokens} tokens ≈ ${total_tokens / 1e6 * price_per_mtok:.4f}"]
@@ -197,19 +223,23 @@ def render(results: list[dict], *, price_per_mtok: float = 0.0) -> str:
     paraphrased = sum(1 for r in results if r["verdict"] == "PARAPHRASED")
     failed = sum(1 for r in results if r["verdict"] == "FAILED")
     total_seconds = sum(r["seconds"] for r in results)
+    pass1 = sum(r.get("pass_at_1", 1.0) for r in results) / max(1, len(results))
+    passk = sum(r.get("pass_at_k", 1.0) for r in results) / max(1, len(results))
 
     parts = [
         "Speed",
         _table(speed, ["task", "wall", "ttft"]),
         "",
         "Quality",
-        _table(quality, ["task", "verdict", "tools"]),
+        _table(quality, ["task", "verdict", "solved", "tools"]),
         "",
         "Cost",
         _table(cost, ["task", "tokens"]),
         "",
         f"summary: {obeyed} obeyed, {paraphrased} paraphrased, {failed} failed · "
-        f"{total_seconds:.1f}s total · {total_tokens} tokens",
+        f"pass@1 {pass1:.2f}"
+        + (f" · pass@{k} {passk:.2f}" if k > 1 else "")
+        + f" · {total_seconds:.1f}s total · {total_tokens} tokens",
     ]
     return "\n".join(parts)
 
@@ -225,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--network", action="store_true", help="allow the model to fetch")
     parser.add_argument("--price-per-mtok", type=float, default=0.0)
     parser.add_argument("--spend-cap", type=float, default=0.0)
+    parser.add_argument("--repeat", type=int, default=1, help="samples per task")
+    parser.add_argument("--k", type=int, default=1, help="k for pass@k")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -239,13 +271,27 @@ def main(argv: list[str] | None = None) -> int:
         tasks = [t for t in tasks if t.get("kind") != "network"]
 
     cfg = _config(args)
-    results = [run_task(task, cfg, allow_network=args.allow_network) for task in tasks]
+    results = []
+    for task in tasks:
+        runs = [
+            run_task(task, cfg, allow_network=args.allow_network)
+            for _ in range(max(1, args.repeat))
+        ]
+        solved = sum(1 for r in runs if r["verdict"] == "OBEYED")
+        best = next((r for r in runs if r["verdict"] == "OBEYED"), runs[0])
+        entry = dict(best)
+        entry["runs"] = len(runs)
+        entry["solved"] = solved
+        entry["pass_at_1"] = round(solved / len(runs), 3)
+        entry["pass_at_k"] = round(pass_at_k(len(runs), solved, max(1, args.k)), 3)
+        entry["total_tokens"] = sum(r["tokens"] for r in runs)
+        results.append(entry)
 
     if args.json:
         print(json.dumps(results, indent=2))
         return 0
-    print(render(results, price_per_mtok=args.price_per_mtok))
-    return 0 if all(r["verdict"] == "OBEYED" for r in results) else 1
+    print(render(results, price_per_mtok=args.price_per_mtok, k=max(1, args.k)))
+    return 0 if all(r["pass_at_1"] == 1.0 for r in results) else 1
 
 
 if __name__ == "__main__":

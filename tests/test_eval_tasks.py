@@ -91,6 +91,21 @@ def test_verdict_rules():
     assert verdict("", [], tool_ran=True) == "OBEYED"
 
 
+def test_pass_at_k_estimator():
+    """The unbiased estimator: 1 - C(n-c, k) / C(n, k)."""
+    module = _harness()
+    pak = module.pass_at_k
+    assert pak(4, 0, 1) == 0.0
+    assert pak(4, 4, 1) == 1.0
+    assert pak(4, 2, 1) == 0.5
+    assert abs(pak(10, 5, 1) - 0.5) < 1e-9
+    # k = n asks "was it ever solved": one solve in four is a pass.
+    assert pak(4, 1, 4) == 1.0
+    assert pak(4, 0, 4) == 0.0
+    # More samples cannot make a never-solved task pass.
+    assert pak(8, 0, 4) == 0.0
+
+
 def test_harness_loads_the_committed_task_set():
     module = _harness()
     tasks = module.load_tasks()

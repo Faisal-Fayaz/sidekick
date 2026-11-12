@@ -27,8 +27,14 @@ python3 docs/probe-evals.py                     # local fast tier
 python3 docs/probe-evals.py --tier smart        # local smart tier
 python3 docs/probe-evals.py --task p3_grounding # one task
 python3 docs/probe-evals.py --allow-network --network
+python3 docs/probe-evals.py --repeat 5 --k 5    # pass@1 and pass@5
 python3 docs/probe-evals.py --json              # machine-readable
 ```
+
+`--repeat N` draws N samples per task, so the table can report how often a
+task was solved (`solved` column) instead of only whether it was. `--k` picks
+the k for pass@k, using the unbiased estimator `1 - C(n-c, k) / C(n, k)`:
+pass@1 is the plain rate, and pass@k with k = n asks "was it ever solved".
 
 Cloud tiers need a key and a spend cap:
 
