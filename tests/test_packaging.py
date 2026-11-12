@@ -140,6 +140,11 @@ def test_the_smoke_workflow_exists_and_installs_the_artifact():
     # And it must run after a successful release, not after a failed one.
     assert "workflow_run" in text
     assert "conclusion == 'success'" in text
+    # PyPI's index lags the upload, so the job waits for the artifact before
+    # installing it. Without the wait, the smoke test fails on an artifact that
+    # exists.
+    assert "pypi.org/pypi/sidekick-agent" in text
+    assert "Wait for the artifact" in text
 
 
 @pytest.mark.parametrize("name", ["smoke.yml"])
