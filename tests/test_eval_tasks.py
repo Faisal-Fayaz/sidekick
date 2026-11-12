@@ -112,6 +112,60 @@ def test_harness_loads_the_committed_task_set():
     assert [t["id"] for t in tasks] == [t["id"] for t in _tasks()]
 
 
+def test_targets_parse_provider_model_and_price():
+    module = _harness()
+    target = module.parse_target("openrouter:openai/gpt-4o-mini@0.15")
+    assert target["provider"] == "openrouter"
+    assert target["model"] == "openai/gpt-4o-mini"
+    assert target["price"] == 0.15
+    # A model name can carry a colon of its own: `qwen3:4b` is one model.
+    local = module.parse_target("ollama:qwen3:4b")
+    assert local["provider"] == "ollama"
+    assert local["model"] == "qwen3:4b"
+    assert local["price"] == 0.0
+
+
+def test_the_comparison_table_has_the_cost_column():
+    """Local costs no API bill; a metered target costs what its tokens cost."""
+    module = _harness()
+    runs = [
+        {
+            "label": "ollama/qwen3:4b",
+            "price": 0.0,
+            "results": [
+                {
+                    "id": "p1_greeting",
+                    "verdict": "OBEYED",
+                    "seconds": 1.0,
+                    "tokens": 100,
+                    "total_tokens": 100,
+                    "pass_at_1": 1.0,
+                    "tools": [],
+                }
+            ],
+        },
+        {
+            "label": "openrouter/gpt-4o-mini",
+            "price": 0.15,
+            "results": [
+                {
+                    "id": "p1_greeting",
+                    "verdict": "OBEYED",
+                    "seconds": 2.0,
+                    "tokens": 100,
+                    "total_tokens": 100,
+                    "pass_at_1": 1.0,
+                    "tools": [],
+                }
+            ],
+        },
+    ]
+    out = module.render_comparison(runs)
+    assert "no API bill" in out
+    assert "$0.0000" in out
+    assert "pass@1" in out
+
+
 def test_render_emits_the_three_tables():
     module = _harness()
     results = [
