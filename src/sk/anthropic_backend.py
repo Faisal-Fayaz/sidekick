@@ -1,4 +1,4 @@
-"""Native Anthropic Messages API backend (token-streaming).
+"""Native Anthropic Messages API: the wire format.
 
 Used when cfg.provider == "anthropic". The rest of the agent speaks OpenAI
 chat-completions, so this module translates at the boundary:
@@ -6,7 +6,15 @@ chat-completions, so this module translates at the boundary:
 - tools_schema() (OpenAI functions) -> Anthropic tools [{name, description, input_schema}]
 - OpenAI messages (system/user/assistant/tool roles) -> (system, messages)
   with strict role alternation (consecutive same-role merged)
-- tool_use blocks -> existing _run_tools_batch (approval + audit preserved)
+- tool_use blocks -> the shared loop's tool batch (approval + audit preserved)
+
+This module used to carry a second copy of the whole turn loop, and it imported
+private helpers from `sk.agent` to do it. That is how a feature could land on
+one provider only: post-edit verification, the text-JSON tool fallback, and the
+reasoning-only continuation all existed here or there, never both. The loop now
+lives in `sk.agent` and reaches this provider through
+`sk.backends.AnthropicBackend`, so this file is only the translation and the
+HTTP.
 
 Freshness: token streaming like the OpenAI path — content deltas go to
 on_token as they arrive, thinking deltas to on_reasoning (falling back to
@@ -21,12 +29,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from .auth import anthropic_headers
-from .errors import TurnFailure, classify_error
-from .toolcalls import (
-    CONTROL_TAG,
-    parse_text_tools,
-    strip_control_leak,
-)
 
 
 def openai_tools_to_anthropic(openai_schema: list[dict]) -> list[dict]:
@@ -457,369 +459,31 @@ def run_anthropic_agent(
     trust_project_checks: bool = False,
     verify_full: bool = False,
 ) -> str:
-    """One agent turn over the native Messages API. Same contract as run_agent."""
-    from .agent import (
-        _SUMMARY_PROMPT,
-        _maybe_review_plan,
-        _provider_host,
-        _spend_blocked,
-        build_messages,
-        prepare_history,
+    """One agent turn over the native Messages API. Same contract as run_agent.
+
+    The turn loop itself lives in :func:`sk.agent.run_agent` and reaches this
+    provider through :class:`sk.backends.AnthropicBackend`. This function is
+    the named entry point for the native path; it used to carry a second copy
+    of the whole loop, which is how features landed on one provider only
+    (#312).
+    """
+    from .agent import run_agent
+    from .backends import AnthropicBackend
+
+    return run_agent(
+        user_msg,
+        history,
+        cfg,
+        on_tool=on_tool,
+        on_token=on_token,
+        approve=approve,
+        on_reasoning=on_reasoning,
+        auto_approve=auto_approve,
+        session=session,
+        review_plan=review_plan,
+        read_only=read_only,
+        plan_mode=plan_mode,
+        trust_project_checks=trust_project_checks,
+        verify_full=verify_full,
+        backend=AnthropicBackend(cfg, plan_mode=plan_mode),
     )
-    from .store import log_tool_run
-    from .tools import tools_schema
-    from .verify import edited_paths, verify_turn
-
-    session = session or ""
-    blocked = _spend_blocked(session, cfg)
-    if blocked is not None:
-        if on_token is not None:
-            try:
-                on_token(blocked)
-            except Exception:
-                pass
-        return blocked
-    try:
-        log_tool_run(
-            session,
-            "llm_call",
-            cfg.model,
-            approved=True,
-            provider=cfg.provider,
-            host=_provider_host(cfg),
-        )
-    except Exception:
-        pass
-
-    def _summarize(text: str) -> str:
-        resp = _post(
-            cfg.effective_base_url(),
-            cfg.effective_api_key(),
-            {
-                "model": cfg.model,
-                "max_tokens": 400,
-                "messages": [{"role": "user", "content": _SUMMARY_PROMPT + "\n\n" + text[:6000]}],
-            },
-        )
-        out = "".join(
-            b.get("text", "")
-            for b in (resp.get("content", []) if isinstance(resp, dict) else [])
-            if isinstance(b, dict) and b.get("type") == "text"
-        ).strip()
-        if not out:
-            raise RuntimeError("empty summary")
-        return out
-
-    history = prepare_history(session, history, cfg, _summarize)
-    system, messages = openai_messages_to_anthropic(
-        build_messages(user_msg, history, cfg, auto_approve, read_only, plan_mode)
-    )
-    tools = openai_tools_to_anthropic(tools_schema())
-    system_payload, tools = _cache_breakpoints(system, tools)
-    from .model_profiles import effective_max_steps, max_tokens_for
-
-    max_tokens = max_tokens_for(cfg.model, cfg.provider)
-    max_steps = effective_max_steps(cfg.model, cfg)
-    try:
-        from .agent import _effort_level
-
-        _thinking = _thinking_params(_effort_level(cfg, plan_mode), max_tokens)
-    except Exception:
-        _thinking = None
-    seen: dict[str, str] = {}
-    completed: list[str] = []  # per-turn tool work done (for error reports)
-    evidence: list[str] = []  # capped excerpts of what those tools returned
-    continued = 0  # max_tokens continuations this turn (mirrors the OpenAI path)
-    edited: list[str] = []  # write_file/edit_file targets (post-edit verify)
-    repairs_used = 0  # verify-fail repair rounds consumed (capped)
-    thinking_turns = 0  # reasoning-only continuations this turn (capped)
-
-    for _ in range(max(1, max_steps)):
-        payload: dict = {
-            "model": cfg.model,
-            "max_tokens": max_tokens,
-            "temperature": cfg.temperature,
-            "messages": messages,
-        }
-        if _thinking is not None:
-            payload["thinking"] = _thinking
-        if system_payload:
-            payload["system"] = system_payload
-        if tools:
-            payload["tools"] = tools
-        # Track whether any delta actually reached the user, not merely whether
-        # _stream returned. _stream can raise AFTER most of the answer was
-        # delivered (error SSE mid-body, transport drop), and the old code
-        # treated that as "nothing streamed" and re-emitted the whole text —
-        # the user saw the answer twice. Emitting the fallback text is only
-        # correct when nothing was delivered (#312).
-        emitted = _CountingSink(on_token)
-
-        try:
-            blocks, stop_reason = _stream(
-                cfg.effective_base_url(),
-                cfg.effective_api_key(),
-                payload,
-                emitted,
-                on_reasoning,
-            )
-            streamed = True
-        except Exception:
-            streamed = False
-            try:
-                resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), payload)
-            except Exception as e:
-                from .agent import _error_with_progress
-
-                # Same contract as the OpenAI path: a failed turn carries the
-                # failure with it, so the CLI reports `ok: false`.
-                return TurnFailure(
-                    _error_with_progress(completed, e),
-                    error=str(e)[:300] or type(e).__name__,
-                    code=classify_error(e),
-                )
-            blocks = resp.get("content", []) if isinstance(resp, dict) else []
-        _stop = stop_reason if streamed else None
-        texts = [
-            b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
-        ]
-        uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
-        text = "".join(texts).strip()
-        reasoning = "".join(
-            str(b.get("thinking", "") or "")
-            for b in blocks
-            if isinstance(b, dict) and b.get("type") == "thinking"
-        ).strip()
-        if not streamed and text and on_token is not None and emitted.count == 0:
-            try:
-                on_token(text)  # nothing reached the user: emit the whole answer once
-            except Exception:
-                pass
-        if not uses:
-            # Text-JSON tools: the model emitted its calls as ```json blocks
-            # instead of native `tool_use` blocks. The OpenAI path parses and
-            # dispatches those; this path used to do nothing, so the turn
-            # answered with prose and the intended calls were dropped (#432).
-            text_tools = parse_text_tools(text)
-            if text_tools:
-                from .agent import _run_tools_batch
-                from .model_profiles import max_parallel_for
-
-                batch = list(text_tools[:4])  # cap 4 per turn, like the OpenAI path
-                proceed, turn_approve = _maybe_review_plan(
-                    batch,
-                    approve,
-                    review_plan,
-                    auto_approve,
-                    session,
-                    cfg.provider,
-                    _provider_host(cfg),
-                )
-                if not proceed:
-                    return "Denied: plan denied by user — nothing was executed."
-                messages.append({"role": "assistant", "content": text})
-                outs = _run_tools_batch(
-                    batch,
-                    turn_approve,
-                    on_tool,
-                    seen,
-                    session,
-                    cfg,
-                    max_workers=max_parallel_for(getattr(cfg, "model", "")),
-                    read_only=read_only,
-                    plan_mode=plan_mode,
-                )
-                for p in edited_paths(batch):
-                    if p not in edited:
-                        edited.append(p)
-                from .agent import _record_completed
-
-                _record_completed(completed, batch, outs, evidence)
-                combined = [
-                    f"[tool {tname} result]\n{result}"
-                    for (tname, _), (result, _) in zip(batch, outs)
-                ]
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "\n".join(combined)
-                        + "\nAnswer the original question concisely using these results. "
-                        "Do not emit more tool JSON.",
-                    }
-                )
-                continue
-            # Cut off mid-thought (stop_reason == "max_tokens"): ask for the tool
-            # calls instead of accepting a plan with no action. Without this the
-            # model returned prose that got cut mid-JSON and the turn ended with
-            # nothing executed (#312).
-            if _stop == "max_tokens" and continued < 2:
-                continued += 1
-                if text:
-                    messages.append({"role": "assistant", "content": text})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "Continue: emit the tool calls now, no more prose.",
-                    }
-                )
-                continue
-            # Reasoning-only turn: the model thought and returned no content.
-            # The OpenAI path asks it to continue instead of answering "(empty)";
-            # this path used to fall straight through to the empty answer
-            # (#432).
-            if not text and reasoning and thinking_turns < 2:
-                thinking_turns += 1
-                messages.append({"role": "assistant", "content": ""})
-                messages.append(
-                    {"role": "user", "content": CONTROL_TAG + "Continue with your answer now."}
-                )
-                continue
-            # Final answer. Post-edit verification runs here, exactly as on the
-            # OpenAI path: syntax + configured checks for the edited files, with
-            # the same trust rules and repair budget (#280, #433).
-            final = strip_control_leak(text) or "(empty)"
-            done, repairs_used, note = verify_turn(
-                edited,
-                repairs_used,
-                approve=approve if callable(approve) else None,
-                session=session,
-                provider=cfg.provider,
-                host=_provider_host(cfg),
-                read_only=read_only,
-                plan_mode=plan_mode,
-                on_tool=on_tool,
-                trust_project_checks=trust_project_checks,
-                verify_full=verify_full,
-            )
-            if done:
-                if note:
-                    final = (final.rstrip() + "\n\n" + note).strip()
-                return final
-            # A failing check is a failed verification, not a final answer: ask
-            # for a targeted repair round.
-            messages.append({"role": "assistant", "content": text})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": CONTROL_TAG
-                    + "[verify failed — fix ONLY the reported errors, then answer again]\n"
-                    + note,
-                }
-            )
-            continue
-        batch = [
-            (
-                u.get("name", ""),
-                u.get("input", {}) if isinstance(u.get("input"), dict) else {},
-            )
-            for u in uses
-        ]
-        from .agent import _run_tools_batch
-        from .model_profiles import max_parallel_for
-
-        proceed, turn_approve = _maybe_review_plan(
-            batch, approve, review_plan, auto_approve, session, cfg.provider, _provider_host(cfg)
-        )
-        if not proceed:
-            return "Denied: plan denied by user — nothing was executed."
-        # tool turn: append assistant tool_use + dispatch batch, then continue
-        messages.append({"role": "assistant", "content": blocks})
-        max_parallel = max_parallel_for(getattr(cfg, "model", ""))
-        outs = _run_tools_batch(
-            batch,
-            turn_approve,
-            on_tool,
-            seen,
-            session,
-            cfg,
-            max_workers=max_parallel,
-            read_only=read_only,
-            plan_mode=plan_mode,
-        )
-        for p in edited_paths(batch):
-            if p not in edited:
-                edited.append(p)
-        for i, (u, (result, _)) in enumerate(zip(uses, outs)):
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": u.get("id") or _synthetic_block_id(i, u),
-                            # Full result, matching the OpenAI path. Truncating to
-                            # 6000 chars here silently dropped tool output the
-                            # model needs, with no marker, and the two providers
-                            # disagreed about it (#312).
-                            "content": result,
-                        }
-                    ],
-                }
-            )
-        from .agent import _record_completed
-
-        _record_completed(completed, batch, outs, evidence)
-    # Loop exhausted without a final answer (every in-loop return is one):
-    # one bounded no-tools recap call instead of the bare sentinel.
-    #
-    # This recap previously had no grounding at all: it asked the model to report
-    # what was accomplished while withholding the turn's tool ledger, so the same
-    # fabrication seen on the OpenAI path was fully exposed here (#369). It now
-    # carries both the target ledger and the capped output excerpts, and keeps the
-    # three-line shape the rest of sidekick's exhaustion reports use.
-    try:
-        prior = "; ".join(completed[:10])
-        if prior:
-            grounding = (
-                "Ground the recap in this list of what actually ran this turn; "
-                f"do not claim anything that is not in it:\n{prior}"
-            )
-        else:
-            grounding = (
-                "No tool ran this turn — nothing was executed, so the Accomplished "
-                "line must say so. Do not describe output you did not produce."
-            )
-        if evidence:
-            grounding += (
-                "\n\nThese are the actual outputs of the tools that ran, in order. "
-                "Any figure, count, name, or path you report MUST come from these "
-                "lines — quote them exactly. If you want a number that is not here, "
-                "say so in Blocked; never estimate one:\n" + "\n".join(evidence)
-            )
-        recap = {
-            "model": cfg.model,
-            "max_tokens": 400,
-            "messages": messages
-            + [
-                {
-                    "role": "user",
-                    "content": (
-                        "You hit the step budget. Reply with ONLY these 3 lines, "
-                        "filled in, no other text:\n"
-                        "Accomplished: <one line>\n"
-                        "Blocked: <one line>\n"
-                        "Next: <one line>\n\n" + grounding
-                    ),
-                }
-            ],
-        }
-        if system_payload:
-            recap["system"] = system_payload
-        resp = _post(cfg.effective_base_url(), cfg.effective_api_key(), recap)
-        recap_text = "".join(
-            b.get("text", "")
-            for b in (resp.get("content", []) if isinstance(resp, dict) else [])
-            if isinstance(b, dict) and b.get("type") == "text"
-        ).strip()
-        if recap_text:
-            if on_token is not None:
-                try:
-                    on_token(recap_text)
-                except Exception:
-                    pass
-            from .agent import _strip_recap_leak
-
-            return _strip_recap_leak(strip_control_leak(recap_text))
-    except Exception:
-        pass
-    return "(max steps reached)"

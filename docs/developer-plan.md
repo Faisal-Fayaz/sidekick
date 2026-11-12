@@ -100,12 +100,12 @@ next candidates.
 | Gap | Evidence |
 |---|---|
 | Review context is v1 | Targets, diff model, repo map, code search, and line-range reads shipped (#398–#401); no semantic retrieval or editable context policy yet |
-| No test/lint/typecheck loop | Post-edit verification only compiles edited Python files |
+| No test/lint/typecheck loop | Closed: post-edit verification runs syntax checks plus the project's configured lint/typecheck checks, on every provider path (#280, #423, #433) |
 | Review pack is built-in only | Rules, budgets, include/ignore, and worth-it policy are not project-editable yet; `--explain`/`--check-config` are Phase 2 |
 | Default step budget is too low | Local and unknown models get 5 steps; named frontier profiles get 15; the Harbor adapter overrides to 40 |
-| No provider abstraction | Anthropic backend reimplements the agent loop and imports private symbols (#312) |
+| Provider abstraction | One loop drives both providers through a backend seam (`sk.backends`); the Anthropic path no longer keeps its own copy of the loop (#312, #431) |
 | Security ceiling | No OS sandbox (#329); `shell curl` bypasses egress; hooks use `shell=True` (#268) |
-| Maintainability debt | `agent.py` is 3,095 lines; TUI 1,880; broad excepts and lenient type gates (#270) |
+| Maintainability debt | `agent.py` is 2,851 lines; TUI 1,880; broad excepts and lenient type gates (#270) |
 | Docs freshness is manual | Version, roadmap, hero count, and AUR pins are release-checklist items; prose still needs review each release |
 
 ### Constraints to respect
@@ -693,6 +693,8 @@ loop for review or for later developer features.
 
 #### Provider abstraction
 
+**Status (2026-11-12):** shipped in the `v0.33.0` milestone (#312, #431).
+
 - Define a provider protocol for chat, streaming, tool calls, capabilities,
   context window, and cost.
 - Implement OpenAI-compatible and Anthropic providers behind it.
@@ -700,6 +702,13 @@ loop for review or for later developer features.
 - Remove private symbol imports from `anthropic_backend.py`.
 - Add parity tests that run the same scenarios against both providers.
 - Do this before advertising "review works everywhere."
+
+What shipped: `sk.backends` defines the seam (`Turn`, `ToolCall`, `Backend`);
+`sk.agent` owns the single turn loop and the OpenAI transport beside it;
+`sk.anthropic_backend` keeps only the Messages API wire format. The parity
+table in `tests/test_provider_parity.py` runs the same scenarios against both
+providers, and a test enforces that no backend imports a private symbol from
+`sk.agent`.
 
 #### Git workflow tools
 
@@ -1024,6 +1033,9 @@ Items 1–7 shipped in `v0.31.0` (PR #411); items 8–10 shipped in `v0.32.0`
     [#423](https://github.com/Faisal-Fayaz/sidekick/issues/423) (PR #428).**
 11. Add adaptive `max_steps` and `--max-steps`.
 12. Add provider protocol and Anthropic parity tests.
+    **Shipped (#312, #431): `sk.backends` is the seam, `run_agent` drives one
+    loop, and `tests/test_provider_parity.py` runs both providers against the
+    same expectations.**
 13. Update README/website/portfolio; add `SECURITY.md` and issue templates.
 14. Developer-ladder spikes (post-v0.31): `sk explain`, `sk fix`, `sk test`,
     `sk pr`; each gated by the promotion test in §5.1.

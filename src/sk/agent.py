@@ -14,9 +14,10 @@ from typing import cast
 
 from openai import OpenAI
 
+from .backends import FunctionCall, ToolCall, Turn, effort_level
 from .config import Config
 from .errors import TurnFailure, classify_error
-from .model_profiles import context_window_for, max_tokens_for
+from .model_profiles import context_window_for, max_parallel_for, max_tokens_for, native_tools_for
 from .tokens import estimate_tokens as tokens_estimate
 from .toolcalls import (
     CONTROL_TAG,
@@ -29,6 +30,7 @@ from .toolcalls import (
     match_tool_obj,
     parse_text_tool,
     parse_text_tools,
+    prompt_echo,
     strip_control_leak,
     strip_recap_leak,
     strip_tool_residue,
@@ -352,16 +354,8 @@ def _parse_text_tool(text: str) -> tuple[str, dict] | None:
 
 
 def _effort_level(cfg: Config, plan_mode: bool = False) -> str:
-    """Normalized reasoning level: plan mode forces high, else the configured
-    level (garbage falls back to low via config parsing). Never raises."""
-    try:
-        from .config import REASONING_EFFORTS
-
-        level = "high" if plan_mode else str(getattr(cfg, "reasoning_effort", "low") or "low")
-        level = level.strip().lower()
-        return level if level in REASONING_EFFORTS else "low"
-    except Exception:
-        return "low"
+    """Deprecated alias — see :func:`sk.backends.effort_level`."""
+    return effort_level(cfg, plan_mode)
 
 
 def _window_override(cfg) -> int:
@@ -2081,28 +2075,8 @@ def _verify_turn(
 
 
 def _looks_like_prompt_echo(text: str) -> bool:
-    """True when the model's 'answer' is really the harness prompt coming back.
-
-    A model that never called a tool often echoes the recap instruction instead
-    of answering (observed 2026-10-11). Anything containing the scaffolding, or
-    an unfilled `<one line>` placeholder, is the prompt, not an explanation, so
-    the deterministic report stands on its own.
-    """
-    try:
-        t = text or ""
-        if any(frag in t for frag in _RECAP_LEAKS):
-            return True
-        if "<one line>" in t:
-            return True
-        # An unfilled template line is a prompt echo.
-        if re.search(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*$", t):
-            return True
-        # A *filled* recap line is still the model asserting work it cannot
-        # back. With an empty ledger that is exactly the fabrication this whole
-        # path exists to prevent, so treat it as an echo and do not quote it.
-        return bool(re.search(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*\S", t))
-    except Exception:
-        return True  # a probe that cannot decide must not become user-visible text
+    """Deprecated alias — see :func:`sk.toolcalls.prompt_echo`."""
+    return prompt_echo(text)
 
 
 def _synthesize_exhaustion(
@@ -2139,36 +2113,9 @@ def _synthesize_exhaustion(
     follow-up). A caller with no reasoning sink gets the old fallback, which is
     why the parameter is optional rather than required."""
     try:
-        prior = "; ".join((done_work or [])[:10])
-        if prior:
-            grounding = (
-                "Ground the recap in this list of what actually ran this turn; "
-                f"do not claim anything that is not in it:\n{prior}"
-            )
-        else:
-            grounding = (
-                "No tool ran this turn — nothing was executed, so the Accomplished "
-                "line must say so. Do not describe output you did not produce."
-            )
-        if evidence:
-            grounding += (
-                "\n\nThese are the actual outputs of the tools that ran, in order. "
-                "Any figure, count, name, or path you report MUST come from these "
-                "lines — quote them exactly. If you want a number that is not here, "
-                "say so in Blocked; never estimate one:\n" + "\n".join(evidence)
-            )
-        recap = list(messages) + [
-            {
-                "role": "user",
-                "content": (
-                    "You hit the step budget. Reply with ONLY these 3 lines, "
-                    "filled in, no other text:\n"
-                    "Accomplished: <one line>\n"
-                    "Blocked: <one line>\n"
-                    "Next: <one line>\n\n" + grounding
-                ),
-            }
-        ]
+        from .backends import exhaustion_messages, exhaustion_report
+
+        recap = exhaustion_messages(messages, done_work, evidence)
         msg = _stream_chat(
             client,
             model,
@@ -2188,41 +2135,7 @@ def _synthesize_exhaustion(
         # own instructions — "We need must exactly 3 lines. … No tools now." — and
         # that text was persisted to history.db and displayed.
         out = (msg.content or "").strip()
-
-        # Nothing ran, so there is nothing for the model to summarize. Asking it
-        # anyway invited it to narrate the prompt and invent an accomplishment
-        # (observed 2026-10-11: "Accomplished: Generated 5 project ideas" with
-        # an empty ledger). The honest report is deterministic text; the model
-        # is asked only because it may know *why* it looped.
-        if not prior:
-            reason = ""
-            try:
-                # Only a non-echo tail may be quoted back, and only as the
-                # reason it looped. An echoed recap would otherwise smuggle the
-                # model's fabricated "Accomplished: …" back into the answer.
-                if len(out) > 600:
-                    out = out[-600:]
-                if out and not _looks_like_prompt_echo(out):
-                    reason = out.strip()
-            except Exception:
-                reason = ""
-            lines = ["Stopped: the step budget ran out before an answer."]
-            lines.append("Accomplished: nothing — no tool ran this turn.")
-            if reason:
-                # Drop a leading recap-shaped line from the quoted reason so a
-                # stray "Accomplished: X" cannot ride along.
-                reason = re.sub(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*", "", reason).strip()
-                reason = re.sub(r"\n+", " ", reason)
-            if reason:
-                lines.append(f"Blocked: {reason}")
-            else:
-                lines.append("Blocked: the model spent its steps without producing an answer.")
-            lines.append("Next: re-ask, or raise max_steps / switch model with `/model`.")
-            return "\n".join(lines)
-
-        # Work did happen: keep the model's recap, but never let it echo the
-        # harness scaffolding back at the user.
-        return _strip_recap_leak(_strip_control_leak(out))
+        return exhaustion_report(out, done_work)
     except Exception:
         return ""
 
@@ -2400,6 +2313,91 @@ def delegate_research(task: str, cfg: Config, session: str = "", max_steps: int 
         return f"Error: research delegate failed: {e}"
 
 
+class OpenAIBackend:
+    """Any OpenAI-compatible chat-completions endpoint (Ollama included)."""
+
+    name = "openai"
+
+    def __init__(self, cfg, plan_mode: bool = False):
+        self.cfg = cfg
+        self.plan_mode = plan_mode
+        self._client = None
+        self._extra: dict | None = None
+
+    def _openai(self):
+        """The client and the provider-specific request body, built once."""
+        if self._client is None:
+            self._client = get_client(self.cfg)
+            self._extra = _extra_body(self.cfg, self.plan_mode)
+        return self._client, self._extra or {}
+
+    def max_tokens(self) -> int:
+        return max_tokens_for(self.cfg.model, self.cfg.provider)
+
+    def stream_turn(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None,
+        *,
+        on_token: object = None,
+        on_reasoning: object = None,
+    ) -> Turn:
+        client, extra = self._openai()
+        msg = _stream_chat(
+            client,
+            self.cfg.model,
+            messages,
+            tools,
+            self.cfg.temperature,
+            self.max_tokens(),
+            extra,
+            on_token,
+            on_reasoning,
+        )
+        calls = []
+        for tc in getattr(msg, "tool_calls", None) or []:
+            fn = getattr(tc, "function", None)
+            calls.append(
+                ToolCall(
+                    id=getattr(tc, "id", "") or "",
+                    function=FunctionCall(
+                        name=getattr(fn, "name", "") or "",
+                        arguments=getattr(fn, "arguments", "") or "{}",
+                    ),
+                )
+            )
+        return Turn(
+            content=getattr(msg, "content", "") or "",
+            tool_calls=calls,
+            finish=getattr(msg, "finish", "") or "stop",
+            reasoning=getattr(msg, "reasoning", "") or "",
+        )
+
+    def complete(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int,
+        on_token: object = None,
+        on_reasoning: object = None,
+    ) -> str:
+        client, extra = self._openai()
+        msg = _stream_chat(
+            client,
+            self.cfg.model,
+            messages,
+            None,
+            self.cfg.temperature,
+            min(int(max_tokens or 400), 400),
+            extra,
+            on_token,
+            on_reasoning,
+        )
+        # Content only. Reasoning was already streamed live via on_reasoning and
+        # must not be posted as chat (same invariant as the normal path).
+        return (getattr(msg, "content", "") or "").strip()
+
+
 def run_agent(
     user_msg: str,
     history: list[dict],
@@ -2416,6 +2414,7 @@ def run_agent(
     trust_project_checks: bool = False,
     verify_full: bool = False,
     cancel=None,
+    backend=None,
 ) -> str:
     """One agent turn with up to the effective step budget (explicit user
     config wins, else the model profile, else the configured default).
@@ -2445,6 +2444,7 @@ def run_agent(
     cannot interrupt: cancelling the awaiting task raises at the await and leaves
     this loop running, still dispatching tools and still calling back into the
     approval prompt. A thread cannot be killed, only asked. (#311)
+    backend overrides the provider seam; normally it is chosen from cfg.
     """
     session = session or audit_session.get()
 
@@ -2477,39 +2477,18 @@ def run_agent(
             except Exception:
                 pass
         return quick
-    if cfg.provider == "anthropic":
-        from .anthropic_backend import run_anthropic_agent
+    from .backends import backend_for
 
-        return run_anthropic_agent(
-            user_msg,
-            history,
-            cfg,
-            on_tool=on_tool,
-            on_token=on_token,
-            approve=approve,
-            on_reasoning=on_reasoning,
-            auto_approve=auto_approve,
-            session=session,
-            review_plan=review_plan,
-            read_only=read_only,
-            plan_mode=plan_mode,
-            trust_project_checks=trust_project_checks,
-            verify_full=verify_full,
-        )
-    client = get_client(cfg)
+    # One loop, many providers: the backend owns the wire format, the loop owns
+    # the behaviour. Anthropic used to have its own copy of this loop, which is
+    # how a feature could land on one provider only (#312).
+    backend = backend or backend_for(cfg, plan_mode=plan_mode)
     # perf: small ctx keeps KV cache off VRAM so more 7B layers fit on GPU.
     # Token cap is profile-aware (model_profiles.max_tokens_for): tight on
     # local CPU offload, roomy on frontier cloud models so whole-file
     # tool calls fit. (Ollama-only knobs live in _extra_body; cloud gets plain {}.)
-    extra = _extra_body(cfg, plan_mode)
-    from .model_profiles import (
-        effective_max_steps,
-        max_parallel_for,
-        max_tokens_for,
-        native_tools_for,
-    )
+    from .model_profiles import effective_max_steps
 
-    max_tokens = max_tokens_for(cfg.model, cfg.provider)
     max_steps = effective_max_steps(cfg.model, cfg)
 
     summarize_fn = make_summarizer(cfg)
@@ -2568,16 +2547,11 @@ def run_agent(
             return CANCELLED_TEXT
         _drop_stale_control(messages)
         try:
-            msg = _stream_chat(
-                client,
-                cfg.model,
+            msg = backend.stream_turn(
                 messages,
                 tools_schema() if tools_enabled else None,
-                cfg.temperature,
-                max_tokens,
-                extra,
-                on_token,
-                on_reasoning,
+                on_token=on_token,
+                on_reasoning=on_reasoning,
             )
         except Exception as e:
             if tools_enabled and _tools_rejected(e):
@@ -2783,7 +2757,7 @@ def run_agent(
         # has tool calls: parse, plan-review gate, then append assistant turn + execute
         _clear_silent_tool_streak(cfg.model)  # it called a tool natively
         parsed: list[tuple[str, str, dict]] = []
-        for tc in msg.tool_calls:  # type: ignore
+        for tc in msg.tool_calls:
             try:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
@@ -2805,7 +2779,7 @@ def run_agent(
                         "type": "function",
                         "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                     }
-                    for tc in msg.tool_calls  # type: ignore
+                    for tc in msg.tool_calls
                 ],
             }
         )
@@ -2832,16 +2806,11 @@ def run_agent(
         # through to the exhaustion synthesis below, never out of the turn)
         if _ == max_steps - 1:
             try:
-                m2 = _stream_chat(
-                    client,
-                    cfg.model,
+                m2 = backend.stream_turn(
                     messages,
                     None,
-                    cfg.temperature,
-                    max_tokens,
-                    extra,
-                    on_token,
-                    on_reasoning,
+                    on_token=on_token,
+                    on_reasoning=on_reasoning,
                 )
                 # Content only. `or m2.reasoning` promoted a raw reasoning trace
                 # to the chat answer whenever this peek came back with empty
@@ -2861,18 +2830,22 @@ def run_agent(
         # report progress + blockers instead of the bare sentinel. Never raises.
         # `completed` is this turn's real tool ledger, so the recap is grounded
         # in what actually ran rather than what the model believes it did.
-        recap = _synthesize_exhaustion(
-            client,
-            cfg.model,
-            messages,
-            cfg.temperature,
-            max_tokens,
-            extra,
-            on_token,
-            on_reasoning,
-            done_work=completed,
-            evidence=evidence,
-        )
+        from .backends import exhaustion_messages, exhaustion_report
+
+        recap = ""
+        try:
+            recap_msgs = exhaustion_messages(messages, completed, evidence)
+            recap = exhaustion_report(
+                backend.complete(
+                    recap_msgs,
+                    max_tokens=400,
+                    on_token=on_token,
+                    on_reasoning=on_reasoning,
+                ),
+                completed,
+            )
+        except Exception:
+            recap = ""
         final_text = _strip_recap_leak(_strip_control_leak(recap)) or "(max steps reached)"
 
     return _strip_control_leak(final_text)

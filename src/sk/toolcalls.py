@@ -319,3 +319,28 @@ def strip_recap_leak(text: str) -> str:
         return out
     except Exception:
         return text
+
+
+def prompt_echo(text: str) -> bool:
+    """True when the model's 'answer' is really the harness prompt coming back.
+
+    A model that never called a tool often echoes the recap instruction instead
+    of answering (observed 2026-10-11). Anything containing the scaffolding, or
+    an unfilled `<one line>` placeholder, is the prompt, not an explanation, so
+    the deterministic report stands on its own.
+    """
+    try:
+        t = text or ""
+        if any(frag in t for frag in RECAP_LEAKS):
+            return True
+        if "<one line>" in t:
+            return True
+        # An unfilled template line is a prompt echo.
+        if re.search(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*$", t):
+            return True
+        # A *filled* recap line is still the model asserting work it cannot
+        # back. With an empty ledger that is exactly the fabrication this whole
+        # path exists to prevent, so treat it as an echo and do not quote it.
+        return bool(re.search(r"(?mi)^\s*(accomplished|blocked|next)\s*:\s*\S", t))
+    except Exception:
+        return True  # a probe that cannot decide must not become user-visible text

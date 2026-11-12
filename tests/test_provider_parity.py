@@ -163,6 +163,11 @@ def _check_text_json_tool(ctx: Ctx) -> None:
     assert ctx.out.strip() == "listed"
 
 
+def _check_residue_not_posted(ctx: Ctx) -> None:
+    assert "<invoke" not in ctx.out, "the unparsed markup was posted as the answer"
+    assert "cannot parse" in ctx.out, "the model was never told its tool call was unparsed"
+
+
 def _check_verify_repair_round(ctx: Ctx) -> None:
     assert ctx.verified, "post-edit verification never ran"
     assert ctx.verified[0], "verification ran with no edited files"
@@ -225,6 +230,14 @@ SCENARIOS: dict[str, Scenario] = {
         check=_check_verify_unknown_reported,
         verify_verdicts=("unknown",),
     ),
+    "unparsed_tool_residue": Scenario(
+        script=[
+            Response(text='<invoke name="list_dir">{"path": "/tmp"}</invoke>'),
+            Response(text='<invoke name="list_dir">{"path": "/tmp"}</invoke>'),
+            Response(text='<invoke name="list_dir">{"path": "/tmp"}</invoke>'),
+        ],
+        check=_check_residue_not_posted,
+    ),
 }
 
 
@@ -257,6 +270,43 @@ def test_provider_parity(name, provider, tmp_path, monkeypatch):
     scenario.check(ctx)
 
 
+def test_no_backend_imports_private_symbols_from_the_agent():
+    """#312 acceptance: a backend must not reach into the agent's privates.
+
+    The Anthropic path used to import `_run_tools_batch`, `_maybe_review_plan`
+    and friends from `sk.agent`. That coupling is what let the two paths drift,
+    so it is now a test rather than a convention.
+    """
+    import ast
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for rel in ("src/sk/anthropic_backend.py", "src/sk/backends.py"):
+        tree = ast.parse((root / rel).read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if not node.module or not node.module.endswith("agent"):
+                continue
+            for alias in node.names:
+                assert not alias.name.startswith("_"), (
+                    f"{rel} imports the private {alias.name!r} from {node.module!r}; "
+                    "move it to a public module instead"
+                )
+
+
+def test_one_loop_drives_both_providers():
+    """The Anthropic path must not carry its own copy of the turn loop."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    src = (root / "src/sk/anthropic_backend.py").read_text()
+    assert "for _ in range(max(" not in src, (
+        "anthropic_backend grew a second turn loop; features would land on one provider only (#312)"
+    )
+    assert "def run_anthropic_agent" in src, "the named native entry point is gone"
+
+
 def test_parity_table_covers_the_known_gaps():
     """The table is the regression net: every gap #312 lists has a row."""
     expected = {
@@ -266,8 +316,26 @@ def test_parity_table_covers_the_known_gaps():
         "text_json_tool_fallback",
         "post_edit_verify_repair_round",
         "post_edit_verify_unknown",
+        "unparsed_tool_residue",
     }
     assert expected <= set(SCENARIOS)
+
+
+def test_backend_for_picks_the_provider():
+    """The seam chooses the backend from the config; the loop never branches."""
+    from sk.agent import OpenAIBackend
+    from sk.backends import AnthropicBackend, backend_for
+
+    anthropic = Config(
+        provider="anthropic",
+        model="claude-x",
+        base_url="https://api.anthropic.test",
+        api_key="k",
+        max_steps=2,
+        temperature=0.2,
+    )
+    assert isinstance(backend_for(anthropic), AnthropicBackend)
+    assert isinstance(backend_for(_openai_cfg()), OpenAIBackend)
 
 
 # --- transport-level parity ------------------------------------------------
@@ -313,7 +381,7 @@ def test_a_transport_that_dies_mid_answer_never_delivers_it_twice(monkeypatch, t
     monkeypatch.setattr(ab, "_stream", fake_stream)
     monkeypatch.setattr(ab, "_post", fake_post)
     out = ab.run_anthropic_agent(
-        "hello", [], _anthropic_cfg(), on_token=seen.append, session="parity"
+        "do the thing", [], _anthropic_cfg(), on_token=seen.append, session="parity"
     )
     assert seen == ["already streamed"], f"the answer was delivered twice: {seen}"
     assert "already streamed" in out
