@@ -20,6 +20,7 @@ from .commands import (  # noqa: F401
     fix,
     mcp,
     memory,
+    pr,
     review,
     run,
     skills,
