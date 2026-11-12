@@ -248,7 +248,10 @@ def test_build_messages_actually_charges_for_tool_schemas(tmp_path, monkeypatch)
     room either way, so the trim produced the same answer. This pins a window
     where the two rooms differ by more than a message.
     """
-    cfg = _cfg(tmp_path, monkeypatch, context_window=6144, history_budget_tokens=0)
+    # The window has to fit the system prompt, the tool schemas (which grew
+    # when the git tools landed) and a couple of messages, while still being
+    # tight enough that dropping the schema charge changes the answer.
+    cfg = _cfg(tmp_path, monkeypatch, context_window=8192, history_budget_tokens=0)
     probe = build_messages("hi", [], cfg)
     sys_tok = tok(str(probe[0].get("content")))
     schemas = _tool_schema_tokens()
