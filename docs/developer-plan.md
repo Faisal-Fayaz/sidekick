@@ -1,18 +1,20 @@
 # Sidekick Developer Plan
 
-**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`
+**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`; evals, benchmark and adoption shipped in `v0.34.0`
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Revised:** 2026-11-12 — provider + platform hardening shipped: one agent loop behind a provider seam, a required CI scan job, and the declarative sandbox are on `main`
+**Revised:** 2026-11-12 — evals, benchmark and adoption shipped: golden files for the busiest turns, a live harness with pass@k, a published benchmark, and a release smoke test are on `main`
+**Earlier revision:** 2026-11-12 — provider + platform hardening shipped: one agent loop behind a provider seam, a required CI scan job, and the declarative sandbox are on `main`
 **Prior revision:** 2026-11-11 — Phase 2 shipped; editable review packs, `sk check`, and post-edit verification are on `main`
 **Earlier revision:** 2026-11-08 — Phase 1 shipped; code intelligence and the evidence-backed review engine are on `main`
 **Baseline:** `a46127e` on `main` (current at revision; audit baseline
 `abfa95d`, accepted at `780c8bd`)
 **Baseline release:** `0.30.0`, 1,504 tests, 21 tools
 **Tracking:** [v0.31.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/6),
-[v0.32.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/7), and
-[v0.33.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/8)
-(all closed). Phase 2 items are listed in §9.
+[v0.32.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/7),
+[v0.33.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/8), and
+[v0.34.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/9)
+(all closed). Items are listed in §9.
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
 > holds the detailed design and accepted defaults behind the developer
@@ -906,9 +908,10 @@ If the honest answer is "parity with cloud agents", it waits.
 - `v0.31.0` — shipped: review foundation (code intelligence + `sk review` MVP).
 - `v0.32.0` — shipped: editable review pack + verification loop.
 - `v0.33.0` — shipped: provider abstraction + platform hardening.
-- `v0.34.0` — next: evals, benchmark, adoption.
+- `v0.34.0` — shipped: evals, benchmark, adoption.
+- `v0.35.0` — next: the developer ladder.
 
-`v0.34.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
+`v0.35.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
 
 ---
 
@@ -1039,8 +1042,9 @@ Items 1–7 shipped in `v0.31.0` (PR #411); items 8–10 shipped in `v0.32.0`
     loop, and `tests/test_provider_parity.py` runs both providers against the
     same expectations.**
 13. Update README/website/portfolio; add `SECURITY.md` and issue templates.
-14. Developer-ladder spikes (post-v0.31): `sk explain`, `sk fix`, `sk test`,
-    `sk pr`; each gated by the promotion test in §5.1.
+14. Developer-ladder spikes (post-v0.31): `sk fix`, `sk test`, and `sk pr`,
+    each gated by the promotion test in §5.1 — scoped as #451–#454 for
+    `v0.35.0`.
 
 ---
 
