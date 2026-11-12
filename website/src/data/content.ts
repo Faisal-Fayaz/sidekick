@@ -344,6 +344,10 @@ export const FAQS = [
     a: 'Fast syntax checks plus the project’s lint/typecheck checks for the affected files, when a trusted .sidekick/checks.toml provides them. `--verify-full` runs every configured check. A failing check gets up to two repair rounds; missing tools, timeouts, and denials are reported as `unknown`, never `pass`.',
   },
   {
+    q: 'What can a shell command reach?',
+    a: 'Permission and sandbox are separate planes. Approval decides whether a command runs; `~/.sidekick/sandbox.toml` decides what it may reach — reads outside the declared roots are refused, as is network access unless the host is allowed. Paths behind variables or inside quotes are checked too. `sk doctor` shows the mode.',
+  },
+  {
     q: 'Is it safe to let it run shell?',
     a: 'Reads auto-run; shell/writes/deletes need approval (one plan review per turn, silent only in --yes). Need zero writes? /readonly (or sk run --read-only) blocks them all, and /rewind undoes any file edit from snapshots. Shell hard-refuses rm -rf /, mkfs, dd-to-device and fork bombs even with approval. URL tools block localhost/private IPs.',
   },

@@ -304,6 +304,13 @@ export default function Docs() {
             {inline('sk hooks')} lists handlers, {inline('sk hooks --check')} dry-runs them. See{' '}
             {inline('docs/hooks.md')}.
           </p>
+          <p>
+            <b>Sandbox:</b> permission decides whether a call runs; the sandbox decides what it may reach. Add a{' '}
+            {inline('~/.sidekick/sandbox.toml')} and reads outside the declared roots are refused, as is network
+            access from the shell unless the host is on the allow list — paths hidden behind variables or quoting
+            included. {inline('sk doctor')} and {inline('sk config --show')} show the mode. See{' '}
+            {inline('docs/sandbox.md')}.
+          </p>
 
           <h2 id="architecture">Architecture</h2>
           <CodeBlock

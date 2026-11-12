@@ -729,11 +729,27 @@ def _gated_dispatch(
         return (msg, False)
     missing = missing_required(name, args)
     if missing:
-        from .tools.registry import missing_message
+        from sk.tools.registry import missing_message
 
         msg = missing_message(name, missing)
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (msg, False)
+    # The sandbox runs before the approval prompt. Asking the user to approve a
+    # call that cannot run is a wasted question, and the answer would be the
+    # same either way (#329).
+    try:
+        from .sandbox import check_tool, get_policy
+
+        policy, _sandbox_roots = get_policy()
+        if policy.enforcing:
+            denial = check_tool(name, args, policy=policy)
+            if denial:
+                log_tool_run(
+                    session, name, target, approved=False, provider=provider, host=host, ok=False
+                )
+                return (denial, False)
+    except Exception:
+        pass
     if _breaker_tripped(session, name, target) >= BREAKER_TRIPS_AT:
         # Failing-streak wording (Fan et al., arXiv:2609.20804 §7.4, Fig 20):
         # name the repetition, forbid reissue, point at the actual error.

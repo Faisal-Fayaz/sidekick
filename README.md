@@ -97,7 +97,7 @@ without handing an unattended model the keys.
 | Verify changes | Automatic post-edit syntax + lint/typecheck verification, `sk check` / `sk check --changed` for the full suite, and `sk review --verify` for a diff |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
 | Extend | skills, custom slash commands, declarative `TOOLS.md` tools, MCP |
-| Stay in control | approval cards, hard refusals, egress allowlist, audit ledger |
+| Stay in control | approval cards, hard refusals, egress allowlist, a declarative sandbox for what a command may reach, audit ledger |
 
 The TUI and plain-text REPL share every command, so a scripted fallback and an
 interactive session behave the same way.
@@ -376,10 +376,13 @@ Fetch decisions are written to the ledger with the host and reason, visible via
 `sk egress` and `sk audit`.
 
 **The ceiling, stated plainly:** this governs fetches made *through the agent's
-tools*. A `shell` command running `curl` is not covered — no string denylist can
-be a network boundary. That is why shell still needs approval, and why
+tools*. A `shell` command running `curl` is not covered by the egress list — so
+the [sandbox](docs/sandbox.md) covers it instead: with a
+`~/.sidekick/sandbox.toml` in place, network access from the shell is denied
+unless the host is on the allow list. What a program does *after* it starts is
+still beyond a policy that reads command text, which is why
 [issue #329](https://github.com/Faisal-Fayaz/sidekick/issues/329) (OS-level
-sandboxing) is the real answer rather than another pattern list. See
+isolation) is the real answer rather than another pattern list. See
 [`docs/egress.md`](docs/egress.md).
 
 **Your data is private to your account.** `~/.sidekick` is `0700` and
@@ -481,6 +484,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Egress policy](docs/egress.md)
 - [Review](docs/review.md)
 - [Checks](docs/checks.md)
+- [Sandbox](docs/sandbox.md)
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
