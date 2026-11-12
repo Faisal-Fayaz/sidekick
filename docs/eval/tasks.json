@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "_comment": [
+    "The fixed task set for the live eval harness (#283).",
+    "These prompts do not change between runs: a number that moves because the",
+    "task set moved is not a number. Verdicts follow docs/probe-routing.py:",
+    "OBEYED, PARAPHRASED, FAILED.",
+    "expect: every substring must appear in the reply for OBEYED; some of them",
+    "for PARAPHRASED; none for FAILED. expect_from pulls the required substring",
+    "out of a tool result instead of hard-coding it (the CPU name is the",
+    "machine's, not the test's)."
+  ],
+  "tasks": [
+    {
+      "id": "p1_greeting",
+      "kind": "chat",
+      "prompt": "hi",
+      "expect": ["working on"],
+      "why": "the greeting fast path — a greeting must not cost a model call"
+    },
+    {
+      "id": "p2_instruction",
+      "kind": "chat",
+      "prompt": "Reply with ONLY the word: banana",
+      "expect": ["banana"],
+      "why": "instruction following: does the answer stay inside the shape it was given"
+    },
+    {
+      "id": "p3_grounding",
+      "kind": "tool",
+      "prompt": "What CPU is this machine running? Use the sysinfo tool and answer with the CPU name only.",
+      "expect_from": "sysinfo_cpu",
+      "tool": "sysinfo",
+      "why": "grounding: the answer has to come from the tool, not from training memory"
+    },
+    {
+      "id": "p4_tool_turn",
+      "kind": "tool",
+      "prompt": "Write the file /tmp/sk-eval-tool.txt containing the word ok, then tell me 'done'.",
+      "expect": ["done"],
+      "tool": "write_file",
+      "why": "the tool turn: the agent has to act, not describe what it would do"
+    },
+    {
+      "id": "p5_network",
+      "kind": "network",
+      "prompt": "What is the latest release of the requests Python package? Use web_search.",
+      "expect": ["requests"],
+      "why": "the network task — isolated, and only run when it is explicitly allowed"
+    }
+  ]
+}
