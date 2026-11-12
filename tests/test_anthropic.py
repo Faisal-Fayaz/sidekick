@@ -1,5 +1,7 @@
 """Native Anthropic backend tests: translation, auth, full loop. No network."""
 
+import pytest
+
 import sk.agent as agent
 import sk.anthropic_backend as ab
 import sk.store as store
@@ -175,6 +177,17 @@ def test_ping_garbage_error_falls_back(monkeypatch):
 
 def _resp(content, stop="end_turn"):
     return {"content": content, "stop_reason": stop}
+
+
+def _text_of(content) -> str:
+    """The text of an Anthropic message content (a string or a list of blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            str(b.get("text", "")) for b in content if isinstance(b, dict) and b.get("text")
+        )
+    return ""
 
 
 def _stream_resp(content, stop="end_turn"):
@@ -500,7 +513,7 @@ def test_agent_falls_back_to_post_when_stream_fails(tmp_path, monkeypatch):
         ab, "_post", lambda *a, **k: {"content": [{"type": "text", "text": "fallback hi"}]}
     )
     seen = []
-    out = ab.run_anthropic_agent("hi", [], _cfg(), on_token=seen.append, session="s")
+    out = ab.run_anthropic_agent("do the thing", [], _cfg(), on_token=seen.append, session="s")
     assert out == "fallback hi" and seen == ["fallback hi"]
 
 
@@ -515,8 +528,12 @@ def test_agent_stream_error_surfaces_when_post_fails(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ab, "_stream", _boom)
     monkeypatch.setattr(ab, "_post", _post_boom)
-    out = ab.run_anthropic_agent("hi", [], _cfg(), session="s")
-    assert out.startswith("Turn failed partway") and "nothing yet" in out
+    # One loop now drives both providers, so a first-step transport failure
+    # raises on Anthropic exactly as it does on the OpenAI path: the turn never
+    # had work to report, so there is no progress report to write. A turn that
+    # already ran tools still returns the "Turn failed partway" report.
+    with pytest.raises(RuntimeError):
+        ab.run_anthropic_agent("do the thing", [], _cfg(), session="s")
 
 
 def test_readonly_prompt_line_on_native_path(tmp_path, monkeypatch):
@@ -655,7 +672,7 @@ def _anthropic_turn(tmp_path, monkeypatch, *, stream_impl, post_impl=None):
     monkeypatch.setattr(ab, "_post", _post)
     monkeypatch.setattr(mp, "max_tokens_for", lambda *a, **k: 512)
     monkeypatch.setattr(mp, "effective_max_steps", lambda *a, **k: 1)
-    out = ab.run_anthropic_agent("hello", [], cfg, on_token=seen_tok.append, session="s")
+    out = ab.run_anthropic_agent("do the thing", [], cfg, on_token=seen_tok.append, session="s")
     return out, seen_tok, post_calls
 
 
@@ -740,11 +757,11 @@ def test_max_tokens_continuation_is_attempted(tmp_path, monkeypatch):
     monkeypatch.setattr(ab, "_stream", stream_impl)
     monkeypatch.setattr(mp, "max_tokens_for", lambda *a, **k: 512)
     monkeypatch.setattr(mp, "effective_max_steps", lambda *a, **k: 3)
-    out = ab.run_anthropic_agent("hello", [], cfg, session="s")
+    out = ab.run_anthropic_agent("do the thing", [], cfg, session="s")
     assert out == "done"
     assert len(seen) >= 2, "no continuation attempted after max_tokens"
-    followups = [m for m in seen[1]["messages"] if isinstance(m.get("content"), str)]
-    assert any("tool calls now" in str(m.get("content", "")) for m in followups)
+    followups = [_text_of(m.get("content")) for m in seen[1]["messages"]]
+    assert any("tool calls now" in text for text in followups)
 
 
 def test_tool_result_is_not_silently_truncated(tmp_path, monkeypatch):
@@ -815,7 +832,7 @@ def test_anthropic_recap_is_grounded_in_tool_output(tmp_path, monkeypatch):
         "count it", [], _cfg(max_steps=1), approve=lambda n, a: True, session="s"
     )
 
-    prompt = seen["prompt"]
+    prompt = _text_of(seen["prompt"])
     assert "5461 total" in prompt, "tool output must reach the anthropic recap"
     assert "never estimate one" in prompt
     assert "Accomplished: <one line>" in prompt
