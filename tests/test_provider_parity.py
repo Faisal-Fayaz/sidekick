@@ -268,3 +268,77 @@ def test_parity_table_covers_the_known_gaps():
         "post_edit_verify_unknown",
     }
     assert expected <= set(SCENARIOS)
+
+
+# --- transport-level parity ------------------------------------------------
+#
+# Two regressions live in the provider transport, not in the loop, so they
+# cannot be expressed as a loop scenario: the id of a call the provider sent
+# without one, and a transport that dies after the answer already started.
+
+
+def test_id_less_tool_call_gets_a_stable_id_on_both_paths():
+    """An id-less call must not produce an empty tool id on either path."""
+    from sk.toolcalls import synthetic_call_id
+
+    openai_id = synthetic_call_id(0, {"name": "list_dir", "args": "{}"})
+    anthropic_id = ab._synthetic_block_id(0, {"name": "list_dir"})
+
+    assert openai_id and anthropic_id
+    # stable for the same call, so a retried turn reuses the id
+    assert openai_id == synthetic_call_id(0, {"name": "list_dir", "args": "{}"})
+    assert anthropic_id == ab._synthetic_block_id(0, {"name": "list_dir"})
+    # and distinct from each other, so the two paths never collide
+    assert openai_id != anthropic_id
+
+
+def test_a_transport_that_dies_mid_answer_never_delivers_it_twice(monkeypatch, tmp_path):
+    """A stream that fails after the answer started must not repeat the answer.
+
+    Anthropic falls back to a non-streaming call and must not re-emit what the
+    user already saw. The OpenAI path fails the turn outright instead of
+    pretending it has an answer.
+    """
+    # --- Anthropic ---
+    seen: list[str] = []
+
+    def fake_stream(base, key, payload, on_token=None, on_reasoning=None, **k):
+        if on_token is not None:
+            on_token("already streamed")
+        raise RuntimeError("stream error: upstream reset")
+
+    def fake_post(url, key, payload, timeout=300.0):
+        return {"content": [{"type": "text", "text": "already streamed"}]}
+
+    monkeypatch.setattr(ab, "_stream", fake_stream)
+    monkeypatch.setattr(ab, "_post", fake_post)
+    out = ab.run_anthropic_agent(
+        "hello", [], _anthropic_cfg(), on_token=seen.append, session="parity"
+    )
+    assert seen == ["already streamed"], f"the answer was delivered twice: {seen}"
+    assert "already streamed" in out
+
+    # --- OpenAI ---
+    seen2: list[str] = []
+
+    def fake_stream_chat(
+        client,
+        model,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        extra,
+        on_token=None,
+        on_reasoning=None,
+    ):
+        if on_token is not None:
+            on_token("already streamed")
+        raise RuntimeError("stream error: upstream reset")
+
+    monkeypatch.setattr(agent, "_stream_chat", fake_stream_chat)
+    with pytest.raises(RuntimeError):
+        agent.run_agent(
+            "do the thing", [], _openai_cfg(), approve=lambda n, a: True, on_token=seen2.append
+        )
+    assert seen2 == ["already streamed"], f"the answer was delivered twice: {seen2}"
