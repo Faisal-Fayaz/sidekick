@@ -187,6 +187,18 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'sk fix · sk test · sk pr',
+    title: 'The developer ladder, rung by rung',
+    body: 'sk fix investigates, changes, and proves the fix with a verdict. sk test runs the project\u2019s tests through the check pipeline. sk pr prepares a pull request whose text is derived from the commits and the diff — and pushes nothing without approval.',
+    link: '/docs#checks',
+  },
+  {
+    tag: 'git tools',
+    title: 'Git without the shell',
+    body: 'status, diff, branch, commit, and push as typed tools: the command line is built by the tool, so there is nothing for a model to smuggle into it. The writes ask, and a protected branch is never pushed.',
+    link: '/docs#safety',
+  },
+  {
     tag: 'measured, not folklore',
     title: 'A benchmark you can check',
     body: 'A fixed task set, run against real models, with speed, quality and cost — and a verdict that treats an answer without the tool call as a failure. The numbers are published, with the methodology.',
@@ -392,17 +404,17 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.35.0 — the developer ladder',
+    v: 'v0.36.0 — OS isolation and the explain rung',
     items: [
-      'sk fix — a guided fix loop with verification',
-      'sk test — the project tests through the check pipeline',
-      'sk pr — prepare a pull request from the working tree',
-      'git status/diff/commit as first-class tools',
+      'bubblewrap / Seatbelt enforcement when present',
+      'Network namespaces: egress cannot happen at all',
+      'sk explain — a grounded explanation of code or a diff',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.35.0 — the developer ladder: sk fix (with a verdict), sk test, sk pr, and git as typed tools — status, diff, branch, commit, push — where the writes ask and a protected branch is never pushed (#451–#454)',
   'v0.34.0 — evals, benchmark, adoption: golden files for the busiest turns, a live harness with pass@k, a published benchmark on a 4 GB box, and a release smoke test that installs what was published (#112, #283, #157, #188, #443)',
   'v0.33.0 — provider + platform hardening: one agent loop behind a provider seam, a cross-provider parity table, a required CI scan job (pip-audit + bandit), and a declarative sandbox for what a command may reach (#312, #271, #329)',
   'v0.32.0 — editable review pack + verification: layered built-in < user < project < CLI rules (#420), 10 built-in rules + corpus (#421), trust-gated sk check with parsed diagnostics (#422), and post-edit + sk review --verify checks that report unknown, never pass (#423)',

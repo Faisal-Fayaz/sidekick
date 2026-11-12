@@ -27,19 +27,16 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.35.0 (the developer ladder)
+## Next — v0.36.0 (OS isolation and the explain rung)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Guided change** — `sk fix`: a targeted fix loop with checkpoints and the verification gate (#451).
-- **Project tests** — `sk test`: run the project's own tests through the check pipeline (#452).
-- **Ship** — `sk pr`: prepare a pull request from the working tree, reviewed before push (#453).
-- **Git helpers** — `git status`/`diff`/`commit` as first-class tools instead of prompted shell (#454).
+- **OS-level enforcement** — bubblewrap (Linux) or Seatbelt (macOS) when present, then network namespaces (#440).
+- **`sk explain`** — a grounded explanation of code or a diff, citing file:line (#461).
 
-Out of scope for now: IDE integration, the Python SDK, and OS-level sandbox
-enforcement, which needs optional system packages (#440). Later versions
-remain tentative.
+Out of scope for now: IDE integration, the Python SDK, and the air-gapped
+bundle. Later versions remain tentative.
 
 ## Later
 
@@ -181,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.35.0` — **the developer ladder.** `sk fix` investigates a problem, changes the code under the approval gate, and reports the verification verdict — pass, fail, or unknown — so a change that did not verify exits 1 instead of shipping as "done" (#451). `sk test` runs the project's tests through the same check pipeline, using the declared test check or a detected one, and never reports a green suite it did not run (#452). `sk pr` prepares a pull request whose title and body are derived from the commits and the diff, and pushes nothing without approval (#453). Git became five typed tools — status, diff, branch, commit, push — where the command line is built by the tool, so there is nothing for a model to smuggle into the shell; the writes ask, and a push to a protected branch is refused (#454). 27 built-in tools. Tests 1878 → 1933.
 - `v0.34.0` — **evals, benchmark, adoption.** A golden-file suite locks the turns people actually see — the help reply, the grounding block, the refusals, the tool-call fallback, the review prompt — with volatile values masked so a golden cannot rot overnight (#112). A live harness runs the fixed task set against real models and reports speed, quality and cost, with pass@k over repeated samples (#283). The benchmark is published: on a 4 GB box the small local tiers all score pass@1 0.50, and the two tool tasks fail because the models answer without acting — which is exactly what an evidence-checked verdict is for (#157). The leaderboard is on the site and in the README, and a test keeps the two copies in agreement (#188). A release smoke test now installs the published artifact, runs one offline turn, and checks the AUR pin against what PyPI published (#443). Tests 1845 → 1878.
 - `v0.33.0` — **provider + platform hardening.** One agent loop now drives every provider: `sk.backends` is the seam (`Turn`, `ToolCall`, `Backend`), the Anthropic path keeps only the wire format, and a parity table runs the same scenarios against both — so a feature can no longer land on one side only (#312). CI gained a required `scan` job: `pip-audit` over the locked dependency set and a bandit gate, with the two high-severity findings fixed rather than skipped (#271). A declarative sandbox (`~/.sidekick/sandbox.toml`) denies reads outside the declared roots and network access from the shell, enforced in the tool layer and checked before the approval prompt, with the #288 bypass corpus pinned as a test (#329). Tests 1761 → 1845.
 - `v0.32.0` — **editable review pack + verification.** Review policy is now layered built-in < user global < project < CLI, the eight `security/*` rules are protected from project overrides, and `--explain`/`--check-config` report the effective pack and its deterministic hash (#420). Ten built-in rules (eight security, two correctness) ship with positive/negative fixtures and seeded corpus cases (#421). `sk check` runs trust-gated `.sidekick/checks.toml` through the normal approval and audit path, parses pytest/ruff/mypy/eslint/tsc/`go test`, and reports timeouts, denials, and missing tools as `unknown` — never `pass` (#422). Post-edit verification now runs fast syntax checks plus the project's lint/typecheck checks for affected files; `--verify-full` runs every configured check, and `sk review --verify` adds a separate verification section with its own exit code (#423). Tests 1598 → 1761.
