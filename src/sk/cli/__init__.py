@@ -23,6 +23,7 @@ from .commands import (  # noqa: F401
     run,
     skills,
     system,
+    test,
 )
 
 # names used externally (tui.py, tests): re-export from their new homes

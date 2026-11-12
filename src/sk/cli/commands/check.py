@@ -8,11 +8,12 @@ loaded with ``--trust-project-checks`` or ``SIDEKICK_TRUST_REPO=1``.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 
 import typer
 
 from ..approvers import _make_approver
-from ..base import _cfg, app, console
+from ..base import _cfg, app, console, data_mode
 
 
 @app.command("check")
@@ -83,15 +84,16 @@ def check_cmd(
         approved,
         deny=denied,
     )
-    report = run_checks(
-        pack=pack,
-        changed=changed,
-        trust_project=trust_project_checks,
-        approve=approve,
-        session=session,
-        provider=cfg.provider,
-        max_diagnostics=max(1, min(MAX_DIAGNOSTICS * 10, max_diagnostics)),
-    )
+    with data_mode() if as_json else nullcontext():
+        report = run_checks(
+            pack=pack,
+            changed=changed,
+            trust_project=trust_project_checks,
+            approve=approve,
+            session=session,
+            provider=cfg.provider,
+            max_diagnostics=max(1, min(MAX_DIAGNOSTICS * 10, max_diagnostics)),
+        )
 
     if as_json:
         typer.echo(json.dumps(report.to_dict(), indent=2))
