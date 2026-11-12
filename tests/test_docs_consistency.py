@@ -73,6 +73,25 @@ def test_website_next_matches_roadmap_next():
     )
 
 
+def test_the_benchmark_table_agrees_with_the_website():
+    """The README table and the site table are one set of numbers.
+
+    Two copies of a benchmark is two chances to be wrong: the leaderboard is
+    the proof, so the proof has to agree with itself.
+    """
+    import re
+
+    readme = _read("README.md")
+    content = _read("website/src/data/content.ts")
+    rows = re.findall(r"\| `(ollama/[^`]+)` \| ([0-9.]+) \| ([0-9.]+s) \| (\d+) \|", readme)
+    assert rows, "the README has no benchmark rows"
+    for target, pass1, wall, tokens in rows:
+        assert f"target: '{target}'" in content, f"{target} is not on the site"
+        assert f"pass1: '{pass1}'" in content, f"{target} pass@1 disagrees"
+        assert f"wall: '{wall}'" in content, f"{target} wall time disagrees"
+        assert f"tokens: '{tokens}'" in content, f"{target} token count disagrees"
+
+
 def test_aur_pkgver_tracks_the_source(version):
     """A stale `pkgver` means `yay -Syu` keeps serving an old package, and the
     hardcoded sdist URL + sha256 pin a specific artifact that only matches its own

@@ -302,6 +302,25 @@ export const WHATNEW = [
   },
 ];
 
+export const BENCHMARKS: {
+  target: string;
+  pass1: string;
+  wall: string;
+  tokens: string;
+  cost: string;
+}[] = [
+  { target: 'ollama/llama3.2:3b', pass1: '0.50', wall: '8.2s', tokens: '91', cost: 'no API bill' },
+  { target: 'ollama/qwen2.5-coder:7b', pass1: '0.50', wall: '40.0s', tokens: '83', cost: 'no API bill' },
+  { target: 'ollama/qwen3:4b', pass1: '0.50', wall: '87.8s', tokens: '174', cost: 'no API bill' },
+];
+
+export const BENCHMARK_META = {
+  when: '2026-11-12',
+  machine: 'Ryzen 7 4800H · 7 GB RAM · GTX 1650 (4 GB)',
+  sample: 'one run per target, 4 tasks (the network task excluded)',
+  note: 'A task that needed a tool and never called one is a failure, whatever the answer says — an ungrounded answer is a guess.',
+};
+
 export const COMPARISON: { label: string; sidekick: string; typical: string }[] = [
   { label: 'Runs fully offline (Ollama)', sidekick: 'yes', typical: 'no' },
   { label: 'Voice input, transcribed on CPU', sidekick: 'yes', typical: 'no' },

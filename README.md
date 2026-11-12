@@ -391,6 +391,32 @@ last 100 prompts. An existing install is tightened the first time you run any
 `sk` command. This is a local filesystem control: it does not protect against
 root, and it does not stop anything the agent itself can read.
 
+## Benchmarks
+
+Measured, not folklore. A fixed task set — a greeting, a short-answer
+instruction, a grounding one-liner, a tool turn — run against real models on a
+4 GB box (Ryzen 7 4800H, 7 GB RAM, GTX 1650), 2026-11-12, Sidekick 0.33.0.
+
+| target | pass@1 | wall/task | tokens | cost |
+|---|---|---|---|---|
+| `ollama/llama3.2:3b` | 0.50 | 8.2s | 91 | no API bill |
+| `ollama/qwen2.5-coder:7b` | 0.50 | 40.0s | 83 | no API bill |
+| `ollama/qwen3:4b` | 0.50 | 87.8s | 174 | no API bill |
+
+**A task that needed a tool and never called one is a failure, whatever the
+answer says** — an ungrounded answer is a guess. That rule is why the two
+tool tasks are failures here and not passes: one model answered the grounding
+question without calling `sysinfo` (right by luck, not by measurement), and
+another narrated a file write it never performed. A local model has no API bill
+— the cost is electricity, which is not on the invoice.
+
+Methodology, per-task detail, and the caveats: [`docs/eval/results.md`](docs/eval/results.md).
+Regenerate it yourself:
+
+```bash
+python3 docs/probe-evals.py --compare --repeat 3
+```
+
 ## Tests
 
 ```bash
