@@ -158,3 +158,6 @@ GitHub auto-generates release notes from merge subjects, so write them as
 - [ ] After merge: release workflow success, PyPI shows the version,
       GitHub Release exists with artifacts, and the website is deployed to
       <https://faisal-fayaz.github.io/sidekick/>.
+- [ ] The install smoke test passes (the `smoke` workflow): the published
+      artifact installs, `sk --version` matches, `sk doctor` runs, one offline
+      turn succeeds, and the AUR pin matches what PyPI published.

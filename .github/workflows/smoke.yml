@@ -1,0 +1,104 @@
+name: smoke
+
+# Per-release install smoke test (#443).
+#
+# The release workflow publishes to PyPI. That is not the same as "a user can
+# install it and use it": a broken wheel, a missing dependency, or a stale AUR
+# pin only shows up when somebody tries.
+#
+# This job installs the published artifact the way a user would and uses it.
+# It runs when the release workflow finishes, and on demand for any version.
+#
+# The AUR package itself is built and installed by the AUR, not here — but the
+# pin it is built from has to be right, so the pin is checked against what
+# PyPI actually published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to smoke (e.g. 0.33.0). Empty = the pin in the AUR PKGBUILD."
+        required: false
+        default: ""
+  workflow_run:
+    workflows: ["release"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    # A release that failed has nothing to smoke; the dispatch path always runs.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve the version to smoke
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep -oP '^pkgver=\K.*' packaging/aur/PKGBUILD)
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::no version to smoke"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "smoking $VERSION"
+
+      # The install is the point: a fresh environment, the published wheel, the
+      # documented install command.
+      - name: Install the published artifact
+        run: uv tool install "sidekick-agent==${{ steps.version.outputs.version }}"
+
+      - name: The installed version is the published version
+        run: |
+          got="$($HOME/.local/bin/sk --version | awk '{print $2}')"
+          want="${{ steps.version.outputs.version }}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::installed $got, expected $want"
+            exit 1
+          fi
+          echo "installed $got"
+
+      - name: sk doctor runs
+        run: $HOME/.local/bin/sk doctor
+
+      # The greeting fast path needs no model, so this is a real turn with no
+      # network and no key: it proves the package runs, not just installs.
+      - name: One offline turn
+        run: |
+          out="$($HOME/.local/bin/sk run 'hi' --json)"
+          echo "$out"
+          echo "$out" | grep -q '"ok": true' || {
+            echo "::error::the offline turn did not succeed"
+            exit 1
+          }
+
+      # The AUR package is built from this pin. A pin that no longer matches
+      # what PyPI published serves an old package to `yay -Syu`.
+      - name: The AUR pin matches the published artifact
+        run: python3 packaging/check_aur_pin.py --version "${{ steps.version.outputs.version }}"
+
+      - name: Report the result
+        run: |
+          {
+            echo "## Install smoke test: ${{ steps.version.outputs.version }}"
+            echo ""
+            echo "- installed from PyPI: yes"
+            echo "- sk --version: ${{ steps.version.outputs.version }}"
+            echo "- sk doctor: ok"
+            echo "- one offline turn: ok"
+            echo "- AUR pin (pkgver, source URL, sha256): matches"
+          } >> "$GITHUB_STEP_SUMMARY"

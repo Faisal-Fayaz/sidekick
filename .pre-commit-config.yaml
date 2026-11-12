@@ -5,9 +5,9 @@ repos:
     rev: v0.16.9
     hooks:
       - id: ruff
-        args: [check, src, tests, docs/probe-evals.py]
+        args: [check, src, tests, docs/probe-evals.py, packaging/check_aur_pin.py]
       - id: ruff-format
-        args: [--check, src, tests, docs/probe-evals.py]
+        args: [--check, src, tests, docs/probe-evals.py, packaging/check_aur_pin.py]
   - repo: local
     hooks:
       - id: mypy-baseline
