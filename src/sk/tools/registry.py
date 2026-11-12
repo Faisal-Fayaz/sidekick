@@ -425,6 +425,36 @@ def missing_message(name: str, missing: list[str]) -> str:
 
 
 def dispatch_tool(name: str, args: dict) -> str:
+    """Run one tool call, behind the sandbox.
+
+    The sandbox check lives here, in the dispatcher, so a tool added later
+    cannot forget it: permission decides *whether* a call is allowed, the
+    sandbox decides *what* it can reach (#329). A denied call never reaches
+    the tool; an advisory-mode violation runs the tool and says so.
+    """
+    from ..sandbox import check_tool, get_policy, note_for
+
+    try:
+        policy, _roots = get_policy()
+    except Exception:
+        policy = None
+    try:
+        denial = check_tool(name, args, policy=policy)
+    except Exception:
+        denial = None
+    if denial and policy is not None and policy.enforcing:
+        return denial
+    result = _dispatch_builtin(name, args)
+    try:
+        note = note_for(policy, denial) if policy is not None else ""
+    except Exception:
+        note = ""
+    if note:
+        return f"{result}\n{note}" if result else note
+    return result
+
+
+def _dispatch_builtin(name: str, args: dict) -> str:
     missing = missing_required(name, args)
     if missing:
         return missing_message(name, missing)

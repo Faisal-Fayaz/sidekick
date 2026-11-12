@@ -104,7 +104,7 @@ next candidates.
 | Review pack is built-in only | Rules, budgets, include/ignore, and worth-it policy are not project-editable yet; `--explain`/`--check-config` are Phase 2 |
 | Default step budget is too low | Local and unknown models get 5 steps; named frontier profiles get 15; the Harbor adapter overrides to 40 |
 | Provider abstraction | One loop drives both providers through a backend seam (`sk.backends`); the Anthropic path no longer keeps its own copy of the loop (#312, #431) |
-| Security ceiling | No OS sandbox (#329); `shell curl` bypasses egress; hooks use `shell=True` (#268) |
+| Security ceiling | The declarative sandbox landed in `v0.33.0` (#329): `~/.sidekick/sandbox.toml` denies reads outside the roots and network access from the shell. What a program does at runtime is still beyond a policy that reads command text, so OS-level isolation (bubblewrap / Seatbelt) is the remaining work; hooks still use `shell=True` (#268) |
 | Maintainability debt | `agent.py` is 2,851 lines; TUI 1,880; broad excepts and lenient type gates (#270) |
 | Docs freshness is manual | Version, roadmap, hero count, and AUR pins are release-checklist items; prose still needs review each release |
 
