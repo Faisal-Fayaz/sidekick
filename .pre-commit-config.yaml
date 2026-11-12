@@ -5,9 +5,9 @@ repos:
     rev: v0.16.9
     hooks:
       - id: ruff
-        args: [check, src, tests]
+        args: [check, src, tests, docs/probe-evals.py]
       - id: ruff-format
-        args: [--check, src, tests]
+        args: [--check, src, tests, docs/probe-evals.py]
   - repo: local
     hooks:
       - id: mypy-baseline
