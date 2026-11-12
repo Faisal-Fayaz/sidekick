@@ -37,6 +37,15 @@ def _root(path: str = "") -> str:
     return os.getcwd()
 
 
+def run_git(root: str, *args: str, timeout: float = 30.0) -> tuple[int, str, str]:
+    """Run git with argv. Never raises. Returns (code, stdout, stderr).
+
+    Public so the CLI can prepare a pull request with the same git the tools
+    use — one implementation, one set of rules.
+    """
+    return _git(root, *args, timeout=timeout)
+
+
 def _git(root: str, *args: str, timeout: float = 30.0) -> tuple[int, str, str]:
     """Run git with argv. Never raises. Returns (code, stdout, stderr)."""
     try:
