@@ -29,6 +29,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,18 +53,69 @@ def _is_macos() -> bool:
     return sys.platform == "darwin" or os.uname().sysname == "Darwin"
 
 
-def detect() -> Enforcement:
-    """The OS enforcement available here. Never raises."""
+_probe_cache: dict[str, tuple[bool, str]] = {}
+
+
+def probe(backend: str) -> tuple[bool, str]:
+    """Does this backend actually work here?
+
+    A broken profile must not break the shell: if the sandbox cannot run a
+    trivial command, it cannot be trusted to run the user's. The answer is
+    cached — the probe runs once per process.
+    """
+    cached = _probe_cache.get(backend)
+    if cached is not None:
+        return cached
     try:
-        if shutil.which("bwrap"):
-            return Enforcement(available=True, backend="bwrap", reason="bubblewrap")
-        if _is_macos() and shutil.which("sandbox-exec"):
-            return Enforcement(available=True, backend="seatbelt", reason="Seatbelt")
-        return Enforcement(
-            available=False,
-            backend="",
-            reason="neither bubblewrap nor Seatbelt is installed",
-        )
+        if backend == "bwrap":
+            command = [
+                "bwrap",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev-bind",
+                "/dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--unshare-pid",
+                "--die-with-parent",
+                "--new-session",
+                "true",
+            ]
+        else:
+            command = ["sandbox-exec", "-p", "(version 1)(allow default)", "true"]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+        if result.returncode == 0:
+            answer = (True, "ok")
+        else:
+            detail = (result.stderr or result.stdout or "").strip()[:200]
+            answer = (False, detail or f"exit {result.returncode}")
+    except Exception as e:  # noqa: BLE001 - a failed probe is a reason, not a crash
+        answer = (False, f"{type(e).__name__}: {e}")
+    _probe_cache[backend] = answer
+    return answer
+
+
+def detect() -> Enforcement:
+    """The OS enforcement available here. Never raises.
+
+    A backend that is installed but does not work is not enforcement: the
+    answer is advisory, with the reason attached.
+    """
+    try:
+        failures: list[str] = []
+        for backend, binary in (("bwrap", "bwrap"), ("seatbelt", "sandbox-exec")):
+            if backend == "seatbelt" and not _is_macos():
+                continue
+            if not shutil.which(binary):
+                continue
+            ok, reason = probe(backend)
+            if ok:
+                return Enforcement(available=True, backend=backend, reason=reason)
+            failures.append(f"{binary}: {reason}")
+        reason = "; ".join(failures) or "neither bubblewrap nor Seatbelt is installed"
+        return Enforcement(available=False, backend="", reason=reason)
     except Exception as e:  # noqa: BLE001 - detection must never break a shell call
         return Enforcement(available=False, backend="", reason=f"detection failed: {e}")
 

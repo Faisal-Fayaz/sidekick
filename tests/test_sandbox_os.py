@@ -60,6 +60,27 @@ def test_detection_never_raises():
     assert enforcement.reason, "a detection without a reason says nothing"
 
 
+def test_a_backend_that_does_not_work_is_not_enforcement(monkeypatch):
+    """A broken profile must not break the shell — and must not be reported as
+    enforcement either."""
+    monkeypatch.setattr(sandbox_os, "probe", lambda backend: (False, "exit 1"))
+    sandbox_os._probe_cache.clear()
+    try:
+        enforcement = sandbox_os.detect()
+        assert enforcement.available is False
+        assert "does not work" in enforcement.reason or "exit 1" in enforcement.reason
+    finally:
+        sandbox_os._probe_cache.clear()
+
+
+def test_the_probe_runs_the_backend_before_trusting_it():
+    """The enforcement is only claimed after the sandbox has run something."""
+    if not shutil.which("bwrap"):
+        pytest.skip("bubblewrap is not installed")
+    ok, reason = sandbox_os.probe("bwrap")
+    assert ok is True, reason
+
+
 def test_detection_finds_bubblewrap_when_it_is_installed():
     if not shutil.which("bwrap"):
         pytest.skip("bubblewrap is not installed")
@@ -77,18 +98,28 @@ def test_a_machine_without_the_tooling_is_advisory_not_broken():
 # --- command construction --------------------------------------------------
 
 
+def _resolved(path: str) -> str:
+    """The path as the sandbox sees it: symlinks resolved.
+
+    macOS resolves /tmp to /private/tmp, and the sandbox binds the resolved
+    path — the tests have to speak the same language as the implementation.
+    """
+    return str(Path(path).resolve())
+
+
 def test_bubblewrap_binds_the_filesystem_read_only():
     cmd = sandbox_os.bwrap_command("echo hi", write_roots=["/tmp/x"], cwd="/tmp")
     assert cmd.startswith("bwrap ")
     assert "--ro-bind / /" in cmd
-    assert "--bind /tmp/x /tmp/x" in cmd
+    assert f"--bind {_resolved('/tmp/x')} {_resolved('/tmp/x')}" in cmd
 
 
 def test_the_tmpfs_comes_before_the_binds():
     """Otherwise a root under /tmp is shadowed by the fresh tmpfs and the
     process cannot see its own working directory."""
+    root = _resolved("/tmp/x")
     cmd = sandbox_os.bwrap_command("echo hi", write_roots=["/tmp/x"], cwd="/tmp/x")
-    assert cmd.index("--tmpfs /tmp") < cmd.index("--bind /tmp/x /tmp/x")
+    assert cmd.index("--tmpfs /tmp") < cmd.index(f"--bind {root} {root}")
 
 
 def test_bubblewrap_denies_the_network_when_no_host_is_allowed():
@@ -100,13 +131,14 @@ def test_bubblewrap_denies_the_network_when_no_host_is_allowed():
 
 def test_the_working_directory_is_always_bound():
     cmd = sandbox_os.bwrap_command("echo hi", write_roots=[], cwd="/home/me/project")
-    assert "--bind /home/me/project /home/me/project" in cmd
+    root = _resolved("/home/me/project")
+    assert f"--bind {root} {root}" in cmd
 
 
 def test_the_seatbelt_profile_denies_by_default():
     profile = sandbox_os.seatbelt_profile(write_roots=["/tmp/x"], cwd="/tmp")
     assert profile.splitlines()[1] == "(deny default)"
-    assert '(allow file-write* (subpath "/tmp/x"))' in profile
+    assert f'(allow file-write* (subpath "{_resolved("/tmp/x")}"))' in profile
     assert "(allow network*)" not in profile
 
 
@@ -188,11 +220,11 @@ def test_the_shell_tool_wraps_the_command_when_the_policy_is_enforced(tmp_path, 
     sandbox.reset_cache()
 
     wrapped, backend = shell_mod._sandbox_wrap("echo hi", str(project))
-    if not shutil.which("bwrap"):
+    if not sandbox_os.detect().available:
         assert wrapped == "echo hi"
         return
-    assert backend == "bwrap"
-    assert "bwrap" in wrapped
+    assert backend in ("bwrap", "seatbelt")
+    assert backend in wrapped
 
 
 def test_an_advisory_policy_does_not_wrap(tmp_path, monkeypatch):
