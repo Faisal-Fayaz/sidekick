@@ -383,9 +383,9 @@ def doctor(
             console.print(_hint)
     # The sandbox is a separate plane from the approval gate: the mode has to
     # be visible, or "why was my command refused" has no answer (#329).
-    from sk.sandbox import describe as sandbox_describe
+    from sk.sandbox import status_line as sandbox_status
 
-    console.print(f"sandbox={sandbox_describe()}")
+    console.print(f"sandbox={sandbox_status()}")
     # quick tool sanity
     from sk.tools import tool_exec
 
@@ -605,10 +605,10 @@ def config(
         cfg.save()
     if show or not changed:
         profile = os.getenv("SIDEKICK_PROFILE", "")
-        from sk.sandbox import describe as sandbox_describe
+        from sk.sandbox import status_line as sandbox_status
 
         console.print(
-            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}\nreasoning_effort={cfg.reasoning_effort}\ntheme={cfg.theme}\nsandbox={sandbox_describe()}"
+            f"provider={cfg.provider}\nmodel={cfg.model}\nbase_url={cfg.effective_base_url()}\napi_key={Config.mask(cfg.effective_api_key())}\nmax_steps={cfg.max_steps}\ntemp={cfg.temperature}\nspend_cap_usd={cfg.spend_cap_usd:.2f}\nreasoning_effort={cfg.reasoning_effort}\ntheme={cfg.theme}\nsandbox={sandbox_status()}"
             + (f"\nprofile={profile}" if profile else "")
         )
         if cfg.project_note():

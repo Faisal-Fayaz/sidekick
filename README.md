@@ -97,7 +97,7 @@ without handing an unattended model the keys.
 | Verify changes | Automatic post-edit syntax + lint/typecheck verification, `sk check` / `sk check --changed` for the full suite, and `sk review --verify` for a diff |
 | Automate | `sk run --json`, `sk run --bg`, and `sk jobs` |
 | Extend | skills, custom slash commands, declarative `TOOLS.md` tools, MCP |
-| Stay in control | approval cards, hard refusals, egress allowlist, a declarative sandbox for what a command may reach, audit ledger |
+| Stay in control | approval cards, hard refusals, egress allowlist, a declarative sandbox (plus bubblewrap/Seatbelt when installed) for what a command may reach, audit ledger |
 
 The TUI and plain-text REPL share every command, so a scripted fallback and an
 interactive session behave the same way.

@@ -14,6 +14,7 @@ adversarial one. See #298 and ROADMAP "Security threat model" (#113).
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import threading
@@ -75,6 +76,32 @@ def irreversible_refusal(name: str, args: dict) -> str | None:
     return None
 
 
+def _sandbox_wrap(cmd: str, cwd: str = "") -> tuple[str, str]:
+    """Wrap a command in the OS sandbox, when the policy asks for it.
+
+    The tool layer always enforces the policy; this adds the kernel boundary
+    (bubblewrap, or Seatbelt on macOS) when the machine has one. It never fails
+    closed: without the tooling the command runs as it always has, and
+    ``sk doctor`` reports the OS enforcement as advisory.
+    """
+    try:
+        from ..sandbox import get_policy
+        from ..sandbox_os import wrap_command
+
+        policy, roots = get_policy(cwd or "")
+        if policy.mode != "enforced":
+            return cmd, ""
+        write_roots = [str(p) for p in policy.write_roots] + [str(roots.project)]
+        return wrap_command(
+            cmd,
+            write_roots=write_roots,
+            cwd=cwd or os.getcwd(),
+            allow_network=bool(policy.allow_hosts),
+        )
+    except Exception:
+        return cmd, ""
+
+
 def tool_shell(cmd: str, timeout: int = 30, cwd: str = "") -> str:
     """General shell via bash -c. Approval-gated; catastrophic patterns hard-blocked.
 
@@ -84,6 +111,7 @@ def tool_shell(cmd: str, timeout: int = 30, cwd: str = "") -> str:
     blocked = _check_shell(cmd)
     if blocked:
         return blocked
+    cmd, _backend = _sandbox_wrap(cmd, cwd)
     timeout = max(5, min(int(timeout or 30), 120))
     # Bounded capture (#315): `yes` / `cat /dev/urandom` would otherwise buffer
     # gigabytes in this process before the 6000-char cut below ever applies.

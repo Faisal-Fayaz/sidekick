@@ -69,6 +69,38 @@ added later cannot forget the boundary:
   governed by the egress allowlist (`sk egress`), which is already
   deny-by-default.
 
+## The OS layer
+
+The policy above is enforced by reading the command text. That is a floor, not
+a ceiling: a program that runs can do things the parser never saw. So when the
+machine can enforce it, the sandbox does:
+
+| platform | tool | what it enforces |
+|---|---|---|
+| Linux | `bwrap` (bubblewrap) | the declared roots are writable, everything else is read-only; no network at all unless a host is allowed |
+| macOS | `sandbox-exec` (Seatbelt) | the same, as a Seatbelt profile |
+| WSL2 | the Linux path | |
+| native Windows | not supported | |
+
+**It never fails closed.** bubblewrap and Seatbelt are optional; an install
+without them keeps the policy enforced where it can be (the tool layer), and
+`sk doctor` says the OS enforcement is *advisory*:
+
+```bash
+sk doctor     # sandbox=enforced (read=0 write=0, network=off, policy=…) · os enforcement: enforced
+```
+
+What the OS layer enforces is the **write** boundary: the declared roots are
+writable, everything else is read-only. The read boundary stays with the
+policy, because hiding the filesystem from a process breaks it in ways that are
+hard to explain — a python that cannot see `/usr`, a git that cannot see its
+config — and buys little that the policy does not already do.
+
+Network isolation is total: when the policy allows no host, the process gets
+no network at all. Selective allow-listing under a network namespace needs a
+relay, which is not implemented; when hosts *are* allowed the network is left
+alone and the egress policy governs it.
+
 ## What it does not reach
 
 The shell check reads the command string. It sees the paths and hosts it can
@@ -89,11 +121,13 @@ documented ceiling of Phase 1. Two later phases close it:
 
 Until then, treat the sandbox as a raised floor, not a sealed room. The
 approval gate still matters: it is what stops an unattended model from
-running anything at all.
+running anything at all. The OS layer above raises it further — it stops a
+program that *is* running from writing outside the roots — but it cannot stop
+a program from reading what the policy lets it read.
 
 ## Platform support
 
-| Platform | Phase 1 (policy file) | Phase 2 (OS enforcement) |
+| Platform | Policy file | OS enforcement |
 |---|---|---|
 | Linux | supported | `bwrap` (bubblewrap) |
 | macOS | supported | `sandbox-exec` (Seatbelt) |
