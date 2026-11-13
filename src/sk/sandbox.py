@@ -326,7 +326,7 @@ def load_policy(
 
 # --- the effective policy for a working directory ---------------------------
 
-_cache: dict[str, tuple[SandboxPolicy, _Roots]] = {}
+_cache: dict[tuple[str, str, int], tuple[SandboxPolicy, _Roots]] = {}
 
 
 def reset_cache() -> None:
@@ -345,9 +345,20 @@ def _git_root(cwd: str) -> str:
 
 
 def get_policy(cwd: str = "") -> tuple[SandboxPolicy, _Roots]:
-    """The policy and resolved roots for `cwd`. Cached per directory."""
+    """The policy and resolved roots for `cwd`.
+
+    Cached per directory, but the cache key includes the policy file and its
+    modification time: a cached policy that outlives the file it came from
+    would keep enforcing rules the user has since deleted.
+    """
     key = os.path.abspath(cwd or os.getcwd())
-    hit = _cache.get(key)
+    try:
+        path = policy_path()
+        stamp = path.stat().st_mtime_ns if path.is_file() else 0
+        cache_key = (key, str(path), stamp)
+    except Exception:
+        cache_key = (key, "", 0)
+    hit = _cache.get(cache_key)
     if hit is not None:
         return hit
     project = _git_root(key)
@@ -358,7 +369,7 @@ def get_policy(cwd: str = "") -> tuple[SandboxPolicy, _Roots]:
         write=tuple({Path(project), *(Path(p) for p in policy.write_roots)}),
         deny=tuple(Path(p) for p in policy.deny),
     )
-    _cache[key] = (policy, roots)
+    _cache[cache_key] = (policy, roots)
     return policy, roots
 
 
@@ -719,3 +730,35 @@ def describe(policy: SandboxPolicy | None = None) -> str:
         except Exception:
             return "off (no policy file)"
     return policy.describe()
+
+
+def enforcement_mode() -> str:
+    """The effective enforcement: enforced, advisory, or off.
+
+    ``enforced`` means the kernel is enforcing the write boundary as well as
+    the policy. ``advisory`` means the policy is enforced where it can be (the
+    tool layer) and the OS layer is not available or was asked not to.
+    """
+    try:
+        policy, _roots = get_policy()
+    except Exception:
+        return "off"
+    if not policy.active or policy.mode == "off":
+        return "off"
+    if policy.mode == "advisory":
+        return "advisory"
+    try:
+        from .sandbox_os import detect
+
+        return "enforced" if detect().available else "advisory"
+    except Exception:
+        return "advisory"
+
+
+def status_line() -> str:
+    """The line `sk doctor` and `sk config --show` print."""
+    base = describe()
+    mode = enforcement_mode()
+    if mode == "off":
+        return base
+    return f"{base} · os enforcement: {mode}"
