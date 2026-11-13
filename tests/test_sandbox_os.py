@@ -224,7 +224,8 @@ def test_the_shell_tool_wraps_the_command_when_the_policy_is_enforced(tmp_path, 
         assert wrapped == "echo hi"
         return
     assert backend in ("bwrap", "seatbelt")
-    assert backend in wrapped
+    # The command names the binary, which is not the backend's name.
+    assert ("bwrap" if backend == "bwrap" else "sandbox-exec") in wrapped
 
 
 def test_an_advisory_policy_does_not_wrap(tmp_path, monkeypatch):
@@ -270,7 +271,7 @@ def test_the_enforcement_mode_is_reported(tmp_path, monkeypatch):
     sandbox.reset_cache()
     mode = sandbox.enforcement_mode()
     assert mode in ("enforced", "advisory")
-    if shutil.which("bwrap"):
+    if sandbox_os.detect().available:
         assert mode == "enforced"
     else:
         assert mode == "advisory"
