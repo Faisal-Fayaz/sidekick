@@ -24,6 +24,7 @@ from .commands import (  # noqa: F401
     pr,
     review,
     run,
+    serve,
     skills,
     system,
     test,
