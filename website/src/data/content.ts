@@ -187,6 +187,18 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'sandbox · OS layer',
+    title: 'A boundary the kernel enforces',
+    body: 'With bubblewrap (Linux) or Seatbelt (macOS) present, the shell command runs with the declared roots writable and everything else read-only — and with no network at all unless a host is allowed. The tooling is optional, and probed before it is trusted.',
+    link: '/docs#safety',
+  },
+  {
+    tag: 'sk explain',
+    title: 'The answer is in the code',
+    body: 'sk explain reads the repository and answers with file:line citations, in read-only mode — and is told that "the code does not say" is a correct answer.',
+    link: '/docs#checks',
+  },
+  {
     tag: 'sk fix · sk test · sk pr',
     title: 'The developer ladder, rung by rung',
     body: 'sk fix investigates, changes, and proves the fix with a verdict. sk test runs the project\u2019s tests through the check pipeline. sk pr prepares a pull request whose text is derived from the commits and the diff — and pushes nothing without approval.',
@@ -404,16 +416,17 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.36.0 — OS isolation and the explain rung',
+    v: 'v0.37.0 — the surfaces',
     items: [
-      'bubblewrap / Seatbelt enforcement when present',
-      'Network namespaces: egress cannot happen at all',
-      'sk explain — a grounded explanation of code or a diff',
+      'The Python SDK: the same harness as a library',
+      'A localhost HTTP API for the tools that deserve one',
+      'The daemon as a teammate: briefs and a dirty-repo watch',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.36.0 — OS isolation and the explain rung: bubblewrap/Seatbelt enforcement when present, network denied unless a host is allowed, and sk explain — a grounded, read-only explanation with file:line citations (#440, #461)',
   'v0.35.0 — the developer ladder: sk fix (with a verdict), sk test, sk pr, and git as typed tools — status, diff, branch, commit, push — where the writes ask and a protected branch is never pushed (#451–#454)',
   'v0.34.0 — evals, benchmark, adoption: golden files for the busiest turns, a live harness with pass@k, a published benchmark on a 4 GB box, and a release smoke test that installs what was published (#112, #283, #157, #188, #443)',
   'v0.33.0 — provider + platform hardening: one agent loop behind a provider seam, a cross-provider parity table, a required CI scan job (pip-audit + bandit), and a declarative sandbox for what a command may reach (#312, #271, #329)',
