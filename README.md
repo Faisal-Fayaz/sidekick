@@ -292,7 +292,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (27 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see [`docs/mcp-client.md`](docs/mcp-client.md)) |
-| `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules) |
+| `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules). It watches the repositories and says something when they change — the branch, the files, how far it is from its upstream — and stays quiet when nothing has |
 
 ### Setup and system
 
