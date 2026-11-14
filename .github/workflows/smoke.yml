@@ -59,28 +59,24 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "smoking $VERSION"
 
-      # PyPI's index lags the upload by a few seconds, and the release
-      # workflow finishes before that. Without this wait, the smoke test fails
-      # on an artifact that exists — which is how the first release of this
-      # job failed.
-      - name: Wait for the artifact to appear on PyPI
-        run: |
-          for _ in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/sidekick-agent/${{ steps.version.outputs.version }}/json")
-            if [ "$code" = "200" ]; then
-              echo "sidekick-agent ${{ steps.version.outputs.version }} is on PyPI"
-              exit 0
-            fi
-            echo "waiting for PyPI (HTTP $code)..."
-            sleep 30
-          done
-          echo "::error::the artifact never appeared on PyPI"
-          exit 1
-
       # The install is the point: a fresh environment, the published wheel, the
       # documented install command.
+      #
+      # PyPI's index lags the upload, and the release workflow finishes before
+      # that. The resolver — not the JSON API — is what has to see the version,
+      # so the install itself is retried: asking the JSON API is not the same
+      # question, and a green JSON response once hid a failed install.
       - name: Install the published artifact
-        run: uv tool install "sidekick-agent==${{ steps.version.outputs.version }}"
+        run: |
+          for _ in $(seq 1 20); do
+            if uv tool install "sidekick-agent==${{ steps.version.outputs.version }}"; then
+              exit 0
+            fi
+            echo "the artifact is not resolvable yet; retrying..."
+            sleep 30
+          done
+          echo "::error::the published artifact never became installable"
+          exit 1
 
       - name: The installed version is the published version
         run: |
