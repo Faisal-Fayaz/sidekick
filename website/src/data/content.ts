@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'the SDK · sk serve',
+    title: 'The same core, two ways in',
+    body: 'sk.sdk is the importable API — the same turn loop, tools, gate and ledger the CLI uses. sk serve puts it behind a localhost HTTP surface that refuses to bind beyond this machine and always asks for a token.',
+    link: '/docs#safety',
+  },
+  {
     tag: 'sandbox · OS layer',
     title: 'A boundary the kernel enforces',
     body: 'With bubblewrap (Linux) or Seatbelt (macOS) present, the shell command runs with the declared roots writable and everything else read-only — and with no network at all unless a host is allowed. The tooling is optional, and probed before it is trusted.',
@@ -416,16 +422,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.37.0 — the surfaces',
+    v: 'v0.38.0 — the regulated install',
     items: [
-      'The Python SDK: the same harness as a library',
-      'A localhost HTTP API for the tools that deserve one',
-      'The daemon as a teammate: briefs and a dirty-repo watch',
+      'An air-gapped bundle with a verified manifest',
+      'Selective host allow-listing inside a network namespace',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.37.0 — the surfaces: the daemon as a teammate (grounded and quiet), an importable Python SDK, and a localhost HTTP surface bound to this machine and behind a token (#470, #110)',
   'v0.36.0 — OS isolation and the explain rung: bubblewrap/Seatbelt enforcement when present, network denied unless a host is allowed, and sk explain — a grounded, read-only explanation with file:line citations (#440, #461)',
   'v0.35.0 — the developer ladder: sk fix (with a verdict), sk test, sk pr, and git as typed tools — status, diff, branch, commit, push — where the writes ask and a protected branch is never pushed (#451–#454)',
   'v0.34.0 — evals, benchmark, adoption: golden files for the busiest turns, a live harness with pass@k, a published benchmark on a 4 GB box, and a release smoke test that installs what was published (#112, #283, #157, #188, #443)',

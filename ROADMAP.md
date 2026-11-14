@@ -27,17 +27,16 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.37.0 (the surfaces)
+## Next — v0.38.0 (the regulated install)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **The Python SDK** — the same harness as a library, plus a localhost HTTP API for the tools that deserve one (#110).
-- **The daemon as a teammate** — scheduled briefs and a dirty-repo watch that says something only when it matters (#470).
+- **The air-gapped bundle** — an offline install with vendored wheels and a verified manifest (#475).
+- **The network relay** — selective host allow-listing inside a network namespace (#467).
 
-Out of scope for now: the IDE extension, the air-gapped bundle, and the
-network relay for selectively allowed hosts (#467). Later versions remain
-tentative.
+Out of scope for now: the IDE extension, team memory and shared skills, and
+the Python SDK's remote mode. Later versions remain tentative.
 
 ## Later
 
@@ -179,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.37.0` — **the surfaces.** The daemon became a teammate: it names the branch, the files that changed and how far the branch is from its upstream, and it stays quiet when the repository has not moved (#470). `sk.sdk` is the importable API — the same turn loop, tools, gate and ledger the CLI uses, so an action taken by your program reads back the same way in `sk audit` — and `sk serve` puts that core behind a localhost HTTP surface that refuses to bind beyond this machine and always asks for a token (#110). Tests 1959 → 1989.
 - `v0.36.0` — **OS isolation and the explain rung.** The sandbox now has a second layer: with bubblewrap (Linux) or Seatbelt (macOS) present, the shell command runs with the declared roots writable and everything else read-only, and with no network at all unless a host is allowed. The tooling is optional and is probed before it is trusted — a broken profile reports as advisory rather than breaking the shell (#440). `sk explain` answers a question from the code, with file:line citations, in read-only mode, and is told that "the code does not say" is a correct answer (#461). Tests 1933 → 1959.
 - `v0.35.0` — **the developer ladder.** `sk fix` investigates a problem, changes the code under the approval gate, and reports the verification verdict — pass, fail, or unknown — so a change that did not verify exits 1 instead of shipping as "done" (#451). `sk test` runs the project's tests through the same check pipeline, using the declared test check or a detected one, and never reports a green suite it did not run (#452). `sk pr` prepares a pull request whose title and body are derived from the commits and the diff, and pushes nothing without approval (#453). Git became five typed tools — status, diff, branch, commit, push — where the command line is built by the tool, so there is nothing for a model to smuggle into the shell; the writes ask, and a push to a protected branch is refused (#454). 27 built-in tools. Tests 1878 → 1933.
 - `v0.34.0` — **evals, benchmark, adoption.** A golden-file suite locks the turns people actually see — the help reply, the grounding block, the refusals, the tool-call fallback, the review prompt — with volatile values masked so a golden cannot rot overnight (#112). A live harness runs the fixed task set against real models and reports speed, quality and cost, with pass@k over repeated samples (#283). The benchmark is published: on a 4 GB box the small local tiers all score pass@1 0.50, and the two tool tasks fail because the models answer without acting — which is exactly what an evidence-checked verdict is for (#157). The leaderboard is on the site and in the README, and a test keeps the two copies in agreement (#188). A release smoke test now installs the published artifact, runs one offline turn, and checks the AUR pin against what PyPI published (#443). Tests 1845 → 1878.
