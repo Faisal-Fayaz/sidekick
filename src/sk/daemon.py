@@ -581,6 +581,67 @@ def dirty_repos(projects: list[str]) -> list[str]:
     return dirty
 
 
+def repo_fingerprint(snapshot: dict) -> str:
+    """A stable fingerprint of what a repository looks like right now.
+
+    Two snapshots with the same fingerprint mean the same thing is true about
+    the repository, so there is nothing new to say.
+    """
+    parts = [
+        str(snapshot.get("branch") or ""),
+        str(snapshot.get("head") or ""),
+    ]
+    parts.extend(sorted(str(f) for f in (snapshot.get("files") or [])))
+    return "|".join(parts)
+
+
+def repo_watch(projects: list[str], state: dict | None = None) -> tuple[list[str], dict]:
+    """Say something about the repositories that changed. Returns (nudges, seen).
+
+    Quiet by default: a repository that is still dirty in the same way says
+    nothing the second time. A teammate that interrupts with nothing is worse
+    than no teammate.
+
+    Every nudge is grounded — the branch, the paths that changed, how far the
+    branch is from its upstream. It never narrates.
+    """
+    from .brief import git_snapshot
+
+    seen = dict((state or {}).get("repo_fingerprints") or {})
+    nudges: list[str] = []
+    for project in projects:
+        try:
+            snapshot = git_snapshot(project)
+        except Exception:
+            continue
+        if not snapshot.get("exists"):
+            continue
+        fingerprint = repo_fingerprint(snapshot)
+        if seen.get(project) == fingerprint:
+            continue  # nothing new: stay quiet
+        seen[project] = fingerprint
+        changed = list(snapshot.get("files") or [])
+        ahead = int(snapshot.get("ahead", 0) or 0)
+        behind = int(snapshot.get("behind", 0) or 0)
+        if not changed and not ahead and not behind:
+            continue  # clean and in sync: nothing to say
+        parts = [f"{project} [{snapshot.get('branch', '?')}]"]
+        if ahead or behind:
+            parts.append(f"{ahead} ahead, {behind} behind")
+        if changed:
+            parts.append(f"{len(changed)} changed")
+        detail = ""
+        if changed:
+            detail = ", ".join(changed[:3])
+            if len(changed) > 3:
+                detail += f", +{len(changed) - 3} more"
+        nudge = f"repo: {' · '.join(parts)}"
+        if detail:
+            nudge += f" — {detail}"
+        nudges.append(nudge)
+    return nudges, seen
+
+
 def check_once(
     state: dict | None = None, projects: list[str] | None = None, disk_warn: int = 90
 ) -> tuple[list[str], dict]:
@@ -606,8 +667,11 @@ def check_once(
         nudges.append(f"shell failure #{fid} (exit {rc}): {safe} @ {cwd} — try `sk oops`")
     state["last_shell_id"] = max_id
 
-    for d in dirty_repos(projs):
-        nudges.append(f"dirty repo: {d}")
+    # The watch is grounded and quiet: it names the files and the branch, and
+    # it stays silent when the repository has not changed since the last look.
+    watch, seen = repo_watch(projs, state)
+    nudges.extend(watch)
+    state["repo_fingerprints"] = seen
 
     state["last_run"] = time.time()
     return (nudges, state)

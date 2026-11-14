@@ -17,19 +17,68 @@ def _run(argv: list[str], timeout: int = 8) -> str:
         return f"Error: {e}"
 
 
+def _run_raw(argv: list[str], timeout: int = 8) -> str:
+    """Like `_run`, but without stripping the leading whitespace.
+
+    `git status --porcelain` encodes the state in the first two columns, so
+    stripping the output loses the column and with it the file name.
+    """
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return r.stdout or ""
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def _changed_files(status: str) -> list[str]:
+    """The paths in a porcelain status line.
+
+    The format is ``XY <path>``, and a rename reads ``R  old -> new`` — the
+    new name is the one that matters.
+    """
+    out: list[str] = []
+    for line in status.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:].strip() if len(line) > 3 else ""
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if path:
+            out.append(path)
+    return out
+
+
 def git_snapshot(path: str) -> dict:
+    """A deterministic snapshot of a repository.
+
+    Everything here is a fact about the repository, not a guess: the branch, the
+    head commit, the paths that changed, and how far the branch is from its
+    upstream. A teammate that reports "3 files changed" is useful; one that
+    reports "3 files changed" every ten minutes is noise.
+    """
     p = str(Path(path).expanduser())
     if not Path(p).exists():
         return {"path": path, "exists": False}
     branch = _run(["git", "-C", p, "branch", "--show-current"])
-    status = _run(["git", "-C", p, "status", "--porcelain"])
+    status = _run_raw(["git", "-C", p, "status", "--porcelain"])
     log = _run(["git", "-C", p, "log", "--oneline", "-3"])
-    n_changed = len([ln for ln in status.splitlines() if ln.strip()])
+    head = _run(["git", "-C", p, "rev-parse", "--short", "HEAD"])
+    files = _changed_files(status)
+    ahead = behind = 0
+    counts = _run(["git", "-C", p, "rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+    if counts and not counts.startswith("Error:"):
+        bits = counts.replace("\t", " ").split()
+        if len(bits) == 2 and all(b.isdigit() for b in bits):
+            behind, ahead = int(bits[0]), int(bits[1])
     return {
         "path": path,
         "exists": True,
         "branch": branch or "(detached)",
-        "changed": n_changed,
+        "changed": len(files),
+        "files": files,
+        "head": head,
+        "ahead": ahead,
+        "behind": behind,
         "status": status[:800],
         "log": log[:800],
     }
@@ -98,7 +147,15 @@ def format_brief_text(data: dict) -> str:
         out += ["", f"⚠ disk {m.group(1)}% full — prune models with `sk models prune <id>`"]
     for s in data.get("projects", []):
         if s.get("exists") and int(s.get("changed", 0) or 0) > 0:
-            out.append(f"⚠ {s['path']}: {s['changed']} uncommitted")
+            files = s.get("files") or []
+            detail = ", ".join(files[:3])
+            if len(files) > 3:
+                detail += f", +{len(files) - 3} more"
+            branch = s.get("branch", "?")
+            drift = ""
+            if s.get("ahead") or s.get("behind"):
+                drift = f", {s.get('ahead', 0)} ahead/{s.get('behind', 0)} behind"
+            out.append(f"⚠ {s['path']} [{branch}]: {s['changed']} uncommitted{drift} — {detail}")
     if data.get("todos"):
         out += ["", "**open todos**"] + [f"- ○ #{i} {t}" for i, t, _ in data["todos"][:5]]
     if data.get("memories"):
