@@ -1,9 +1,10 @@
 # Sidekick Developer Plan
 
-**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`; evals, benchmark and adoption shipped in `v0.34.0`; the developer ladder shipped in `v0.35.0`; OS isolation and the explain rung shipped in `v0.36.0`
+**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`; evals, benchmark and adoption shipped in `v0.34.0`; the developer ladder shipped in `v0.35.0`; OS isolation and the explain rung shipped in `v0.36.0`; the surfaces shipped in `v0.37.0`
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Revised:** 2026-11-14 — OS isolation and the explain rung shipped: the sandbox has an OS layer (bubblewrap / Seatbelt) and `sk explain` answers from the code
+**Revised:** 2026-11-14 — the surfaces shipped: `sk.sdk`, `sk serve`, and the daemon as a teammate
+**Earlier revision:** 2026-11-14 — OS isolation and the explain rung shipped: the sandbox has an OS layer (bubblewrap / Seatbelt) and `sk explain` answers from the code
 **Earlier revision:** 2026-11-12 — the developer ladder shipped: `sk fix`, `sk test`, `sk pr`, and git as typed tools are on `main`
 **Earlier revision:** 2026-11-12 — evals, benchmark and adoption shipped: golden files for the busiest turns, a live harness with pass@k, a published benchmark, and a release smoke test are on `main`
 **Earlier revision:** 2026-11-12 — provider + platform hardening shipped: one agent loop behind a provider seam, a required CI scan job, and the declarative sandbox are on `main`
@@ -17,7 +18,8 @@
 [v0.33.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/8),
 [v0.34.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/9), and
 [v0.35.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/10),
-and [v0.36.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/11)
+[v0.36.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/11), and
+[v0.37.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/12)
 (all closed). Items are listed in §9.
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
@@ -915,9 +917,10 @@ If the honest answer is "parity with cloud agents", it waits.
 - `v0.34.0` — shipped: evals, benchmark, adoption.
 - `v0.35.0` — shipped: the developer ladder.
 - `v0.36.0` — shipped: OS isolation and the explain rung.
-- `v0.37.0` — next: the surfaces.
+- `v0.37.0` — shipped: the surfaces.
+- `v0.38.0` — next: the regulated install.
 
-`v0.37.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
+`v0.38.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
 
 ---
 
@@ -1050,7 +1053,7 @@ Items 1–7 shipped in `v0.31.0` (PR #411); items 8–10 shipped in `v0.32.0`
 13. Update README/website/portfolio; add `SECURITY.md` and issue templates.
 14. Developer-ladder spikes (post-v0.31): `sk fix`, `sk test`, and `sk pr`,
     each gated by the promotion test in §5.1 — shipped in `v0.35.0` (#451–#454).
-    `sk explain` shipped in `v0.36.0` (#461).
+    `sk explain` shipped in `v0.36.0`; the surfaces shipped in `v0.37.0` (#461).
 
 ---
 
