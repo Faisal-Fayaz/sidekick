@@ -14,6 +14,7 @@ from .base import _cfg, app, console
 # side-effect imports: register all @app.command()s
 from .commands import (  # noqa: F401
     auth,
+    bundle,
     chat,
     check,
     daemon,
@@ -34,6 +35,9 @@ from .commands import (  # noqa: F401
 from .commands.auth import _ask_key, _connect_flow, _pick_model_name, _pick_provider
 from .commands.system import _code_version, _full_version
 from .resolve import _resolve_model
+
+# the bundle is a sub-app: `sk bundle build|verify|install`
+app.add_typer(bundle.bundle_app, name="bundle")
 
 __all__ = [
     "app",

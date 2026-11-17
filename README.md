@@ -168,6 +168,29 @@ uv tool install -e ".[voice]"
 sk doctor
 ```
 
+**Air-gapped (no network on the target machine):**
+
+```bash
+# on a connected machine with the same OS, architecture and Python version
+sk bundle build --out /media/bundle
+sk bundle verify --in /media/bundle
+
+# on the disconnected machine
+sk bundle install --in /media/bundle --into /opt/sidekick
+/opt/sidekick/bin/sk --version
+```
+
+The bundle holds the Sidekick wheel, every locked dependency as a wheel, the
+skills, and the documentation — 61 files, about **10 MB** for this release.
+A manifest records the sha256 and size of every file; a changed, missing or
+undeclared file makes verification fail, and the installer refuses to install
+an unverified bundle. It installs with
+`--no-index --find-links <bundle>/wheels`, so no request leaves the box.
+
+Model weights are **not** included — they are large and have their own
+distribution path. The bundle is built for the machine it will be installed
+on: same OS, architecture and Python version.
+
 ## Voice
 
 ```bash
@@ -255,6 +278,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | `sk run "task" [--yes] [--plan] [--read-only] [--deny LIST] [--model auto\|fast\|smart\|name] [--json] [--bg] [--allow LIST] [--session S] [--no-stream] [--trust-project-checks] [--verify-full]` | Single-shot agent run. Auto-routes the model; `--json` emits one machine-readable document + exit codes; `--bg` detaches and notifies; `--allow shell:pytest,write_file` skips prompts for listed tools. After edits it runs syntax checks plus trusted lint/typecheck checks; `--verify-full` runs every configured check |
 | `sk review [--base REF\|--staged\|--commit SHA\|--pr N] [--path P] [--intent TEXT] [--assess\|--no-assess] [--post\|--no-post] [--json\|--sarif] [--fail-on LEVEL] [--explain\|--check-config] [--trust-project-rules] [--verify [--yes\|--allow LIST\|--deny LIST]] [--disable RULE] [--severity RULE=LEVEL]` | Evidence-backed review of a diff or PR. Findings need file:line evidence; the worth-it assessment is advisory. Policy comes from layered review packs (`~/.sidekick/review.toml`, then a trusted repo pack). `--pr` auto-posts comments to GitHub (via `gh`) or Bitbucket when credentials exist; it never edits the branch. `--verify` adds syntax + configured lint/typecheck verification for the reviewed files and exits `1` on `fail`/`unknown` |
 | `sk fix "<problem>" [--json] [--yes] [--allow LIST] [--deny LIST] [--trust-project-checks] [--verify-full] [--session S]` | Investigate and fix a problem, then prove it: the agent works under the approval gate, its edits are checkpointed, and the changed files are verified (syntax + the project's lint/typecheck checks). Reports the verdict — pass, fail, or unknown — and exits `1` when the change did not verify |
+| `sk bundle build --out DIR` / `sk bundle verify --in DIR` / `sk bundle install --in DIR --into DIR` | Build a verified air-gapped bundle and install it offline (`--no-index` from the bundled wheels only). Built for this machine's OS, arch and Python version |
 | `sk serve [--host 127.0.0.1] [--port 8787] [--read-only] | A localhost HTTP surface over the same agent loop, tools, and audit trail. Loopback only — never `0.0.0.0` — and always behind a token |
 | `sk explain "<question>" [--json] [--session S] | Explain the code, grounded in it: the agent reads the repository and answers with `file:line` citations, saying plainly when the code does not answer the question. Read-only — no write and no shell is reachable from it |
 | `sk pr [--base REF] [--title T] [--body B] [--remote NAME] [--push] [--yes] [--json] | Prepare a pull request from the working tree. The title and body are derived from the branch's commits and the diff — they cannot claim work that did not happen. With `--push` the branch is pushed and the pull request opened through `gh`, both after a confirmation; protected branches are never pushed |
