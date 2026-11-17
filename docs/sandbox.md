@@ -97,9 +97,24 @@ hard to explain — a python that cannot see `/usr`, a git that cannot see its
 config — and buys little that the policy does not already do.
 
 Network isolation is total: when the policy allows no host, the process gets
-no network at all. Selective allow-listing under a network namespace needs a
-relay, which is not implemented; when hosts *are* allowed the network is left
-alone and the egress policy governs it.
+no network at all. When the policy **does** name hosts, a relay is the only
+route out:
+
+```toml
+[network]
+allow = ["api.openai.com"]
+```
+
+The sandboxed process keeps the isolated namespace (no route except loopback)
+and reaches an allow-listing proxy on a Unix socket mounted into the sandbox.
+HTTP and HTTPS requests go through it; a host the policy did not name gets a
+`403`, and a direct connection has no route. DNS resolution happens on the
+host side, in the relay, so the client cannot ask for a different address.
+
+This covers HTTP(S) proxy traffic, which is what model calls and fetches use.
+Raw TCP (an SSH session, a database client) needs a per-protocol relay and is
+not covered — a command that needs one should be declared as a check with its
+own approval, not smuggled through the sandbox's proxy.
 
 ## What it does not reach
 
@@ -117,7 +132,8 @@ documented ceiling of Phase 1. Two later phases close it:
   (macOS), used when present. Never fail closed on a missing optional
   dependency: that would break installs.
 - **Phase 3 — network-only isolation.** A network namespace with no route
-  except an explicit relay.
+  except an explicit relay — shipped: the relay enforces the host allow list
+  for HTTP(S) traffic, and the namespace keeps everything else out.
 
 Until then, treat the sandbox as a raised floor, not a sealed room. The
 approval gate still matters: it is what stops an unattended model from
