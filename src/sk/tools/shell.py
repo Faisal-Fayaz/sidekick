@@ -97,6 +97,7 @@ def _sandbox_wrap(cmd: str, cwd: str = "") -> tuple[str, str]:
             write_roots=write_roots,
             cwd=cwd or os.getcwd(),
             allow_network=bool(policy.allow_hosts),
+            allow_hosts=tuple(policy.allow_hosts),
         )
     except Exception:
         return cmd, ""

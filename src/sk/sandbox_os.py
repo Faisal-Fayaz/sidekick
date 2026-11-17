@@ -219,6 +219,7 @@ def wrap_command(
     write_roots: list[str] | tuple[str, ...] = (),
     cwd: str = "",
     allow_network: bool = False,
+    allow_hosts: tuple[str, ...] = (),
 ) -> tuple[str, str]:
     """Wrap a command for the strongest enforcement this machine has.
 
@@ -230,6 +231,20 @@ def wrap_command(
     if not enforcement.available:
         return cmd, ""
     try:
+        if enforcement.backend == "bwrap" and allow_network and allow_hosts:
+            # A network namespace has no route except loopback. The command
+            # reaches the allowed hosts only through the relay, which refuses
+            # everything else. A policy that allows no host needs no relay:
+            # the sandbox simply has no network.
+
+            from .relay_runner import shell_command as relayed_command
+
+            return relayed_command(
+                cmd,
+                write_roots=tuple(write_roots),
+                cwd=cwd,
+                allow=tuple(allow_hosts),
+            ), enforcement.backend
         if enforcement.backend == "bwrap":
             wrapped = bwrap_command(
                 cmd, write_roots=write_roots, cwd=cwd, allow_network=allow_network
