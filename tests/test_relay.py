@@ -130,12 +130,19 @@ def test_allowed_hosts_route_through_the_relay(tmp_path):
         allow_network=True,
         allow_hosts=("api.openai.com",),
     )
-    if not sandbox_os.detect().available:
+    enforcement = sandbox_os.detect()
+    if not enforcement.available:
         assert cmd == "echo hi"
         return
-    assert "relay_runner" in cmd, "an allowed host did not route through the relay"
-    assert "--allow api.openai.com" in cmd
-    # The runner owns the namespace; this wrapper only selects it.
+    if enforcement.backend == "bwrap":
+        assert "relay_runner" in cmd, "an allowed host did not route through the relay"
+        assert "--allow api.openai.com" in cmd
+        # The runner owns the namespace; this wrapper only selects it.
+    else:
+        # Seatbelt has no network namespace, so the relay (a bwrap mechanism)
+        # is not available there. The profile allows network and the egress
+        # policy governs the tools. The docs state this.
+        assert "allow network*" in cmd
 
 
 @pytest.mark.skipif(not shutil.which("bwrap"), reason="needs bubblewrap")
