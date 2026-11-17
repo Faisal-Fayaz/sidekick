@@ -102,7 +102,10 @@ def bwrap_relay_command(
 ) -> tuple[list[str], Path]:
     """Build the bwrap argv and the helper directory for a relayed command."""
     workdir = Path(cwd or os.getcwd()).resolve()
-    helper_dir = Path(tempfile.mkdtemp(prefix=".sk-relay-", dir=workdir))
+    # A system temp dir keeps the Unix socket path short: macOS limits AF_UNIX
+    # paths to ~104 bytes and a deep project path does not fit. The directory
+    # is bound into the sandbox below.
+    helper_dir = Path(tempfile.mkdtemp(prefix="sk-relay-"))
     socket_path = helper_dir / "relay.sock"
     forwarder = helper_dir / "forwarder.py"
     ready = helper_dir / "ready"
@@ -119,7 +122,7 @@ def bwrap_relay_command(
         "--tmpfs",
         "/tmp",
     ]
-    for root in list(write_roots) + [str(workdir)]:
+    for root in list(write_roots) + [str(workdir), str(helper_dir)]:
         args.extend(["--bind", root, root])
     args.extend(
         [

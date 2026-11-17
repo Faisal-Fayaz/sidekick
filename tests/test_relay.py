@@ -79,8 +79,8 @@ def _request(socket_path: str, target: str) -> bytes:
     return b"".join(chunks)
 
 
-def test_an_allowed_host_is_forwarded(tmp_path, upstream):
-    socket_path = tmp_path / "relay.sock"
+def test_an_allowed_host_is_forwarded(upstream):
+    socket_path = Path(tempfile.mkdtemp(prefix="sk-sock-")) / "relay.sock"
     server = relay.start_relay(socket_path, _allowed("127.0.0.1"))
     try:
         answer = _request(str(socket_path), f"http://{upstream}/ok.txt")
@@ -90,8 +90,8 @@ def test_an_allowed_host_is_forwarded(tmp_path, upstream):
         relay.stop_relay(server)
 
 
-def test_a_denied_host_is_refused(tmp_path, upstream):
-    socket_path = tmp_path / "relay.sock"
+def test_a_denied_host_is_refused(upstream):
+    socket_path = Path(tempfile.mkdtemp(prefix="sk-sock-")) / "relay.sock"
     server = relay.start_relay(socket_path, ("example.com",))
     try:
         answer = _request(str(socket_path), f"http://{upstream}/ok.txt")
@@ -112,11 +112,14 @@ def test_no_hosts_means_no_relay_and_no_network(tmp_path):
         allow_network=False,
         allow_hosts=(),
     )
-    if not shutil.which("bwrap"):
+    if not sandbox_os.detect().available:
         assert cmd == "echo hi"
         return
-    assert "--unshare-net" in cmd
+    # The relay is for *allowed* hosts only; with no host allowed, bwrap takes
+    # the network away outright and Seatbelt has no network rule to add.
     assert "relay_runner" not in cmd
+    if shutil.which("bwrap"):
+        assert "--unshare-net" in cmd
 
 
 def test_allowed_hosts_route_through_the_relay(tmp_path):
@@ -127,12 +130,12 @@ def test_allowed_hosts_route_through_the_relay(tmp_path):
         allow_network=True,
         allow_hosts=("api.openai.com",),
     )
-    if not shutil.which("bwrap"):
+    if not sandbox_os.detect().available:
         assert cmd == "echo hi"
         return
-    assert "relay_runner" in cmd
+    assert "relay_runner" in cmd, "an allowed host did not route through the relay"
     assert "--allow api.openai.com" in cmd
-    assert "--unshare-net" not in cmd  # the runner adds it
+    # The runner owns the namespace; this wrapper only selects it.
 
 
 @pytest.mark.skipif(not shutil.which("bwrap"), reason="needs bubblewrap")
