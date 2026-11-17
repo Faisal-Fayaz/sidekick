@@ -8,7 +8,7 @@
 
 pkgname=python-sidekick-agent
 _pkgname=sidekick-agent
-pkgver=0.37.0
+pkgver=0.38.0
 pkgrel=1
 pkgdesc="Local-first terminal companion agent (Ollama-powered) — CLI 'sk'"
 arch=("any")
@@ -25,8 +25,8 @@ depends=(
 )
 makedepends=("python-build" "python-installer" "python-wheel" "python-setuptools")
 optdepends=("python-faster-whisper: local voice transcription for 'sk talk'")
-source=("${_pkgname}-${pkgver}.tar.gz::https://files.pythonhosted.org/packages/e0/cc/3d57de712caa5c16904f4f2537f7667e9ec1fdc50dd3c4c93d4b25ff1b32/${_pkgname}-${pkgver}.tar.gz")
-sha256sums=("93506dd234cbd769cd16dc395298913531d76c4e0fd52de10de9d95e74435047")
+source=("${_pkgname}-${pkgver}.tar.gz::https://files.pythonhosted.org/packages/c2/ef/597fd83531402ffb3145259158600db0abc99652c5ef9f7af21ad75a6e10/${_pkgname}-${pkgver}.tar.gz")
+sha256sums=("3bc466a9a7839510aa3546647e8e8c3151811e0add61b356be79c699fe571eea")
 
 build() {
   python -m build --wheel --no-isolation
