@@ -27,16 +27,16 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.38.0 (the regulated install)
+## Next — v0.39.0 (the team surface)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **The air-gapped bundle** — an offline install with vendored wheels and a verified manifest (#475).
-- **The network relay** — selective host allow-listing inside a network namespace (#467).
+- **Team memory and shared skills** — org-wide packs with permissions, under the same trust gates as everything else (#482).
+- **A thin IDE extension** — review, explain and check over the local API, with no keys and no agent loop of its own (#483).
 
-Out of scope for now: the IDE extension, team memory and shared skills, and
-the Python SDK's remote mode. Later versions remain tentative.
+Out of scope for now: the frontier chain, semantic retrieval, and the remaining
+compaction layers. Later versions remain tentative.
 
 ## Later
 
@@ -178,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.38.0` — **the regulated install.** An air-gapped bundle carries the wheel, every locked dependency, the skills and the docs — 61 files, about 10 MB — with a manifest of hashes and sizes. Verification refuses a changed, missing or undeclared file, and the installer uses `--no-index --find-links`, so nothing reaches a package index (#475). The sandbox's network isolation is complete for HTTP(S): with no hosts allowed the namespace has no network at all, and with hosts allowed an allow-listing relay is the only route out (#467). Tests 1989 → 2011.
 - `v0.37.0` — **the surfaces.** The daemon became a teammate: it names the branch, the files that changed and how far the branch is from its upstream, and it stays quiet when the repository has not moved (#470). `sk.sdk` is the importable API — the same turn loop, tools, gate and ledger the CLI uses, so an action taken by your program reads back the same way in `sk audit` — and `sk serve` puts that core behind a localhost HTTP surface that refuses to bind beyond this machine and always asks for a token (#110). Tests 1959 → 1989.
 - `v0.36.0` — **OS isolation and the explain rung.** The sandbox now has a second layer: with bubblewrap (Linux) or Seatbelt (macOS) present, the shell command runs with the declared roots writable and everything else read-only, and with no network at all unless a host is allowed. The tooling is optional and is probed before it is trusted — a broken profile reports as advisory rather than breaking the shell (#440). `sk explain` answers a question from the code, with file:line citations, in read-only mode, and is told that "the code does not say" is a correct answer (#461). Tests 1933 → 1959.
 - `v0.35.0` — **the developer ladder.** `sk fix` investigates a problem, changes the code under the approval gate, and reports the verification verdict — pass, fail, or unknown — so a change that did not verify exits 1 instead of shipping as "done" (#451). `sk test` runs the project's tests through the same check pipeline, using the declared test check or a detected one, and never reports a green suite it did not run (#452). `sk pr` prepares a pull request whose title and body are derived from the commits and the diff, and pushes nothing without approval (#453). Git became five typed tools — status, diff, branch, commit, push — where the command line is built by the tool, so there is nothing for a model to smuggle into the shell; the writes ask, and a push to a protected branch is refused (#454). 27 built-in tools. Tests 1878 → 1933.

@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'sk bundle',
+    title: 'Install, with no network at all',
+    body: 'A verified air-gapped bundle: every locked dependency as a wheel, a manifest of hashes and sizes, and an installer that refuses a tampered bundle and never touches a package index. Built for the machine it will run on.',
+    link: '/docs#install',
+  },
+  {
     tag: 'the SDK · sk serve',
     title: 'The same core, two ways in',
     body: 'sk.sdk is the importable API — the same turn loop, tools, gate and ledger the CLI uses. sk serve puts it behind a localhost HTTP surface that refuses to bind beyond this machine and always asks for a token.',
@@ -422,15 +428,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.38.0 — the regulated install',
+    v: 'v0.39.0 — the team surface',
     items: [
-      'An air-gapped bundle with a verified manifest',
-      'Selective host allow-listing inside a network namespace',
+      'Team memory and shared skills with permissions',
+      'A thin IDE extension over the local API',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.38.0 — the regulated install: a verified air-gapped bundle (61 files, ~10 MB) that installs with no package index, and an allow-listing relay so selective hosts inside a sandbox cannot become general network access (#475, #467)',
   'v0.37.0 — the surfaces: the daemon as a teammate (grounded and quiet), an importable Python SDK, and a localhost HTTP surface bound to this machine and behind a token (#470, #110)',
   'v0.36.0 — OS isolation and the explain rung: bubblewrap/Seatbelt enforcement when present, network denied unless a host is allowed, and sk explain — a grounded, read-only explanation with file:line citations (#440, #461)',
   'v0.35.0 — the developer ladder: sk fix (with a verdict), sk test, sk pr, and git as typed tools — status, diff, branch, commit, push — where the writes ask and a protected branch is never pushed (#451–#454)',
