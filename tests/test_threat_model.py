@@ -15,6 +15,7 @@ CONTROLS: dict[str, tuple[str, str]] = {
     "Two gates, every hop": ("src/sk/tools/web.py", "tests/test_web.py"),
     "Deny by default": ("src/sk/egress.py", "tests/test_egress.py"),
     "Fences with provenance": ("src/sk/trust.py", "tests/test_trust.py"),
+    "Taint reaches the gate": ("src/sk/taint.py", "tests/test_taint.py"),
     "Repo trust gate": ("src/sk/custom_commands.py", "tests/test_team.py"),
     "Permissions live in data": ("src/sk/team.py", "tests/test_team.py"),
     "Token always": ("src/sk/serve.py", "tests/test_sdk.py"),

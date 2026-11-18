@@ -72,12 +72,17 @@ run this command".
   call that passes the gate; an injected sentence cannot call a tool by itself.
   `src/sk/tools/registry.py`, `src/sk/cli/approvers.py`; `tests/test_security.py`,
   `tests/test_eval.py`.
+- **Taint reaches the gate.** Provenance from a fenced block survives into the
+  tool gate: tainted arguments require approval for writes and network fetches
+  and are denied for secret-adjacent paths, with the decision recorded in the
+  audit row. `src/sk/taint.py`, `src/sk/agent.py`; `tests/test_taint.py`.
 - **Proposals never write.** Memory proposals from a turn are data; extracting
   one does not even open the database. `src/sk/memory_rank.py`;
   `tests/test_memory_rank.py`.
-- **Residual:** prompt injection is not solved by fencing. A model can still be
-  persuaded that a fenced instruction is legitimate. The OS sandbox and the
-  approval gate are the backstops, not the fence.
+- **Residual:** prompt injection is not solved by fencing or by provenance. A
+  model can still be persuaded that a fenced instruction is legitimate. The
+  taint gate, the OS sandbox and the approval gate are the backstops, not the
+  fence.
 
 ### A3 — A browser page driving the local agent
 
