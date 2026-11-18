@@ -116,7 +116,13 @@ def _check_image_url(url: str) -> str | None:
 
 
 def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
-    """Minimal readability: title + visible text. Stdlib only."""
+    """Readability-lite: title + the main article, without the page chrome.
+
+    Stdlib only. When the page marks up an `<article>` or `role="main"`, only
+    that region is kept; otherwise the whole body is considered. Navigation,
+    banners, cookie notices and forms are dropped by tag or by class/id hint,
+    and headings keep a markdown marker so the model can see the structure.
+    """
     import re
     from html.parser import HTMLParser
 
@@ -125,25 +131,73 @@ def _html_to_text(html: str, limit: int = 20000) -> tuple[str, str]:
     if m:
         title = re.sub(r"\s+", " ", m.group(1)).strip()[:200]
 
+    skip_tags = {
+        "script",
+        "style",
+        "nav",
+        "footer",
+        "aside",
+        "header",
+        "form",
+        "button",
+        "noscript",
+        "svg",
+        "iframe",
+        "template",
+    }
+    junk_hints = (
+        "cookie",
+        "banner",
+        "advert",
+        "sidebar",
+        "navigation",
+        "footer",
+        "navbar",
+        "social",
+        "newsletter",
+    )
+    block_tags = {"p", "br", "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "div", "section"}
+
     class P(HTMLParser):
         def __init__(self):
             super().__init__()
             self.out: list[str] = []
-            self.skip = 0
+            self.prefer_article = False
+            # (opens an article region, opens a skipped region) per open tag.
+            self.stack: list[tuple[bool, bool]] = []
+
+        def _inside_article(self) -> bool:
+            return any(open_article for open_article, _ in self.stack)
+
+        def _skipping(self) -> bool:
+            return any(skip for _, skip in self.stack)
 
         def handle_starttag(self, tag, attrs):
-            if tag in ("script", "style", "nav", "footer", "aside"):
-                self.skip += 1
-            if tag in ("p", "br", "h1", "h2", "h3", "h4", "li", "tr"):
+            attr = {str(k).lower(): str(v or "") for k, v in attrs}
+            hint = " ".join(
+                (attr.get("class", ""), attr.get("id", ""), attr.get("role", ""))
+            ).lower()
+            is_article = tag == "article" or attr.get("role", "").lower() == "main"
+            skipping = tag in skip_tags or any(word in hint for word in junk_hints)
+            self.stack.append((is_article, skipping))
+            if is_article:
+                self.prefer_article = True
+            heading = re.fullmatch(r"h([1-6])", tag)
+            if heading:
+                self.out.append("\n\n" + "#" * int(heading.group(1)) + " ")
+            elif tag in block_tags:
                 self.out.append("\n")
 
         def handle_endtag(self, tag):
-            if tag in ("script", "style", "nav", "footer", "aside") and self.skip:
-                self.skip -= 1
+            if self.stack:
+                self.stack.pop()
 
         def handle_data(self, data):
-            if not self.skip:
-                self.out.append(data)
+            if self._skipping():
+                return
+            if self.prefer_article and not self._inside_article():
+                return
+            self.out.append(data)
 
     p = P()
     p.feed(html[:500_000])
@@ -235,7 +289,7 @@ def extract_embedded_text(html: str, budget: int = 8000) -> str:
     return "\n\n".join(parts)[:budget]
 
 
-def _url_blocked_twice(url: str) -> str | None:
+def _url_blocked_twice(url: str, allow_loopback: bool = False) -> str | None:
     """SSRF guard, asked twice in immediate succession.
 
     Cheap DNS-rebinding mitigation: a rebind attacker can't distinguish the
@@ -246,10 +300,10 @@ def _url_blocked_twice(url: str) -> str | None:
     answers cleanly twice and flips on the third still wins — closing that
     needs connection-level IP pinning, which breaks TLS SNI/cert validation.
     """
-    first = _url_blocked(url)
+    first = _url_blocked(url, allow_loopback=allow_loopback)
     if first:
         return first
-    return _url_blocked(url)
+    return _url_blocked(url, allow_loopback=allow_loopback)
 
 
 def _fetch_with_redirects(
@@ -258,6 +312,9 @@ def _fetch_with_redirects(
     timeout: int = 20,
     params: dict | None = None,
     context: str = "fetching",
+    method: str = "GET",
+    json_body: dict | None = None,
+    allow_loopback: bool = False,
 ) -> tuple[Any, str]:
     """GET with a manual redirect chain. Every hop passes two gates:
 
@@ -294,7 +351,7 @@ def _fetch_with_redirects(
         )
 
     # gate 2: SSRF
-    blocked = _url_blocked_twice(url)
+    blocked = _url_blocked_twice(url, allow_loopback=allow_loopback)
     if blocked:
         return None, blocked
     try:
@@ -302,10 +359,14 @@ def _fetch_with_redirects(
         r = None
         with httpx.Client(timeout=timeout, follow_redirects=False) as c:
             for i in range(4):  # initial fetch + up to 3 hops
-                kw = {"headers": headers}
+                kw: dict[str, Any] = {"headers": headers}
                 if params and i == 0:
                     kw["params"] = params
-                r = c.get(current, **kw)
+                if json_body is not None and i == 0:
+                    kw["json"] = json_body
+                # GET keeps the plain .get() call the fakes and the existing
+                # redirect tests rely on; only keyed providers need a body.
+                r = c.request(method, current, **kw) if method != "GET" else c.get(current, **kw)
                 if r.status_code not in (301, 302, 303, 307, 308):
                     break
                 loc = (r.headers.get("location") or "").strip()
@@ -326,7 +387,7 @@ def _fetch_with_redirects(
                         f"Allow it with `{_egress_hint(current)}` if you trust "
                         f"that destination."
                     )
-                blocked = _url_blocked_twice(current)
+                blocked = _url_blocked_twice(current, allow_loopback=allow_loopback)
                 if blocked:
                     return None, f"Error: redirect to blocked URL: {current}"
             else:
@@ -340,46 +401,32 @@ def _fetch_with_redirects(
 
 
 def tool_web_search(query: str, count: int = 5) -> str:
-    """Keyless web search via DuckDuckGo html endpoint. Returns title/url/snippet lines."""
-    import re
-    from urllib.parse import parse_qs, unquote, urlparse
+    """Search through the configured provider. DuckDuckGo is the keyless default (#492).
 
+    The provider seam lives in `sk.search`; the fetch and the URL guard are
+    injected from here so every provider obeys the same egress policy, redirect
+    checks and SSRF filter as `read_url`. Nothing here makes a model call.
+    """
     query = (query or "").strip()[:300]
     if not query:
         return "Error: empty query."
     count = max(1, min(int(count or 5), 8))
-    r, err = _fetch_with_redirects(
-        "https://html.duckduckgo.com/html/",
-        {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
-        timeout=20,
-        params={"q": query},
-        context="searching",
+    from ..search import search as _search
+
+    results, note = _search(
+        query,
+        count,
+        fetch=_fetch_with_redirects,
+        blocked=_url_blocked_twice,
     )
-    if err:
-        return err
-    try:
-        r.raise_for_status()
-        html = r.text
-    except Exception as e:
-        return f"Error searching: {str(e)[:200]}"
-    # result links: <a class="result__a" href="//duckduckgo.com/l/?uddg=<url>&...">title</a>
-    links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL)
-    snips = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
-    out: list[str] = []
-    for i, (href, title) in enumerate(links[:count]):
-        url = href
-        if "uddg=" in href:
-            try:
-                q = parse_qs(urlparse("https:" + href if href.startswith("//") else href).query)
-                url = unquote(q.get("uddg", [href])[0])
-            except Exception:
-                pass
-        elif href.startswith("//"):
-            url = "https:" + href
-        title = re.sub(r"<[^>]+>", "", title or "").strip()[:120]
-        snip = re.sub(r"<[^>]+>", "", snips[i] if i < len(snips) else "").strip()[:200]
-        out.append(f"{i + 1}. {title}\n   {url}" + (f"\n   {snip}" if snip else ""))
-    return "\n".join(out) if out else "(no results — try different words)"
+    lines = [
+        f"{i + 1}. {r.title}\n   {r.url}" + (f"\n   {r.snippet}" if r.snippet else "")
+        for i, r in enumerate(results)
+    ]
+    body = "\n".join(lines) if lines else "(no results — try different words)"
+    if note and note.startswith("Error"):
+        return note.lstrip("\n") if not lines else body + "\n" + note.lstrip("\n")
+    return body + note
 
 
 def tool_read_url(url: str, max_chars: int = 6000) -> str:

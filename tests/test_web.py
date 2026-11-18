@@ -106,7 +106,7 @@ def _iso_search(monkeypatch, mode, extra_allow=()):
     _SearchChainClient.mode = mode
     real_blocked = webmod._url_blocked
 
-    def _allow_decoys(url):
+    def _allow_decoys(url, **kw):
         if "duckduckgo.com" in url or "example.com" in url:
             return None  # public decoys: skip real DNS so tests stay offline
         return real_blocked(url)
@@ -187,7 +187,7 @@ def _iso_flap(monkeypatch):
     calls = {"n": 0}
     real_blocked = webmod._url_blocked
 
-    def _flap(url):
+    def _flap(url, **kw):
         calls["n"] += 1
         if "duckduckgo.com" in url:
             if calls["n"] % 2 == 1:
@@ -224,11 +224,11 @@ def test_guard_checked_twice_per_hop(monkeypatch):
 
     _SearchChainClient.instances.clear()
     _SearchChainClient.mode = "ok-redirect"
-    calls = {"n": 0}
+    seen: list[str] = []
     real_blocked = webmod._url_blocked
 
-    def _counting(url):
-        calls["n"] += 1
+    def _counting(url, **kw):
+        seen.append(url)
         if "duckduckgo.com" in url or "example.com" in url:
             return None
         return real_blocked(url)
@@ -237,4 +237,7 @@ def test_guard_checked_twice_per_hop(monkeypatch):
     monkeypatch.setattr("httpx.Client", _SearchChainClient)
     out = tool_web_search("sidekick")
     assert "Alpha result" in out
-    assert calls["n"] == 4  # initial x2 + redirect hop x2
+    # #335: each *fetch hop* is guarded twice. Result URLs are also guarded
+    # once they come back (#492), so count by URL rather than in total.
+    assert seen.count(DDG_URL) == 2
+    assert seen.count("https://example.com/results") == 2

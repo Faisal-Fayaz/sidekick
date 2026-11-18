@@ -354,7 +354,7 @@ def test_read_url_does_not_fetch_redirect_to_private(monkeypatch):
     _RedirectChainClient.instances.clear()
     real_blocked = webmod._url_blocked
 
-    def _allow_decoy(url):
+    def _allow_decoy(url, **kw):
         if "example.com" in url:
             return None  # public decoy: skip real DNS so the test stays offline
         return real_blocked(url)
@@ -375,7 +375,7 @@ def test_read_url_follows_redirect_to_public(monkeypatch):
     _RedirectChainClient.instances.clear()
     real_blocked = webmod._url_blocked
 
-    def _allow_decoy(url):
+    def _allow_decoy(url, **kw):
         if "example.com" in url:
             return None  # public decoy: skip real DNS so the test stays offline
         return real_blocked(url)
