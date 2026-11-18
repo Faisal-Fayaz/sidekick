@@ -180,6 +180,16 @@ Manual probes worth repeating at audit time:
 6. Feed a fenced page with bidi controls and a fake fence marker into
    `/memories`-style context and confirm it is neutralised, not printed raw.
 
+## Optional data egress
+
+**Crash telemetry is off by default.** With no flag and no global config key,
+Sidekick creates no telemetry file and makes no request. An explicit opt-in
+writes a redacted payload (exception type, redacted message, version, Python,
+OS, surface) to `~/.sidekick/telemetry.jsonl`; a remote collector is used only
+if the operator names one. Prompts, paths, keys, tool arguments and tracebacks
+are never included. `src/sk/telemetry.py`; `tests/test_telemetry.py`;
+[telemetry.md](telemetry.md).
+
 ## Out of scope, stated plainly
 
 - **Raw TCP.** The sandbox relay forwards HTTP(S) proxy traffic only. SSH, a

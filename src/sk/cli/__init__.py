@@ -58,8 +58,17 @@ __all__ = [
     "_pick_model_name",
 ]
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """Console-script entry point: opt-in crash reporting, then the app."""
+    from sk.telemetry import install_excepthook
+
+    install_excepthook()
     app()
+
+
+if __name__ == "__main__":
+    main()
 
 
 @app.callback(invoke_without_command=True)
