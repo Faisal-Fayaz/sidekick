@@ -27,16 +27,16 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.39.0 (the team surface)
+## Next — v0.40.0 (search and memory)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Team memory and shared skills** — org-wide packs with permissions, under the same trust gates as everything else (#482).
-- **A thin IDE extension** — review, explain and check over the local API, with no keys and no agent loop of its own (#483).
+- **Pluggable search** — Serper/Brave BYO-key and local searxng behind one seam, with real page extraction; the keyless DuckDuckGo default stays.
+- **Richer memory** — recency/importance decay, dedup/merge and proactive `remember` proposals, with FTS5 as the floor rather than the ceiling.
 
-Out of scope for now: the frontier chain, semantic retrieval, and the remaining
-compaction layers. Later versions remain tentative.
+Out of scope for now: the frontier chain, the managed enterprise flavor and the
+remaining compaction layers. Later versions remain tentative.
 
 ## Later
 
@@ -178,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.39.0` — **the team surface.** Team memory and shared skill packs load from `~/.sidekick/team/` always and from a repository only with `SIDEKICK_TRUST_REPO=1`; project data is fenced as untrusted, sources are shown in `/memories`, and a project pack can never widen the user's tool allow-list (#482). A thin VS Code client talks to `sk serve` over loopback with the daemon's token — review, explain and check with no provider key and no agent loop of its own (#483); fixing the `sk serve` startup import was part of making that real. Tests 2011 → 2031.
 - `v0.38.0` — **the regulated install.** An air-gapped bundle carries the wheel, every locked dependency, the skills and the docs — 61 files, about 10 MB — with a manifest of hashes and sizes. Verification refuses a changed, missing or undeclared file, and the installer uses `--no-index --find-links`, so nothing reaches a package index (#475). The sandbox's network isolation is complete for HTTP(S): with no hosts allowed the namespace has no network at all, and with hosts allowed an allow-listing relay is the only route out (#467). Tests 1989 → 2011.
 - `v0.37.0` — **the surfaces.** The daemon became a teammate: it names the branch, the files that changed and how far the branch is from its upstream, and it stays quiet when the repository has not moved (#470). `sk.sdk` is the importable API — the same turn loop, tools, gate and ledger the CLI uses, so an action taken by your program reads back the same way in `sk audit` — and `sk serve` puts that core behind a localhost HTTP surface that refuses to bind beyond this machine and always asks for a token (#110). Tests 1959 → 1989.
 - `v0.36.0` — **OS isolation and the explain rung.** The sandbox now has a second layer: with bubblewrap (Linux) or Seatbelt (macOS) present, the shell command runs with the declared roots writable and everything else read-only, and with no network at all unless a host is allowed. The tooling is optional and is probed before it is trusted — a broken profile reports as advisory rather than breaking the shell (#440). `sk explain` answers a question from the code, with file:line citations, in read-only mode, and is told that "the code does not say" is a correct answer (#461). Tests 1933 → 1959.

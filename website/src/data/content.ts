@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'team · IDE',
+    title: 'The same brain, shared with your team',
+    body: 'Shared memories and skill packs load from your home, and from a repository only when you trust it — where project data stays fenced and a pack can never widen your permissions. A thin VS Code client reviews, explains and checks over the local API, with no provider key and no second agent loop.',
+    link: '/docs#install',
+  },
+  {
     tag: 'sk bundle',
     title: 'Install, with no network at all',
     body: 'A verified air-gapped bundle: every locked dependency as a wheel, a manifest of hashes and sizes, and an installer that refuses a tampered bundle and never touches a package index. Built for the machine it will run on.',
@@ -428,15 +434,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.39.0 — the team surface',
+    v: 'v0.40.0 — search and memory',
     items: [
-      'Team memory and shared skills with permissions',
-      'A thin IDE extension over the local API',
+      'Pluggable search with a keyless default',
+      'Richer memory: decay, dedup and proposals',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.39.0 — the team surface: shared memory and skill packs with permissions — a repository cannot widen what the user allowed (#482) — and a thin VS Code client that reviews, explains and checks over the local API, with no keys and no agent loop (#483)',
   'v0.38.0 — the regulated install: a verified air-gapped bundle (61 files, ~10 MB) that installs with no package index, and an allow-listing relay so selective hosts inside a sandbox cannot become general network access (#475, #467)',
   'v0.37.0 — the surfaces: the daemon as a teammate (grounded and quiet), an importable Python SDK, and a localhost HTTP surface bound to this machine and behind a token (#470, #110)',
   'v0.36.0 — OS isolation and the explain rung: bubblewrap/Seatbelt enforcement when present, network denied unless a host is allowed, and sk explain — a grounded, read-only explanation with file:line citations (#440, #461)',
