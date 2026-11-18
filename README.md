@@ -59,6 +59,12 @@ thin client over `sk serve`: review, explain and check the buffer or selection
 without a provider key or a second agent loop. It is loopback-only, reads the
 daemon's token from `~/.sidekick/serve.token`, and is read-only by default.
 
+**Search on your terms.** `web_search` keeps a keyless DuckDuckGo default, but
+also speaks Serper and Brave with a key you supply and a local SearXNG endpoint
+([docs](docs/search.md)). Keys and provider choice are global-only — a cloned
+repository cannot swap your provider — and every result still passes the same
+SSRF and egress gates as `read_url`.
+
 **Share what the team learns.** `~/.sidekick/team/` holds shared memories and
 skill packs that always load; a repository's `.sidekick/team/` and
 `.sidekick/skills/` load only with `SIDEKICK_TRUST_REPO=1`. Project memories are
@@ -572,6 +578,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
+- [Web search and page reading](docs/search.md)
 - [Team memory and shared skills](docs/team.md)
 - [VS Code extension](ide/vscode/README.md)
 
