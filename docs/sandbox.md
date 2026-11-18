@@ -180,3 +180,4 @@ uv run pytest tests/test_sandbox.py -q
 - [Review](review.md) — evidence-backed review, also policy-layered.
 - [Checks](checks.md) — the project's own checks, trust-gated.
 - [Egress policy](egress.md) — the allowlist for model-initiated fetches.
+- [Threat model and audit plan](threat-model.md) — adversaries, boundaries and audit probes.
