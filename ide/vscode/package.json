@@ -1,0 +1,60 @@
+{
+  "name": "sidekick-vscode",
+  "displayName": "Sidekick",
+  "description": "A thin client over Sidekick's local API — review, explain and check with no keys and no agent loop of its own.",
+  "version": "0.1.0",
+  "publisher": "faisal-fayaz",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=18"
+  },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "scripts": {
+    "build": "tsc -p ./",
+    "typecheck": "tsc --noEmit -p ./",
+    "test": "npm run build && node --test out/test/*.test.js"
+  },
+  "contributes": {
+    "commands": [
+      { "command": "sidekick.status", "title": "Sidekick: Server status" },
+      { "command": "sidekick.review", "title": "Sidekick: Review buffer or selection" },
+      { "command": "sidekick.explain", "title": "Sidekick: Explain selection" },
+      { "command": "sidekick.check", "title": "Sidekick: Check selection" }
+    ],
+    "configuration": {
+      "title": "Sidekick",
+      "properties": {
+        "sidekick.endpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:8787",
+          "description": "The local sk serve endpoint. Only loopback addresses are accepted; anything else is refused."
+        },
+        "sidekick.tokenPath": {
+          "type": "string",
+          "default": "~/.sidekick/serve.token",
+          "description": "Path to the token written by sk serve. ~ is expanded."
+        },
+        "sidekick.session": {
+          "type": "string",
+          "default": "vscode",
+          "description": "Session name used for the audit ledger."
+        },
+        "sidekick.timeoutMs": {
+          "type": "number",
+          "default": 300000,
+          "minimum": 1000,
+          "description": "How long to wait for the local daemon to answer."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "~5.8.3"
+  }
+}

@@ -54,6 +54,11 @@ never `pass`. Reads run automatically; writes and shell commands ask first.
 
 ![Terminal showing plan approval, a test file write, pytest, and a passing result](docs/tui-chat.svg)
 
+**Use it from your editor.** The [VS Code extension](ide/vscode/README.md) is a
+thin client over `sk serve`: review, explain and check the buffer or selection
+without a provider key or a second agent loop. It is loopback-only, reads the
+daemon's token from `~/.sidekick/serve.token`, and is read-only by default.
+
 **Share what the team learns.** `~/.sidekick/team/` holds shared memories and
 skill packs that always load; a repository's `.sidekick/team/` and
 `.sidekick/skills/` load only with `SIDEKICK_TRUST_REPO=1`. Project memories are
@@ -324,6 +329,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` | Skill packs: registry + superpowers |
 | `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
 | `sk team check [--json]` | Inspect team memory and shared skill packs: trust state, sources, skills and permission refusals ([docs](docs/team.md)) |
+| VS Code extension | Thin client over `sk serve` — review, explain and check from a buffer or selection, with no keys or agent loop ([docs](ide/vscode/README.md)) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (27 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see [`docs/mcp-client.md`](docs/mcp-client.md)) |
 | `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules). It watches the repositories and says something when they change — the branch, the files, how far it is from its upstream — and stays quiet when nothing has |
@@ -567,6 +573,7 @@ current non-secret settings — keys stay in keyring/env).
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
 - [Team memory and shared skills](docs/team.md)
+- [VS Code extension](ide/vscode/README.md)
 
 ## Roadmap
 

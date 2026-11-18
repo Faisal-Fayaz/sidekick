@@ -13,6 +13,9 @@ build/
 website/dist/
 website/node_modules/
 website/*.tsbuildinfo
+ide/vscode/node_modules/
+ide/vscode/out/
+ide/vscode/*.vsix
 *.egg-info/
 
 # AUR builds (packaging/aur)
