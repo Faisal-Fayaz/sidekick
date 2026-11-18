@@ -74,7 +74,8 @@ def test_migrate_4_to_5_backfills_fts(tmp_path, monkeypatch):
     hits = store.search_sessions("legacy needle")
     assert [h["session"] for h in hits] == ["old"]
     conn = sqlite3.connect(str(db))
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    # The v4→v5 backfill runs, then the additive v6 columns are applied too.
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == store.SCHEMA_VERSION
     cols = [r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()]
     assert "namespace" in cols
     conn.close()

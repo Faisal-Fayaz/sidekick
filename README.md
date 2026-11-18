@@ -313,7 +313,8 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 
 | Command | What |
 |---|---|
-| `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, auto-injected) |
+| `sk remember/recall/memories/forget` | Long-term memory (FTS5 search, recency/importance ranking, dedup on save — [docs](docs/memory.md)) |
+| `sk memory-proposals TEXT` | Show candidate durable facts from a turn; never writes anything |
 | `sk search QUERY [--session S]` | Full-text search across past transcripts |
 | `sk todo add/list/done/clear` | Todos |
 | `sk history` / `sk oops` | Shell log / explain last failure |
@@ -578,6 +579,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
+- [Memory: ranking, merging and proposals](docs/memory.md)
 - [Web search and page reading](docs/search.md)
 - [Team memory and shared skills](docs/team.md)
 - [VS Code extension](ide/vscode/README.md)
