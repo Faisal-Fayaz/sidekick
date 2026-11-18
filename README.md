@@ -54,6 +54,14 @@ never `pass`. Reads run automatically; writes and shell commands ask first.
 
 ![Terminal showing plan approval, a test file write, pytest, and a passing result](docs/tui-chat.svg)
 
+**Share what the team learns.** `~/.sidekick/team/` holds shared memories and
+skill packs that always load; a repository's `.sidekick/team/` and
+`.sidekick/skills/` load only with `SIDEKICK_TRUST_REPO=1`. Project memories are
+fenced as untrusted data, and a project skill may request only tools your own
+policy already allows — it can never widen permissions. `/memories` shows each
+fact's source, and `sk team check` reports exactly what loaded. See
+[Team memory and shared skills](docs/team.md).
+
 *Real headless captures of the shipped TUI from [`docs/shot.py`](docs/shot.py).
 The demo sessions are seeded and no model is called; `qwen3-coder:30b` is a
 display model, and `sk init` picks one for your hardware. The marketing/docs
@@ -315,6 +323,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 |---|---|
 | `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` | Skill packs: registry + superpowers |
 | `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
+| `sk team check [--json]` | Inspect team memory and shared skill packs: trust state, sources, skills and permission refusals ([docs](docs/team.md)) |
 | `sk mcp [--allow-writes]` | MCP server over stdio (27 tools, safe defaults) |
 | `sk mcp-servers` | List configured MCP client servers + live tool check (see [`docs/mcp-client.md`](docs/mcp-client.md)) |
 | `sk daemon [--once]` / `sk daemon-install [--schedule TXT]` / `sk daemon-install-macos [--schedule TXT]` / `sk daemon-uninstall` / `sk daemon-schedule [--set TXT]` | Background watcher (systemd/launchd, calendar schedules). It watches the repositories and says something when they change — the branch, the files, how far it is from its upstream — and stays quiet when nothing has |
@@ -497,6 +506,13 @@ the rest. Data stays home: `history.db`, `skills/`, `nudges.log`,
 > (#287). Commands in `~/.sidekick/commands/` and the review pack in
 > `~/.sidekick/review.toml` always load. See [Review](docs/review.md#review-pack)
 > and [Checks](docs/checks.md#trust).
+>
+> The [team layer](docs/team.md) follows the same rule: `~/.sidekick/team/`
+> always loads, while `.sidekick/team/` and `.sidekick/skills/` need the same
+> flag. A project pack may request only tools the user's
+> `~/.sidekick/team/policy.toml` already allows — a repository cannot widen
+> permissions or set its own policy, and a project memory is always fenced as
+> untrusted data. `/memories` shows each fact's source.
 
 **History budget:** the prompt budget bounds the whole assembled prompt — system
 prompt, auto-context, tool schemas, and the reply reservation — then history gets
@@ -550,6 +566,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
+- [Team memory and shared skills](docs/team.md)
 
 ## Roadmap
 
