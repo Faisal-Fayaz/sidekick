@@ -20,7 +20,7 @@ def test_fresh_db_stamped_current(tmp_path, monkeypatch):
     conn = store._connect()
     conn.close()
     assert _version(db) == store.SCHEMA_VERSION
-    assert store.SCHEMA_VERSION == 5
+    assert store.SCHEMA_VERSION == 6
 
 
 def test_preversioning_db_upgrades_preserving_data(tmp_path, monkeypatch):
@@ -128,3 +128,27 @@ def test_newer_db_left_untouched(tmp_path, monkeypatch):
     conn = store._connect()
     conn.close()
     assert _version(db) == 99
+
+
+def test_v5_to_v6_adds_memory_rank_columns_preserving_data(tmp_path, monkeypatch):
+    """A v5 database gains uses/last_used without changing any fact (#493)."""
+    db = tmp_path / "history.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE memories (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " content TEXT UNIQUE, ts REAL, namespace TEXT NOT NULL DEFAULT '')"
+    )
+    conn.execute("INSERT INTO memories (content, ts) VALUES ('old fact', 1.0)")
+    conn.execute("CREATE VIRTUAL TABLE memories_fts USING fts5(content)")
+    conn.execute("INSERT INTO memories_fts(rowid, content) SELECT id, content FROM memories")
+    conn.execute("PRAGMA user_version = 5")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(store, "DB_PATH", db)
+    assert store.recall_memories("old fact") == ["old fact"]
+    conn = sqlite3.connect(str(db))
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(memories)")}
+    conn.close()
+    assert {"uses", "last_used"} <= cols
+    assert _version(db) == store.SCHEMA_VERSION

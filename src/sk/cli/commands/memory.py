@@ -46,6 +46,22 @@ def memories_cmd():
         console.print(line)
 
 
+@app.command(name="memory-proposals")
+def memory_proposals(
+    text: str = typer.Argument("", help="A user turn to extract candidate durable facts from"),
+):
+    """Show candidate memories from a turn. Never writes anything (#493)."""
+    from sk.memory_rank import proposals
+
+    facts = proposals(text)
+    if not facts:
+        console.print("[yellow](no durable facts detected)[/yellow]")
+        return
+    for fact in facts:
+        console.print(f"• {fact}")
+    console.print("[dim]Proposals only: nothing was saved. Use `sk remember` to save one.[/dim]")
+
+
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search past transcripts, e.g. 'deploy friday'"),

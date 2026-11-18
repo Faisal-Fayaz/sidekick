@@ -19,7 +19,7 @@ DB_PATH = Path.home() / ".sidekick" / "history.db"
 # v3 = memories.namespace for per-project scoping (Config.load publishes it).
 # v4 = session_summaries rolling compaction watermarks.
 # v5 = messages.namespace + messages_fts for transcript search.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Process-wide memory namespace, published by Config.load() from the active
 # project file (or "" outside projects). Callers may pass an explicit
@@ -132,6 +132,9 @@ def _migrate(conn: sqlite3.Connection) -> int:
     if v < 5:
         _migrate_4_to_5(conn)
         v = 5
+    if v < 6:
+        _migrate_5_to_6(conn)
+        v = 6
     _set_version(conn, v)
     conn.commit()
     return v
@@ -190,6 +193,18 @@ def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
         conn.commit()
     except Exception:
         pass
+
+
+def _migrate_5_to_6(conn: sqlite3.Connection) -> None:
+    """v6: memories.uses + memories.last_used for ranked recall. Additive only."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "memories" not in tables:
+        return
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()]
+    if "uses" not in cols:
+        conn.execute("ALTER TABLE memories ADD COLUMN uses INTEGER NOT NULL DEFAULT 0")
+    if "last_used" not in cols:
+        conn.execute("ALTER TABLE memories ADD COLUMN last_used REAL NOT NULL DEFAULT 0")
 
 
 def _connect() -> sqlite3.Connection:
@@ -522,9 +537,38 @@ def save_memory(content: str, namespace: str | None = None) -> str:
     ns = _resolve_namespace(namespace)
     conn = _connect()
     try:
+        from .memory_rank import settings as _mem_settings
+        from .memory_rank import similarity
+
+        threshold = _mem_settings()["dedup_threshold"]
+        scope, params = _ns_clause(ns)
+        now = time.time()
+        # Merge a near-duplicate instead of stacking two copies. The stronger
+        # record's use count survives and its timestamp refreshes (#493).
+        best_id, best_uses, best_sim = 0, 0, 0.0
+        for row in conn.execute(f"SELECT id, content, uses FROM memories WHERE {scope}", params):
+            sim = similarity(content, str(row[1]))
+            if sim >= threshold and sim > best_sim:
+                best_id, best_uses, best_sim = int(row[0]), int(row[2] or 0), sim
+        if best_id:
+            conn.execute(
+                "UPDATE memories SET content=?, ts=?, uses=?, last_used=? WHERE id=?",
+                (content, now, best_uses + 1, now, best_id),
+            )
+            try:
+                conn.execute("DELETE FROM memories_fts WHERE rowid=?", (best_id,))
+                conn.execute(
+                    "INSERT INTO memories_fts(rowid, content) VALUES (?, ?)", (best_id, content)
+                )
+            except Exception as e:  # noqa: BLE001 - an index failure is a warning
+                _warn_once("memories_fts", f"merged memory not reindexed ({type(e).__name__})")
+            conn.commit()
+            n = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+            return f"Merged with a similar memory ({n} total)."
+
         cur = conn.execute(
             "INSERT OR IGNORE INTO memories (content, namespace, ts) VALUES (?, ?, ?)",
-            (content, ns, time.time()),
+            (content, ns, now),
         )
         if cur.rowcount:
             try:
@@ -539,8 +583,7 @@ def save_memory(content: str, namespace: str | None = None) -> str:
                     f"({type(e).__name__}): `sk recall` may miss it",
                 )
         conn.commit()
-        cur = conn.execute("SELECT COUNT(*) FROM memories")
-        n = cur.fetchone()[0]
+        n = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         return f"Remembered ({n} total)."
     finally:
         conn.close()
@@ -585,49 +628,109 @@ def _fts_query(keys: list[str]) -> str:
 
 
 def recall_memories(query: str, limit: int = 5, namespace: str | None = None) -> list[str]:
+    """Rank by FTS relevance × recency × use count (#493).
+
+    FTS5 still finds the candidates — it is the floor. Recency (a half-life in
+    days) and importance (times recalled) reorder them, so a fresh, frequently
+    useful fact beats a stale one with the same text match.
+    """
+    from .memory_rank import rank_score
+    from .memory_rank import settings as _mem_settings
+
+    half_life = _mem_settings()["half_life_days"]
+    now = time.time()
     ns = _resolve_namespace(namespace)
     scope, params = _ns_clause(ns)
+    # (id, content, relevance in [0,1], ts, uses, last_used)
+    candidates: list[tuple[int, str, float, float, int, float]] = []
     conn = _connect()
     try:
         keys = _keywords(query)
         if not keys:
             cur = conn.execute(
-                f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT ?",  # nosec B608
-                (*params, limit),
+                f"SELECT id, content, ts, uses, last_used FROM memories WHERE {scope} ORDER BY id DESC LIMIT 100",  # nosec B608
+                params,
             )
-            return [r[0] for r in cur.fetchall()]
-        # 1) FTS5 ranked (prefix, typo-tolerant), joined for namespace scope
-        try:
-            fq = _fts_query(keys)
-            if fq:
-                fts_scope, fts_params = _ns_clause(ns, alias="m")
-                cur = conn.execute(
-                    "SELECT m.content FROM memories_fts f JOIN memories m ON m.id = f.rowid"
-                    f" WHERE f.memories_fts MATCH ? AND {fts_scope} ORDER BY rank LIMIT ?",  # nosec B608
-                    (fq, *fts_params, limit),
+            for row in cur.fetchall():
+                candidates.append(
+                    (
+                        int(row[0]),
+                        str(row[1]),
+                        1.0,
+                        float(row[2]),
+                        int(row[3] or 0),
+                        float(row[4] or 0),
+                    )
                 )
-                rows = [r[0] for r in cur.fetchall()]
-                if rows:
-                    return rows
+        else:
+            # 1) FTS5 ranked (prefix, typo-tolerant), joined for namespace scope
+            try:
+                fq = _fts_query(keys)
+                if fq:
+                    fts_scope, fts_params = _ns_clause(ns, alias="m")
+                    cur = conn.execute(
+                        "SELECT m.id, m.content, f.rank, m.ts, m.uses, m.last_used"
+                        " FROM memories_fts f JOIN memories m ON m.id = f.rowid"
+                        f" WHERE f.memories_fts MATCH ? AND {fts_scope} ORDER BY rank LIMIT ?",  # nosec B608
+                        (fq, *fts_params, max(50, limit * 5)),
+                    )
+                    for row in cur.fetchall():
+                        relevance = 1.0 / (1.0 + abs(float(row[2] or 0)))
+                        candidates.append(
+                            (
+                                int(row[0]),
+                                str(row[1]),
+                                relevance,
+                                float(row[3]),
+                                int(row[4] or 0),
+                                float(row[5] or 0),
+                            )
+                        )
+            except Exception:
+                pass
+            # 2) substring fallback (keeps recall working without an FTS index)
+            if not candidates:
+                cur = conn.execute(
+                    f"SELECT id, content, ts, uses, last_used FROM memories WHERE {scope} ORDER BY id DESC LIMIT 100",  # nosec B608
+                    params,
+                )
+                for row in cur.fetchall():
+                    text = str(row[1]).lower()
+                    hits = sum(1 for k in keys if k in text)
+                    relevance = min(1.0, hits / len(keys)) if hits else 0.01
+                    candidates.append(
+                        (
+                            int(row[0]),
+                            str(row[1]),
+                            relevance,
+                            float(row[2]),
+                            int(row[3] or 0),
+                            float(row[4] or 0),
+                        )
+                    )
+
+        ranked = sorted(
+            candidates,
+            key=lambda row: rank_score(
+                row[2],  # FTS relevance
+                row[5] if row[5] > 0 else row[3],  # last used, else created
+                row[4],  # times recalled
+                now=now,
+                half_life_days=half_life,
+            ),
+            reverse=True,
+        )[: max(0, limit)]
+        # A recalled fact becomes slightly more important next time. The write
+        # is best-effort: a failed UPDATE must never turn recall into an error.
+        try:
+            conn.executemany(
+                "UPDATE memories SET uses = uses + 1, last_used = ? WHERE id = ?",
+                [(now, row[0]) for row in ranked],
+            )
+            conn.commit()
         except Exception:
             pass
-        # 2) substring-score fallback (old behavior)
-        cur = conn.execute(
-            f"SELECT content FROM memories WHERE {scope} ORDER BY id DESC LIMIT 100",  # nosec B608
-            params,
-        )
-        rows = [r[0] for r in cur.fetchall()]
-        scored: list[tuple[int, str]] = []
-        for c in rows:
-            cl = c.lower()
-            s = sum(1 for k in keys if k in cl)
-            if s > 0:
-                scored.append((s, c))
-        scored.sort(reverse=True)
-        if scored:
-            return [c for _, c in scored[:limit]]
-        # fallback: recent
-        return rows[:limit]
+        return [row[1] for row in ranked]
     finally:
         conn.close()
 
