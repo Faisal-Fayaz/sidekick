@@ -100,7 +100,7 @@ export default function HeroTerminal() {
               </div>
             )}
             <div className="t-dim" style={{ marginTop: 8 }}>
-              ── 2059 tests passing · offline · no API bill ──
+              ── 2070 tests passing · offline · no API bill ──
             </div>
           </>
         )}
