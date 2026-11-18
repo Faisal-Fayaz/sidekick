@@ -27,13 +27,13 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.41.0 (assurance and performance)
+## Next — v0.42.0 (taint and telemetry)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Performance plan** — latency and token budgets per surface, a benchmark harness, and performance regression tests with real numbers.
-- **Security threat model** — a documented adversary model (shell gating, SSRF, prompt injection) and what a future audit should probe.
+- **Taint-aware untrusted-content policy** — label content by origin and require approval before untrusted text can trigger writes, egress or secret-adjacent actions, with the decision recorded in the ledger.
+- **Opt-in crash telemetry** — no data by default, an explicit flag only, and a documented payload.
 
 Out of scope for now: the managed enterprise flavor, the distilled model and
 the remaining compaction layers. Later versions remain tentative.
@@ -178,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.41.0` — **assurance and performance.** Per-surface token budgets with an offline harness that fails CI on prompt bloat (#499), and a published adversary model with trust boundaries, code/test references, audit probes and an honest out-of-scope list (#500). Tests 2059 → 2070.
 - `v0.40.0` — **search and memory.** `web_search` gains one provider seam with a keyless DuckDuckGo default, Serper and Brave BYO-key backends and a local SearXNG endpoint; provider choice and keys are global-only and every result passes the existing egress/SSRF guards (#492). `read_url` now extracts the article rather than the page chrome. Memory recall is ranked by relevance × recency × importance, near-duplicates merge on save, and proposals are data rather than silent writes behind an additive schema migration (#493). Tests 2031 → 2059.
 - `v0.39.0` — **the team surface.** Team memory and shared skill packs load from `~/.sidekick/team/` always and from a repository only with `SIDEKICK_TRUST_REPO=1`; project data is fenced as untrusted, sources are shown in `/memories`, and a project pack can never widen the user's tool allow-list (#482). A thin VS Code client talks to `sk serve` over loopback with the daemon's token — review, explain and check with no provider key and no agent loop of its own (#483); fixing the `sk serve` startup import was part of making that real. Tests 2011 → 2031.
 - `v0.38.0` — **the regulated install.** An air-gapped bundle carries the wheel, every locked dependency, the skills and the docs — 61 files, about 10 MB — with a manifest of hashes and sizes. Verification refuses a changed, missing or undeclared file, and the installer uses `--no-index --find-links`, so nothing reaches a package index (#475). The sandbox's network isolation is complete for HTTP(S): with no hosts allowed the namespace has no network at all, and with hosts allowed an allow-listing relay is the only route out (#467). Tests 1989 → 2011.
