@@ -774,14 +774,32 @@ def _gated_dispatch(
     if refusal:
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (refusal, False)
-    if name in approval_tools() and approve is not None:
+    # Taint is an additional gate, not a replacement for the ones above (#506).
+    from .taint import audit_target as _taint_target
+    from .taint import decide as _taint_decide
+
+    tdecision, treason, torigins = _taint_decide(name, args)
+    audited_target = _taint_target(target, tdecision, torigins)
+    if tdecision == "deny":
+        log_tool_run(
+            session, name, audited_target, approved=False, provider=provider, host=host, ok=False
+        )
+        return (f"Denied by taint policy: {treason}. Nothing was executed.", False)
+    needs_approval = name in approval_tools() or tdecision == "approve"
+    if needs_approval and approve is not None:
         try:
             ok = approve(name, args)  # type: ignore
         except Exception:
             ok = False
         if not ok:
             log_tool_run(
-                session, name, target, approved=False, provider=provider, host=host, ok=False
+                session,
+                name,
+                audited_target,
+                approved=False,
+                provider=provider,
+                host=host,
+                ok=False,
             )
             return (
                 f"Denied by user: {name} {args} not executed. Explain and suggest --yes or manual command.",
@@ -796,7 +814,9 @@ def _gated_dispatch(
     _post_hook(session, name, args, result)
     failed = result.startswith("Error") or "blocked" in result[:60].lower()
     _record_tool_outcome(session, name, target, failed)
-    log_tool_run(session, name, target, approved=True, provider=provider, host=host, ok=not failed)
+    log_tool_run(
+        session, name, audited_target, approved=True, provider=provider, host=host, ok=not failed
+    )
     return (result, True)
 
 
@@ -1882,6 +1902,14 @@ def build_messages(
     # Project team memory and skills arrive as data in the untrusted fence,
     # even when the repo was trusted enough to load them (#482).
     untrusted_blocks.extend(team_ctx.get("untrusted") or [])
+    # Provenance survives the fence into the tool gate (#506): every fenced
+    # source marks this turn so text from it cannot quietly become an action.
+    from .taint import mark as _taint_mark
+    from .taint import reset as _taint_reset
+
+    _taint_reset()
+    for _source, _text in untrusted_blocks:
+        _taint_mark(_text, _source)
     untrusted_message = fence_block(untrusted_blocks) if untrusted_blocks else ""
     from datetime import datetime as _dt
 

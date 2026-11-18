@@ -59,6 +59,11 @@ thin client over `sk serve`: review, explain and check the buffer or selection
 without a provider key or a second agent loop. It is loopback-only, reads the
 daemon's token from `~/.sidekick/serve.token`, and is read-only by default.
 
+**Outside content cannot act on its own.** Fenced text now carries provenance
+into the tool gate: a write, shell or fetch built from it asks for approval, and
+a secret-adjacent path from it is refused even in auto-approve mode. Every
+decision lands in `sk audit`. See [Taint-aware content](docs/taint.md).
+
 **Search on your terms.** `web_search` keeps a keyless DuckDuckGo default, but
 also speaks Serper and Brave with a key you supply and a local SearXNG endpoint
 ([docs](docs/search.md)). Keys and provider choice are global-only — a cloned
@@ -579,6 +584,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
+- [Taint-aware content policy](docs/taint.md)
 - [Threat model and audit plan](docs/threat-model.md)
 - [Performance budgets](docs/perf.md)
 - [Memory: ranking, merging and proposals](docs/memory.md)
