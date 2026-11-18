@@ -29,7 +29,7 @@ def serve_cmd(
     The binding is refused for anything that is not a loopback address, and
     every request needs the token that is printed at startup.
     """
-    from ..serve import generate_token, is_loopback, serve, write_token
+    from ...serve import generate_token, is_loopback, serve, write_token
 
     if not is_loopback(host):
         console.print(

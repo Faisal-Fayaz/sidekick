@@ -24,6 +24,7 @@
     "scan",
     "coverage",
     "website",
+    "ide",
     "test (ubuntu-latest, 3.12)",
     "test (ubuntu-latest, 3.13)",
     "test (ubuntu-latest, 3.14)",

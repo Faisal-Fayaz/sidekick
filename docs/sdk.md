@@ -109,6 +109,15 @@ the token, so it cannot send a valid one.
 tools that change anything: the local API can read your repository, but it
 cannot edit it unless you said so.
 
+## An editor client
+
+The [VS Code extension](../ide/vscode/README.md) is a thin client over this
+HTTP surface. It sends review, explain and check prompts to `/turn`; it holds
+no provider key, makes no model call of its own and runs no agent loop. It
+reads the token from `~/.sidekick/serve.token`, refuses any endpoint that is not
+loopback, and is read-only by default (`sk serve --read-only`). Everything it
+does lands in the same audit ledger as a CLI turn.
+
 ## See also
 
 - [Checks](checks.md) — the project's own checks, and the verification gate.

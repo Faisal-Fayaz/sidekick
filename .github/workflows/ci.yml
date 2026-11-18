@@ -207,6 +207,27 @@ jobs:
           path: website/dist
           retention-days: 7
 
+  ide:
+    # The VS Code client has its own toolchain and its own tests. It has no
+    # runtime dependencies beyond Node's stdlib; npm installs only the
+    # TypeScript compiler and type definitions used to build and check it.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide/vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ide/vscode/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
   build:
     runs-on: ubuntu-latest
     steps:

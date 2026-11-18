@@ -241,3 +241,43 @@ def test_read_only_mode_denies_the_writes(server, monkeypatch, tmp_path):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# --- the CLI command -------------------------------------------------------
+
+
+def test_sk_serve_command_starts_the_server(tmp_path, monkeypatch):
+    """`sk serve` must actually run, not just pass --help (#483).
+
+    The command imports the server relatively; a one-dot typo pointed at a
+    module that does not exist, so the shipped command died on entry while the
+    direct `sk.serve` tests stayed green.
+    """
+    from typer.testing import CliRunner
+
+    import sk.serve as serve_mod
+    from sk.cli import app
+
+    monkeypatch.setattr(serve_mod, "CONFIG_DIR", tmp_path)
+    calls = []
+    monkeypatch.setattr(serve_mod, "serve", lambda **kw: calls.append(kw))
+
+    result = CliRunner().invoke(app, ["serve", "--port", "9911", "--read-only"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1, "the CLI never reached the server"
+    assert calls[0]["port"] == 9911
+    assert calls[0]["read_only"] is True
+    token = (tmp_path / "serve.token").read_text().strip()
+    assert token and calls[0]["token"] == token
+
+
+def test_sk_serve_refuses_a_non_loopback_bind(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    import sk.serve as serve_mod
+    from sk.cli import app
+
+    monkeypatch.setattr(serve_mod, "CONFIG_DIR", tmp_path)
+    result = CliRunner().invoke(app, ["serve", "--host", "0.0.0.0"])
+    assert result.exit_code == 2
+    assert "refusing to bind" in result.output
