@@ -349,10 +349,17 @@ def handle(text: str, *, session: str, cfg, state: dict) -> SlashOut:
 
     if cmd == "memories":
         from .store import list_memories
+        from .team import load_memories
 
-        hits = list_memories(limit=50)
+        mem_rows: list[str] = []
+        for h in list_memories(limit=50):
+            mem_rows.append(f"- {h}")
+        # Team memories carry their source so it is always visible (#482).
+        for mem in load_memories():
+            mem_rows.append(f"- [team/{mem.source}] {mem.content}")
         return SlashOut(
-            handled=True, text="\n".join(f"- {h}" for h in hits) if hits else "_(no memories yet)_"
+            handled=True,
+            text="\n".join(mem_rows) if mem_rows else "_(no memories yet)_",
         )
 
     if cmd == "forget":

@@ -44,6 +44,17 @@ def _repo_trusted() -> bool:
     return os.environ.get(TRUST_REPO_ENV, "").strip() == "1"
 
 
+def is_project_trusted() -> bool:
+    """The public form of the repo-trust gate, shared with the team layer (#482).
+
+    One decision point: custom commands, team memory and shared skill packs all
+    ask this same question, so a repo cannot be trusted by one surface and not
+    another. The flag is read from the outer environment, never from a file in
+    the repo, so a cloned project cannot self-authorize.
+    """
+    return _repo_trusted()
+
+
 def _dirs() -> list[Path]:
     from .config import CONFIG_DIR
 

@@ -1859,15 +1859,29 @@ def build_messages(
         from .skills import load_skills
 
         skill_block = load_skills(user_msg)
+        # Team memory and shared skills (#482). The user's own layer is
+        # operator-authored and joins the trusted sections, source-labelled;
+        # the project's layer is fenced separately below, never as a fact.
+        from .team import prompt_context
+
+        team_ctx = prompt_context(project_root=os.getcwd())
+        if team_ctx["trusted_memories"]:
+            mem_block += "\n" + team_ctx["trusted_memories"]
+        if team_ctx["trusted_skills"]:
+            skill_block += "\n" + team_ctx["trusted_skills"]
     except Exception:
         mem_block = "(none)"
         todo_block = "(none)"
         skill_block = "(none)"
+        team_ctx = {"untrusted": [], "errors": []}
     if len(mem_block) > 1500:
         mem_block = mem_block[:1500] + "\n... [truncated]"
     proj_docs = _project_docs_block(cfg)
     if proj_docs and proj_docs != "(none)":
         untrusted_blocks.append(("repo documentation", proj_docs))
+    # Project team memory and skills arrive as data in the untrusted fence,
+    # even when the repo was trusted enough to load them (#482).
+    untrusted_blocks.extend(team_ctx.get("untrusted") or [])
     untrusted_message = fence_block(untrusted_blocks) if untrusted_blocks else ""
     from datetime import datetime as _dt
 

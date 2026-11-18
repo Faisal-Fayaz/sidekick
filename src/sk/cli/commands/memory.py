@@ -32,16 +32,18 @@ def recall_cmd(query: str = typer.Argument("", help="Search by terms (empty = re
 
 @app.command(name="memories")
 def memories_cmd():
-    """List all memories."""
+    """List all memories, including team memories with their source."""
     from sk.store import list_memories
+    from sk.team import load_memories
 
     _cfg()  # establish project namespace default
-    hits = list_memories(limit=50)
-    if not hits:
+    lines = [f"• {h}" for h in list_memories(limit=50)]
+    lines += [f"• \\[team/{m.source}] {m.content}" for m in load_memories()]
+    if not lines:
         console.print("[yellow](no memories yet)[/yellow]")
         return
-    for h in hits:
-        console.print(f"• {h}")
+    for line in lines:
+        console.print(line)
 
 
 @app.command()

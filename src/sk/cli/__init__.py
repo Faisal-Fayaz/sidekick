@@ -28,6 +28,7 @@ from .commands import (  # noqa: F401
     serve,
     skills,
     system,
+    team,
     test,
 )
 
@@ -36,8 +37,9 @@ from .commands.auth import _ask_key, _connect_flow, _pick_model_name, _pick_prov
 from .commands.system import _code_version, _full_version
 from .resolve import _resolve_model
 
-# the bundle is a sub-app: `sk bundle build|verify|install`
+# sub-apps: `sk bundle build|verify|install`, `sk team check`
 app.add_typer(bundle.bundle_app, name="bundle")
+app.add_typer(team.team_app, name="team")
 
 __all__ = [
     "app",
