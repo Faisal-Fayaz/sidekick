@@ -161,3 +161,7 @@ $ sk audit --format json
 ```
 
 `ok: 0` is the denial marker.
+
+## See also
+
+- [Threat model and audit plan](threat-model.md) — where the SSRF/egress gates sit in the wider defense.

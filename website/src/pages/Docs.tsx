@@ -311,6 +311,14 @@ export default function Docs() {
             included. {inline('sk doctor')} and {inline('sk config --show')} show the mode. See{' '}
             {inline('docs/sandbox.md')}.
           </p>
+          <p>
+            <b>Threat model:</b> who these gates defend against, where the trust boundaries are, what is
+            deliberately out of scope, and the probe list for a future audit — in{' '}
+            <a href="https://github.com/Faisal-Fayaz/sidekick/blob/main/docs/threat-model.md">
+              docs/threat-model.md
+            </a>
+            .
+          </p>
 
           <h2 id="architecture">Architecture</h2>
           <CodeBlock
