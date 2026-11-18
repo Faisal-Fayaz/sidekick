@@ -17,7 +17,7 @@ export default function Roadmap() {
 
       <div className="grid-2">
         <div className="card">
-          <span className="tag">next — v0.39.0 · the team surface</span>
+          <span className="tag">next — v0.40.0 · search and memory</span>
           {ROADMAP_NEXT.map((r) => (
             <div key={r.v}>
               <h3>{r.v}</h3>
