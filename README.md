@@ -579,6 +579,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
+- [Performance budgets](docs/perf.md)
 - [Memory: ranking, merging and proposals](docs/memory.md)
 - [Web search and page reading](docs/search.md)
 - [Team memory and shared skills](docs/team.md)
