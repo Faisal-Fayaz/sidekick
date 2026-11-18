@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'taint · telemetry',
+    title: 'Outside text cannot act; crashes stay yours',
+    body: 'Provenance from a fenced page or repo file now reaches the tool gate — writes and fetches built from it ask for approval, secret-adjacent paths are refused, and the decision is in the audit ledger. Crash reporting is off unless you opt in, and then sends only a redacted line to a local file unless you name a collector.',
+    link: '/docs#safety',
+  },
+  {
     tag: 'assurance',
     title: 'Budgets you can check, risks you can read',
     body: 'Every surface now has a token budget measured by an offline harness that fails CI on prompt bloat — which also protects long conversations. A single threat model maps assets, adversaries and trust boundaries to the code and tests behind each control, with an audit probe list and an honest out-of-scope section.',
@@ -446,15 +452,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.42.0 — taint and telemetry',
+    v: 'v0.43.0 — the enterprise surface',
     items: [
-      'Origin-labelled content with approval before it acts',
-      'Opt-in crash telemetry, no data by default',
+      'SSO, per-team policies and an audit dashboard',
+      'Review rules learned from your accept/reject decisions',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.42.0 — taint and telemetry: provenance from fenced content reaches the tool gate, where writes and fetches need approval and secret paths are denied, with the decision audited (#506); crash reporting is opt-in, redacted and local by default (#507)',
   'v0.41.0 — assurance and performance: published token budgets with an offline harness that fails CI on prompt bloat (#499), and an adversary model with trust boundaries, audit probes and an honest out-of-scope list (#500)',
   'v0.40.0 — search and memory: one provider seam for DuckDuckGo, Serper, Brave and local SearXNG with keys that only the user can set (#492), article extraction that drops the chrome, and recall ranked by relevance, recency and use with dedup on save (#493)',
   'v0.39.0 — the team surface: shared memory and skill packs with permissions — a repository cannot widen what the user allowed (#482) — and a thin VS Code client that reviews, explains and checks over the local API, with no keys and no agent loop (#483)',
