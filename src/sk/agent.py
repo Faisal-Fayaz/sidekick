@@ -774,6 +774,23 @@ def _gated_dispatch(
     if refusal:
         log_tool_run(session, name, target, approved=False, provider=provider, host=host, ok=False)
         return (refusal, False)
+    # Operator tool policy, from the global config only (#513). A repo cannot
+    # set or widen it, and it denies even in auto-approve mode.
+    from .enterprise import check_policy as _policy_check
+
+    policy_denial = _policy_check(name)
+    if policy_denial:
+        log_tool_run(
+            session,
+            name,
+            f"policy=deny {target}",
+            approved=False,
+            provider=provider,
+            host=host,
+            ok=False,
+        )
+        return (f"Denied: {policy_denial}. Nothing was executed.", False)
+
     # Taint is an additional gate, not a replacement for the ones above (#506).
     from .taint import audit_target as _taint_target
     from .taint import decide as _taint_decide

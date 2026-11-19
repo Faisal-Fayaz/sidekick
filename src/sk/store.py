@@ -19,7 +19,7 @@ DB_PATH = Path.home() / ".sidekick" / "history.db"
 # v3 = memories.namespace for per-project scoping (Config.load publishes it).
 # v4 = session_summaries rolling compaction watermarks.
 # v5 = messages.namespace + messages_fts for transcript search.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Process-wide memory namespace, published by Config.load() from the active
 # project file (or "" outside projects). Callers may pass an explicit
@@ -135,6 +135,9 @@ def _migrate(conn: sqlite3.Connection) -> int:
     if v < 6:
         _migrate_5_to_6(conn)
         v = 6
+    if v < 7:
+        _migrate_6_to_7(conn)
+        v = 7
     _set_version(conn, v)
     conn.commit()
     return v
@@ -205,6 +208,16 @@ def _migrate_5_to_6(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE memories ADD COLUMN uses INTEGER NOT NULL DEFAULT 0")
     if "last_used" not in cols:
         conn.execute("ALTER TABLE memories ADD COLUMN last_used REAL NOT NULL DEFAULT 0")
+
+
+def _migrate_6_to_7(conn: sqlite3.Connection) -> None:
+    """v7: tool_runs.actor for operator/IdP-supplied identity. Additive only."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "tool_runs" not in tables:
+        return
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(tool_runs)").fetchall()]
+    if "actor" not in cols:
+        conn.execute("ALTER TABLE tool_runs ADD COLUMN actor TEXT NOT NULL DEFAULT ''")
 
 
 def _connect() -> sqlite3.Connection:
@@ -1019,14 +1032,22 @@ def log_tool_run(
     provider: str = "",
     host: str = "",
     ok: bool = True,
+    actor: str = "",
 ) -> None:
     """Append one audit row. Best-effort: never raises (audit must not break runs)."""
+    if not actor:
+        try:
+            from .enterprise import identity
+
+            actor = identity()[0]
+        except Exception:
+            actor = ""
     try:
         conn = _connect()
         try:
             conn.execute(
-                "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts, actor)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session or "",
                     tool,
@@ -1036,6 +1057,7 @@ def log_tool_run(
                     host or "",
                     1 if ok else 0,
                     time.time(),
+                    (actor or "")[:120],
                 ),
             )
             conn.commit()
@@ -1056,17 +1078,17 @@ def list_tool_runs(session: str = "", limit: int = 200) -> list[dict]:
     try:
         if session:
             cur = conn.execute(
-                "SELECT session, tool, target, approved, provider, host, ok, ts"
+                "SELECT session, tool, target, approved, provider, host, ok, ts, actor"
                 " FROM tool_runs WHERE session=? ORDER BY id DESC LIMIT ?",
                 (session, limit),
             )
         else:
             cur = conn.execute(
-                "SELECT session, tool, target, approved, provider, host, ok, ts"
+                "SELECT session, tool, target, approved, provider, host, ok, ts, actor"
                 " FROM tool_runs ORDER BY id DESC LIMIT ?",
                 (limit,),
             )
-        keys = ("session", "tool", "target", "approved", "provider", "host", "ok", "ts")
+        keys = ("session", "tool", "target", "approved", "provider", "host", "ok", "ts", "actor")
         return [dict(zip(keys, r)) for r in cur.fetchall()]
     finally:
         conn.close()

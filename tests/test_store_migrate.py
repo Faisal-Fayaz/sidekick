@@ -20,7 +20,7 @@ def test_fresh_db_stamped_current(tmp_path, monkeypatch):
     conn = store._connect()
     conn.close()
     assert _version(db) == store.SCHEMA_VERSION
-    assert store.SCHEMA_VERSION == 6
+    assert store.SCHEMA_VERSION == 7
 
 
 def test_preversioning_db_upgrades_preserving_data(tmp_path, monkeypatch):
@@ -151,4 +151,32 @@ def test_v5_to_v6_adds_memory_rank_columns_preserving_data(tmp_path, monkeypatch
     cols = {row[1] for row in conn.execute("PRAGMA table_info(memories)")}
     conn.close()
     assert {"uses", "last_used"} <= cols
+    assert _version(db) == store.SCHEMA_VERSION
+
+
+def test_v6_to_v7_adds_tool_run_actor_preserving_data(tmp_path, monkeypatch):
+    """A v6 ledger gains an actor column without changing any row (#513)."""
+    db = tmp_path / "history.db"
+    monkeypatch.setenv("SIDEKICK_ACTOR", "alice@example.com")
+    monkeypatch.setenv("SIDEKICK_TEAM", "platform")
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE tool_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT,"
+        " tool TEXT, target TEXT, approved INTEGER, provider TEXT, host TEXT, ok INTEGER, ts REAL)"
+    )
+    conn.execute(
+        "INSERT INTO tool_runs (session, tool, target, approved, provider, host, ok, ts)"
+        " VALUES ('s', 'read_file', 'x', 1, '', '', 1, 1.0)"
+    )
+    conn.execute("PRAGMA user_version = 6")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(store, "DB_PATH", db)
+    rows = store.list_tool_runs("s")
+    assert len(rows) == 1 and rows[0]["tool"] == "read_file"
+    conn = sqlite3.connect(str(db))
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(tool_runs)")}
+    conn.close()
+    assert "actor" in cols
     assert _version(db) == store.SCHEMA_VERSION
