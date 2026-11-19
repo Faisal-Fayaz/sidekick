@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'enterprise · review',
+    title: 'An audit you can read, a reviewer that learns',
+    body: 'sk audit report renders a self-contained, offline dashboard from the local ledger; a global deny_tools policy and optional actor attribution make it useful for teams, with the SSO boundary stated honestly. Review feedback records your accept/reject decisions locally and suppresses noisy rules — with the count shown, never silently.',
+    link: '/docs#safety',
+  },
+  {
     tag: 'taint · telemetry',
     title: 'Outside text cannot act; crashes stay yours',
     body: 'Provenance from a fenced page or repo file now reaches the tool gate — writes and fetches built from it ask for approval, secret-adjacent paths are refused, and the decision is in the audit ledger. Crash reporting is off unless you opt in, and then sends only a redacted line to a local file unless you name a collector.',
@@ -452,15 +458,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.43.0 — the enterprise surface',
+    v: 'v0.44.0 — verification and docs',
     items: [
-      'SSO, per-team policies and an audit dashboard',
-      'Review rules learned from your accept/reject decisions',
+      'A local browser verification pack',
+      'Docs co-change guard for stale APIs and keys',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.43.0 — the enterprise surface: a self-contained offline audit dashboard, a global tool-deny policy and optional identity attribution (#513), plus review rules learned from local accept/reject feedback (#514)',
   'v0.42.0 — taint and telemetry: provenance from fenced content reaches the tool gate, where writes and fetches need approval and secret paths are denied, with the decision audited (#506); crash reporting is opt-in, redacted and local by default (#507)',
   'v0.41.0 — assurance and performance: published token budgets with an offline harness that fails CI on prompt bloat (#499), and an adversary model with trust boundaries, audit probes and an honest out-of-scope list (#500)',
   'v0.40.0 — search and memory: one provider seam for DuckDuckGo, Serper, Brave and local SearXNG with keys that only the user can set (#492), article extraction that drops the chrome, and recall ranked by relevance, recency and use with dedup on save (#493)',
