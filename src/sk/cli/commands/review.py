@@ -12,13 +12,17 @@ from sk.review.pack import load_review_pack
 from sk.review.schema import fail_on_threshold
 
 from ..approvers import _make_approver
-from ..base import _cfg, app, console
+from ..base import _cfg, console
 
 _FAIL_VALUES = ("blocker", "major", "minor", "nit", "never")
 
 
-@app.command("review")
+review_app = typer.Typer(help="Evidence-backed review and its local feedback")
+
+
+@review_app.callback(invoke_without_command=True)
 def review_cmd(
+    ctx: typer.Context,
     base: str = typer.Option("", "--base", help="Review the branch against this base ref"),
     staged: bool = typer.Option(False, "--staged", help="Review staged changes only"),
     commit: str = typer.Option("", "--commit", help="Review one commit"),
@@ -82,6 +86,8 @@ def review_cmd(
     With `--verify`, fast syntax checks and configured lint/typecheck checks
     run for the reviewed files through the normal approval and audit path.
     """
+    if ctx.invoked_subcommand is not None:
+        return
     if sum(bool(x) for x in (base.strip(), commit.strip(), pr, staged)) > 1:
         console.print("[red]choose one target: --base, --commit, --pr, or --staged[/red]")
         raise typer.Exit(1)
@@ -191,3 +197,37 @@ def review_cmd(
 
     if fail_on_threshold(report.findings, fail or report.fail_on):
         raise typer.Exit(1)
+
+
+@review_app.command("feedback")
+def review_feedback(
+    rule: str = typer.Option("", "--rule", help="Rule ID to record or forget"),
+    file: str = typer.Option("", "--file", help="Scope the feedback to one file path"),
+    accept: bool = typer.Option(False, "--accept", help="The finding was a true positive"),
+    reject: bool = typer.Option(False, "--reject", help="The finding was a false positive"),
+    list_rules: bool = typer.Option(False, "--list", help="Show learned rules"),
+    forget: bool = typer.Option(False, "--forget", help="Remove feedback for this rule"),
+):
+    """Record or inspect local review feedback. Never edits a review pack."""
+    from sk.review_feedback import forget as _forget
+    from sk.review_feedback import record, summary
+
+    if accept and reject:
+        console.print("[red]--accept and --reject are mutually exclusive[/red]")
+        raise typer.Exit(1)
+    if forget:
+        if not rule:
+            console.print("[red]--forget needs --rule (or use --list to inspect)[/red]")
+            raise typer.Exit(1)
+        console.print(_forget(rule, file))
+        return
+    if list_rules or not (accept or reject):
+        rows = summary()
+        console.print("\n".join(rows) if rows else "[dim](no learned review feedback yet)[/dim]")
+        console.print("[dim]Two accepts pin a rule; two rejects suppress it. Global only.[/dim]")
+        return
+    if not rule:
+        console.print("[red]--rule is required with --accept/--reject[/red]")
+        raise typer.Exit(1)
+    verdict = "accept" if accept else "reject"
+    console.print(record(rule, verdict, file))

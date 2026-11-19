@@ -34,6 +34,7 @@ from .commands import (  # noqa: F401
 
 # names used externally (tui.py, tests): re-export from their new homes
 from .commands.auth import _ask_key, _connect_flow, _pick_model_name, _pick_provider
+from .commands.review import review_app
 from .commands.system import _code_version, _full_version, audit_app
 from .resolve import _resolve_model
 
@@ -41,6 +42,7 @@ from .resolve import _resolve_model
 app.add_typer(bundle.bundle_app, name="bundle")
 app.add_typer(team.team_app, name="team")
 app.add_typer(audit_app, name="audit")
+app.add_typer(review_app, name="review")
 
 __all__ = [
     "app",
