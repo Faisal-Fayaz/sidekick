@@ -335,7 +335,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | Command | What |
 |---|---|
 | `sk egress [list\|allow HOST\|deny HOST\|test URL]` | Egress policy: what the model may fetch, and what it was blocked from ([docs](docs/egress.md)) |
-| `sk audit [--session S] [--format md\|json] [-n N]` | Compliance log: tool runs, approve/deny, local-vs-egress (`-n` clamped 1–1000) |
+| `sk audit [--session S] [--format md\|json] [-n N]` / `sk audit report [--format md\|html] [--out FILE] [-s S]` | Compliance log: tool runs, approve/deny, local-vs-egress (`-n` clamped 1–1000); `report` writes a self-contained offline dashboard ([docs](docs/enterprise.md)) |
 | `sk hook-install [--write]` | Bash/zsh logging hook |
 | `sk hooks [--check]` | List event hooks + live dry-run (see [`docs/hooks.md`](docs/hooks.md)) |
 
@@ -589,6 +589,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Event hooks](docs/hooks.md)
 - [MCP client](docs/mcp-client.md)
 - [Plugins and declarative tools](docs/plugins.md)
+- [The local enterprise surface](docs/enterprise.md)
 - [Crash telemetry (opt-in)](docs/telemetry.md)
 - [Taint-aware content policy](docs/taint.md)
 - [Threat model and audit plan](docs/threat-model.md)

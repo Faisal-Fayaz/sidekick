@@ -869,13 +869,19 @@ def export(
     console.print(f"[green]exported {name} → {dest}[/green]")
 
 
-@app.command()
+audit_app = typer.Typer(help="The local compliance ledger — fully offline")
+
+
+@audit_app.callback(invoke_without_command=True)
 def audit(
+    ctx: typer.Context,
     session: str = typer.Option("", "--session", "-s", help="Choose a session id (omit for all)"),
     format: str = typer.Option("md", "--format", "-f", help="Output as md or json"),
     limit: int = typer.Option(200, "--limit", "-n", help="Show this many rows"),
 ):
     """Show the compliance log: tool runs with approve/deny + local-vs-egress. Fully offline."""
+    if ctx.invoked_subcommand is not None:
+        return
     import datetime as _dt
     import json as _json
 
@@ -912,6 +918,27 @@ def audit(
             f"[dim]{ts}[/dim] {mark} [cyan]{r['tool']}[/cyan] {r['target'][:100]}  {where}"
             + (f" [dim]({r['session']})[/dim]" if not session.strip() else "")
         )
+
+
+@audit_app.command("report")
+def audit_report(
+    format: str = typer.Option("md", "--format", "-f", help="md or html"),
+    session: str = typer.Option("", "--session", "-s", help="Only this session"),
+    out: str = typer.Option("", "--out", help="Write to this file (default: ~/.sidekick)"),
+    limit: int = typer.Option(500, "--limit", "-n", help="Rows in the detail table"),
+):
+    """Render a self-contained Markdown/HTML dashboard from the local ledger."""
+    from sk.enterprise import write_report
+    from sk.store import list_tool_runs
+
+    rows = list_tool_runs(session=session.strip(), limit=max(1, min(limit, 5000)))
+    try:
+        path = write_report(rows, format=format, session=session.strip(), out=out)
+    except Exception as e:  # noqa: BLE001 - a write failure is a report
+        console.print(f"[red]could not write the audit report: {e}[/red]")
+        raise typer.Exit(1) from e
+    console.print(f"[green]audit report written to {path}[/green]")
+    console.print("[dim]self-contained and offline — no remote resources[/dim]")
 
 
 @app.command()

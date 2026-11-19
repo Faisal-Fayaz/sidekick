@@ -34,12 +34,13 @@ from .commands import (  # noqa: F401
 
 # names used externally (tui.py, tests): re-export from their new homes
 from .commands.auth import _ask_key, _connect_flow, _pick_model_name, _pick_provider
-from .commands.system import _code_version, _full_version
+from .commands.system import _code_version, _full_version, audit_app
 from .resolve import _resolve_model
 
-# sub-apps: `sk bundle build|verify|install`, `sk team check`
+# sub-apps: `sk bundle ...`, `sk team check`, `sk audit report`
 app.add_typer(bundle.bundle_app, name="bundle")
 app.add_typer(team.team_app, name="team")
+app.add_typer(audit_app, name="audit")
 
 __all__ = [
     "app",

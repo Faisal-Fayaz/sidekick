@@ -180,6 +180,16 @@ Manual probes worth repeating at audit time:
 6. Feed a fenced page with bidi controls and a fake fence marker into
    `/memories`-style context and confirm it is neutralised, not printed raw.
 
+## Local enterprise controls
+
+A global `~/.sidekick/policy.toml` may deny tools outright at the gate; a repo
+cannot set it, and denials are recorded as `policy=deny …` in the ledger. An
+operator or upstream IdP may supply `SIDEKICK_ACTOR`/`SIDEKICK_TEAM`, which are
+stamped into audit rows; there is **no built-in IdP** in the open core.
+`sk audit report` renders a self-contained offline dashboard, with secrets and
+URLs redacted from targets. `src/sk/enterprise.py`, `src/sk/store.py`;
+`tests/test_enterprise.py`; [enterprise.md](enterprise.md).
+
 ## Optional data egress
 
 **Crash telemetry is off by default.** With no flag and no global config key,
