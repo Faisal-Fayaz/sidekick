@@ -27,13 +27,13 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.43.0 (the enterprise surface)
+## Next — v0.44.0 (verification and docs)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Managed enterprise flavor** — SSO, per-team tool policies and an audit dashboard on top of the same binary; the open core stays free.
-- **Review feedback memory** — learn local, inspectable rules from accepted/rejected review findings so future reviews improve without a model change.
+- **Browser verification pack** — drive a local Playwright/Chromium session to verify a web change, capture an accessibility snapshot or screenshot, and optionally emit an e2e test; egress stays deny-by-default and the pack has no required dependency.
+- **Docs co-change guard** — detect code changes that invalidate docs/ADRs and propose a same-PR docs update, starting with public APIs, CLI help and config keys.
 
 Out of scope for now: the distilled model, the frontier chain and the remaining
 compaction layers. Later versions remain tentative.
@@ -178,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.43.0` — **the enterprise surface.** A self-contained offline audit dashboard (`sk audit report`), a global `deny_tools` policy at the gate and optional operator-supplied actor/team attribution — with the SSO boundary stated honestly (#513). Review feedback is a global-only accept/reject log: repeated rejects suppress a rule, accepts pin it as trusted, and suppression is counted in the report (#514). Tests 2088 → 2111.
 - `v0.42.0` — **taint and telemetry.** Fenced content now carries provenance into the tool gate: tainted writes and fetches need approval, secret-adjacent paths are denied, and every decision is audited (#506). Crash reporting is opt-in, redacted and local by default, with a remote collector only when explicitly named (#507). Tests 2070 → 2088.
 - `v0.41.0` — **assurance and performance.** Per-surface token budgets with an offline harness that fails CI on prompt bloat (#499), and a published adversary model with trust boundaries, code/test references, audit probes and an honest out-of-scope list (#500). Tests 2059 → 2070.
 - `v0.40.0` — **search and memory.** `web_search` gains one provider seam with a keyless DuckDuckGo default, Serper and Brave BYO-key backends and a local SearXNG endpoint; provider choice and keys are global-only and every result passes the existing egress/SSRF guards (#492). `read_url` now extracts the article rather than the page chrome. Memory recall is ranked by relevance × recency × importance, near-duplicates merge on save, and proposals are data rather than silent writes behind an additive schema migration (#493). Tests 2031 → 2059.
