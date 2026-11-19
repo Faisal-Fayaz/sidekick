@@ -188,6 +188,14 @@ def review(
         findings, diff, repo_root=diff.repo_root, context_lines=pack.context_lines
     )
     valid = _dedupe_findings(valid)
+    # Local accept/reject feedback is applied before the cap so a suppressed
+    # finding cannot crowd out a real one (#514). Never silent in the report.
+    try:
+        from ..review_feedback import apply as _apply_feedback
+
+        valid, feedback_suppressed = _apply_feedback(valid)
+    except Exception:
+        feedback_suppressed = 0
     valid = _cap(valid, pack.max_findings)
     valid = [dataclasses.replace(f, id=f"F{idx:03d}") for idx, f in enumerate(valid, 1)]
 
@@ -211,12 +219,20 @@ def review(
         files_skipped=len(diff.skipped),
         changed_lines=diff.changed_lines,
         reviewed_lines=reviewed,
-        dropped=len(dropped),
+        dropped=len(dropped) + feedback_suppressed,
         model=str(getattr(cfg, "model", "")),
         provider=str(getattr(cfg, "provider", "")),
         review_pack_hash=pack.hash,
         fail_on=pack.fail_on,
-        pack_warnings=list(pack.warnings),
+        pack_warnings=list(pack.warnings)
+        + (
+            [
+                f"{feedback_suppressed} finding(s) suppressed by local review feedback "
+                "(`sk review feedback --list`)"
+            ]
+            if feedback_suppressed
+            else []
+        ),
         latency_ms=int((time.time() - started) * 1000),
         token_cost=0.0,
         truncated=diff.truncated,

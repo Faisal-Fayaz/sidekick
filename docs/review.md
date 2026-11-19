@@ -223,6 +223,33 @@ hash and any pack warnings. Review warnings (model chunk failures, skipped
 files, truncation) are in the report; they do not erase the findings that were
 validated.
 
+## Local feedback memory
+
+A reviewer learns from your team's judgements without changing the model or a
+shared pack. Feedback is a **global-only** JSONL log at
+`~/.sidekick/review-feedback.jsonl`; a repository cannot write to it.
+
+```bash
+sk review feedback --rule security/unsafe-yaml-load --reject
+sk review feedback --rule correctness/off-by-one --file src/loop.py --reject
+sk review feedback --rule style/naming --accept
+sk review feedback --list
+sk review feedback --rule security/unsafe-yaml-load --forget
+```
+
+The rules learned:
+
+- **Two rejects** for a rule suppress it everywhere; two rejects scoped to a
+  file suppress it only on that path.
+- **Two accepts** pin a rule as trusted: its findings keep their severity and
+  get `high` confidence, and trust wins over suppression.
+- Suppression happens **before** the finding cap, so a suppressed finding
+  cannot crowd out a real one. The count is added to `dropped` in the JSON
+  report and the Markdown report gains a warning naming `sk review feedback
+  --list` — suppression is never silent.
+- `--forget` removes only the feedback entries for the named rule (and file,
+  if given). It never edits a review pack or any project file.
+
 ## Limits
 
 - The diff is capped (200 files / 400 KB by default). Truncation is reported
