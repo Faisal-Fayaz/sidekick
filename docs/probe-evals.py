@@ -298,6 +298,57 @@ def render_comparison(runs: list[dict]) -> str:
     return _table(rows, ["target", "pass@1", "wall/task", "tokens", "cost"])
 
 
+# Weights for the capability score. Network is deliberately low: it is
+# isolated by default, so it cannot stand in for offline capability.
+CATEGORY_WEIGHTS: dict[str, float] = {
+    "grounding": 0.20,
+    "tool": 0.25,
+    "code": 0.25,
+    "reasoning": 0.20,
+    "chat": 0.05,
+    "network": 0.05,
+}
+
+
+def score(results: list[dict], tasks: list[dict]) -> dict:
+    """Category pass@1 and a weighted 0-100 capability score.
+
+    The score is a *relative* measure on this fixed task set. It is not an
+    absolute claim about frontier parity without head-to-head baselines.
+    """
+    category_of = {task["id"]: task.get("category", "chat") for task in tasks}
+    buckets: dict[str, list[float]] = {}
+    for row in results:
+        category = category_of.get(row.get("id"), "chat")
+        buckets.setdefault(category, []).append(float(row.get("pass_at_1", 0)))
+    per_category = {
+        name: round(sum(values) / len(values), 3) for name, values in sorted(buckets.items())
+    }
+    total_weight = sum(CATEGORY_WEIGHTS.get(name, 0.05) for name in buckets)
+    weighted = sum(per_category[name] * CATEGORY_WEIGHTS.get(name, 0.05) for name in per_category)
+    return {
+        "per_category": per_category,
+        "capability_score": round(100 * weighted / total_weight, 1) if total_weight else 0.0,
+        "tasks": len(results),
+        "weights": dict(CATEGORY_WEIGHTS),
+    }
+
+
+def render_score(data: dict) -> str:
+    lines = [
+        "capability score: {}".format(data["capability_score"]),
+        "",
+        "category | pass@1 | weight",
+    ]
+    for name, value in data["per_category"].items():
+        lines.append(f"{name} | {value:.3f} | {data['weights'].get(name, 0.05)}")
+    lines.append("")
+    lines.append(
+        "Relative to this fixed task set; publish head-to-head baselines before comparing agents."
+    )
+    return "\n".join(lines)
+
+
 def run_target(target: dict, tasks: list[dict], args) -> list[dict]:
     """Run the whole task set against one target."""
     from sk.config import Config, provider_tier
@@ -351,6 +402,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--spend-cap", type=float, default=0.0)
     parser.add_argument("--repeat", type=int, default=1, help="samples per task")
     parser.add_argument("--k", type=int, default=1, help="k for pass@k")
+    parser.add_argument(
+        "--score", action="store_true", help="print category pass@1 and capability score"
+    )
+    parser.add_argument("--category", action="append", default=[], help="only run these categories")
+    parser.add_argument("--list", action="store_true", help="list the fixed task set and exit")
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--compare",
@@ -366,6 +422,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     tasks = load_tasks()
+    if args.list:
+        for task in tasks:
+            print(
+                f"{task['id']:<18} {task.get('category', 'chat'):<10} {task.get('difficulty', '-'):<7} {task['kind']}"
+            )
+        print(f"{len(tasks)} tasks")
+        return 0
+    if args.category:
+        wanted = set(args.category)
+        tasks = [t for t in tasks if t.get("category", "chat") in wanted]
+        if not tasks:
+            print(f"no task in categories {sorted(wanted)}", file=sys.stderr)
+            return 2
     if args.task:
         wanted = set(args.task)
         tasks = [t for t in tasks if t["id"] in wanted]
@@ -405,9 +474,18 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
         if args.json:
-            print(json.dumps(runs, indent=2))
+            payload = (
+                [dict(run, score=score(run["results"], tasks)) for run in runs]
+                if args.score
+                else runs
+            )
+            print(json.dumps(payload, indent=2))
             return 0
         print(render_comparison(runs))
+        if args.score:
+            for run in runs:
+                label = f"{run['label']}:" if run["label"] else "target:"
+                print(f"\n{label}\n{render_score(score(run['results'], tasks))}")
         return (
             0 if all(all(r.get("pass_at_1") == 1.0 for r in run["results"]) for run in runs) else 1
         )
@@ -415,9 +493,15 @@ def main(argv: list[str] | None = None) -> int:
     results = run_target({"provider": "", "model": "", "price": 0.0}, tasks, args)
 
     if args.json:
-        print(json.dumps(results, indent=2))
+        payload = {"results": results} if args.score else results
+        if args.score:
+            payload["score"] = score(results, tasks)
+        print(json.dumps(payload, indent=2))
         return 0
     print(render(results, price_per_mtok=args.price_per_mtok, k=max(1, args.k)))
+    if args.score:
+        print()
+        print(render_score(score(results, tasks)))
     return 0 if all(r["pass_at_1"] == 1.0 for r in results) else 1
 
 

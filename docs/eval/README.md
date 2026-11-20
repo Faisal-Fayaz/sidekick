@@ -7,8 +7,10 @@ run against a real model, with the numbers written down.
 
 ## The task set
 
-`tasks.json` — five fixed prompts. They do not change between runs: a number
-that moves because the task set moved is not a number.
+`tasks.json` — 67 fixed prompts across six categories (chat, grounding, tool,
+code, reasoning, network). The five original seeds are preserved. They do not
+change between runs: a number that moves because the task set moved is not a
+number. `python3 docs/probe-evals.py --list` prints them all.
 
 | task | what it probes |
 |---|---|
@@ -28,6 +30,9 @@ python3 docs/probe-evals.py --tier smart        # local smart tier
 python3 docs/probe-evals.py --task p3_grounding # one task
 python3 docs/probe-evals.py --allow-network --network
 python3 docs/probe-evals.py --repeat 5 --k 5    # pass@1 and pass@5
+python3 docs/probe-evals.py --category code --score
+python3 docs/probe-evals.py --compare --target ollama:qwen3:4b \
+  --target openrouter:openai/gpt-4o-mini@0.15 --repeat 3 --score
 python3 docs/probe-evals.py --json              # machine-readable
 
 # The comparison: local against metered, with the cost column (#157)
