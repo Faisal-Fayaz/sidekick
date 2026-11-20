@@ -14,6 +14,7 @@ from .base import _cfg, app, console
 # side-effect imports: register all @app.command()s
 from .commands import (  # noqa: F401
     auth,
+    browser,
     bundle,
     chat,
     check,

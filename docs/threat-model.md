@@ -209,7 +209,10 @@ are never included. `src/sk/telemetry.py`; `tests/test_telemetry.py`;
 - **`curl` in a shell.** Egress governs fetches made through the agent's
   tools; a shell command is governed by approval and the OS sandbox.
 - **What a program does after it starts.** A policy that reads command text
-  cannot constrain the program it launched.
+  cannot constrain the program it launched. The optional browser pack (#520)
+  gates the URL it is *given* through egress and SSRF, but in-page navigations
+  after launch are not re-gated. `src/sk/browser_verify.py`;
+  `tests/test_browser_verify.py`; [browser.md](browser.md).
 - **A compromised user account or home directory.** Everything under
   `~/.sidekick` is operator-trusted by design, including the token and policy.
 - **Model judgement.** Fences and system rules raise the floor; they are not a
