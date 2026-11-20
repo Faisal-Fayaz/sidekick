@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'verification · docs',
+    title: 'See the page, catch the stale doc',
+    body: 'sk verify-browser drives a browser you already have, behind the same egress and SSRF gates, and adds no dependency. sk docs check notices when a change removes a public API, config key or command that the docs still name — and proposes a same-PR update without editing a thing.',
+    link: '/docs#install',
+  },
+  {
     tag: 'enterprise · review',
     title: 'An audit you can read, a reviewer that learns',
     body: 'sk audit report renders a self-contained, offline dashboard from the local ledger; a global deny_tools policy and optional actor attribution make it useful for teams, with the SSO boundary stated honestly. Review feedback records your accept/reject decisions locally and suppresses noisy rules — with the count shown, never silently.',
@@ -458,15 +464,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.44.0 — verification and docs',
+    v: 'v0.45.0 — trust and platform boundaries',
     items: [
-      'A local browser verification pack',
-      'Docs co-change guard for stale APIs and keys',
+      'Checksum-pinned remote skill packs',
+      'An explicit Windows support decision',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.44.0 — verification and docs: an optional local browser pack behind the egress/SSRF gates (#520), and a docs co-change guard that proposes updates for removed APIs, keys and commands (#521)',
   'v0.43.0 — the enterprise surface: a self-contained offline audit dashboard, a global tool-deny policy and optional identity attribution (#513), plus review rules learned from local accept/reject feedback (#514)',
   'v0.42.0 — taint and telemetry: provenance from fenced content reaches the tool gate, where writes and fetches need approval and secret paths are denied, with the decision audited (#506); crash reporting is opt-in, redacted and local by default (#507)',
   'v0.41.0 — assurance and performance: published token budgets with an offline harness that fails CI on prompt bloat (#499), and an adversary model with trust boundaries, audit probes and an honest out-of-scope list (#500)',
