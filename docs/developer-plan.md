@@ -1,9 +1,10 @@
 # Sidekick Developer Plan
 
-**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`; evals, benchmark and adoption shipped in `v0.34.0`; the developer ladder shipped in `v0.35.0`; OS isolation and the explain rung shipped in `v0.36.0`; the surfaces shipped in `v0.37.0`; the regulated install shipped in `v0.38.0`; the team surface shipped in `v0.39.0`; search and memory shipped in `v0.40.0`; assurance and performance shipped in `v0.41.0`; taint and telemetry shipped in `v0.42.0`; the enterprise surface shipped in `v0.43.0`; verification and docs shipped in `v0.44.0`
+**Status:** Phase 1 shipped in `v0.31.0`; Phase 2 (editable review pack + verification) shipped in `v0.32.0`; provider + platform hardening shipped in `v0.33.0`; evals, benchmark and adoption shipped in `v0.34.0`; the developer ladder shipped in `v0.35.0`; OS isolation and the explain rung shipped in `v0.36.0`; the surfaces shipped in `v0.37.0`; the regulated install shipped in `v0.38.0`; the team surface shipped in `v0.39.0`; search and memory shipped in `v0.40.0`; assurance and performance shipped in `v0.41.0`; taint and telemetry shipped in `v0.42.0`; the enterprise surface shipped in `v0.43.0`; verification and docs shipped in `v0.44.0`; trust and platform boundaries shipped in `v0.45.0`
 **Date:** 2026-11-03
 **Accepted:** 2026-11-04
-**Revised:** 2026-11-20 — verification and docs shipped: an optional browser pack and a docs co-change guard
+**Revised:** 2026-11-20 — trust and platform boundaries shipped: checksum-pinned packs and an explicit Windows decision
+**Earlier revision:** 2026-11-20 — verification and docs shipped: an optional browser pack and a docs co-change guard
 **Earlier revision:** 2026-11-19 — the enterprise surface shipped: an offline audit dashboard, operator tool policy, identity attribution and local review feedback
 **Earlier revision:** 2026-11-18 — taint and telemetry shipped: provenance at the tool gate and opt-in, redacted crash reporting
 **Earlier revision:** 2026-11-18 — assurance and performance shipped: token budgets, an offline regression harness and a documented adversary model
@@ -33,7 +34,8 @@
 [v0.41.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/16), and
 [v0.42.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/17), and
 [v0.43.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/18), and
-[v0.44.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/19)
+[v0.44.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/19), and
+[v0.45.0 milestone](https://github.com/Faisal-Fayaz/sidekick/milestone/20)
 (all closed). Items are listed in §9.
 
 > `ROADMAP.md` remains the source of truth for versioned scope. This document
@@ -939,9 +941,10 @@ If the honest answer is "parity with cloud agents", it waits.
 - `v0.42.0` — shipped: taint and telemetry.
 - `v0.43.0` — shipped: the enterprise surface.
 - `v0.44.0` — shipped: verification and docs.
-- `v0.45.0` — next: trust and platform boundaries.
+- `v0.45.0` — shipped: trust and platform boundaries.
+- `v0.46.0` — next: long sessions and sustainability.
 
-`v0.45.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
+`v0.46.0` is scoped tentatively in `ROADMAP.md`. Later versions remain tentative.
 
 ---
 
@@ -1074,7 +1077,7 @@ Items 1–7 shipped in `v0.31.0` (PR #411); items 8–10 shipped in `v0.32.0`
 13. Update README/website/portfolio; add `SECURITY.md` and issue templates.
 14. Developer-ladder spikes (post-v0.31): `sk fix`, `sk test`, and `sk pr`,
     each gated by the promotion test in §5.1 — shipped in `v0.35.0` (#451–#454).
-    `sk explain` shipped in `v0.36.0`; the surfaces shipped in `v0.37.0`; the regulated install shipped in `v0.38.0` (#461); the team surface shipped in `v0.39.0` (#482, #483); search and memory shipped in `v0.40.0` (#492, #493); assurance and performance shipped in `v0.41.0` (#499, #500); taint and telemetry shipped in `v0.42.0` (#506, #507); the enterprise surface shipped in `v0.43.0` (#513, #514); verification and docs shipped in `v0.44.0` (#520, #521).
+    `sk explain` shipped in `v0.36.0`; the surfaces shipped in `v0.37.0`; the regulated install shipped in `v0.38.0` (#461); the team surface shipped in `v0.39.0` (#482, #483); search and memory shipped in `v0.40.0` (#492, #493); assurance and performance shipped in `v0.41.0` (#499, #500); taint and telemetry shipped in `v0.42.0` (#506, #507); the enterprise surface shipped in `v0.43.0` (#513, #514); verification and docs shipped in `v0.44.0` (#520, #521); trust and platform boundaries shipped in `v0.45.0` (#527, #528).
 
 ---
 

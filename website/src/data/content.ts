@@ -187,6 +187,12 @@ export const FEATURES = [
 
 export const WHATNEW = [
   {
+    tag: 'registry · platforms',
+    title: 'Packs you can pin, boundaries you can read',
+    body: 'Registry skill packs now carry a commit and a deterministic manifest hash; installs verify in a temporary directory and fail closed on a mismatch, with unpinned sources needing an explicit opt-in. Windows is declared a non-goal with the POSIX reasons named, and a test keeps that decision in step with CI.',
+    link: '/docs#safety',
+  },
+  {
     tag: 'verification · docs',
     title: 'See the page, catch the stale doc',
     body: 'sk verify-browser drives a browser you already have, behind the same egress and SSRF gates, and adds no dependency. sk docs check notices when a change removes a public API, config key or command that the docs still name — and proposes a same-PR update without editing a thing.',
@@ -464,15 +470,16 @@ export const FAQS = [
 
 export const ROADMAP_NEXT: { v: string; items: string[] }[] = [
   {
-    v: 'v0.45.0 — trust and platform boundaries',
+    v: 'v0.46.0 — long sessions and sustainability',
     items: [
-      'Checksum-pinned remote skill packs',
-      'An explicit Windows support decision',
+      'Faithfulness checks for rolling summaries',
+      'An honest open-core sustainability note',
     ],
   },
 ];
 
 export const ROADMAP_DONE = [
+  'v0.45.0 — trust and platform boundaries: commit- and hash-pinned skill packs that verify before install (#527), and an explicit Windows non-goal guarded against CI drift (#528)',
   'v0.44.0 — verification and docs: an optional local browser pack behind the egress/SSRF gates (#520), and a docs co-change guard that proposes updates for removed APIs, keys and commands (#521)',
   'v0.43.0 — the enterprise surface: a self-contained offline audit dashboard, a global tool-deny policy and optional identity attribution (#513), plus review rules learned from local accept/reject feedback (#514)',
   'v0.42.0 — taint and telemetry: provenance from fenced content reaches the tool gate, where writes and fetches need approval and secret paths are denied, with the decision audited (#506); crash reporting is opt-in, redacted and local by default (#507)',

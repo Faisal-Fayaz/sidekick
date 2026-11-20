@@ -27,16 +27,16 @@ How we decide what gets in:
 - **Safety gates before features.** Writes need approval, destructive patterns hard-refused, SSRF guards on fetchers. New capabilities ship with regression tests (`tests/test_security.py`).
 - **Additive developer features.** Review, verification, and later developer capabilities are packs on the shared harness, not a replacement for the assistant.
 
-## Next — v0.45.0 (trust and platform boundaries)
+## Next — v0.46.0 (long sessions and sustainability)
 
 Next milestone; scope stays tentative until its issues are filed. Details live
 in [`docs/developer-plan.md`](docs/developer-plan.md).
 
-- **Registry trust + signing** — checksum pinning for remote packs: the index carries hashes, installs verify before cloning, and a mismatch fails closed.
-- **Windows decision** — explicitly scope Windows support or declare it a non-goal, naming the POSIX assumptions in the code and CI.
+- **Compaction evals** — a faithfulness quality bar for rolling session summaries so long sessions do not silently degrade.
+- **Sustainability options** — licensing, seats vs support, and what stays open-core if an enterprise flavor ever happens. Early thinking, no commitments.
 
 Out of scope for now: the distilled model, the managed enterprise service and
-the remaining compaction layers. Later versions remain tentative.
+the frontier chain. Later versions remain tentative.
 
 ## Later
 
@@ -178,6 +178,7 @@ Explicit non-goals: a cloud-hosted version, frontier feature parity, native mobi
 
 Shipped, most recent first. Details in [Releases](https://github.com/Faisal-Fayaz/sidekick/releases).
 
+- `v0.45.0` — **trust and platform boundaries.** Registry packs are pinned by commit and a deterministic `SKILL.md` manifest; installs verify in a temp directory and fail closed on a mismatch, with unpinned sources requiring an explicit opt-in (#527). Windows is declared a non-goal with named POSIX blockers, guarded by a test that compares the doc's matrix to CI (#528). Tests 2130 → 2145.
 - `v0.44.0` — **verification and docs.** An optional browser pack drives an existing Chromium/Playwright install behind the egress and SSRF gates, with no required dependency (#520). A docs co-change guard reports removed public APIs, config keys and CLI commands still named in docs, proposing a same-PR update without editing files (#521). Tests 2111 → 2130.
 - `v0.43.0` — **the enterprise surface.** A self-contained offline audit dashboard (`sk audit report`), a global `deny_tools` policy at the gate and optional operator-supplied actor/team attribution — with the SSO boundary stated honestly (#513). Review feedback is a global-only accept/reject log: repeated rejects suppress a rule, accepts pin it as trusted, and suppression is counted in the report (#514). Tests 2088 → 2111.
 - `v0.42.0` — **taint and telemetry.** Fenced content now carries provenance into the tool gate: tainted writes and fetches need approval, secret-adjacent paths are denied, and every decision is audited (#506). Crash reporting is opt-in, redacted and local by default, with a remote collector only when explicitly named (#507). Tests 2070 → 2088.
