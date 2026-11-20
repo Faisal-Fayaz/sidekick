@@ -61,10 +61,37 @@ pass@1 table; a single overall number hides where an agent is weak.
 python3 docs/probe-evals.py --compare --repeat 3 --score
 ```
 
+## First snapshot on the expanded set (2026-11-20)
+
+| | |
+|---|---|
+| when | 2026-11-20 |
+| sidekick | 0.45.0 |
+| target | `ollama/llama3.2:3b` (local fast tier), 1 sample per task |
+| scope | chat + reasoning only: 22 prompts, network excluded |
+
+| category | pass@1 | tasks |
+|---|---:|---:|
+| chat | 0.667 | 12 |
+| reasoning | 0.400 | 10 |
+| **score on this slice** | **45.3** | 22 |
+
+12 obeyed, 0 paraphrased, 10 failed · 166.6 s total · 1,594 estimated tokens.
+
+The score is renormalized over the two categories actually run, so it is
+**not** comparable to a full-set score. This is a local 3B model on two
+categories; it says nothing about frontier parity and no metered baseline was
+run alongside it. The missing categories (grounding, tool, code, network) are
+the next measurement.
+
+A first attempt at this run silently used the saved OpenRouter config, whose
+key returns HTTP 401; those results were discarded, and the harness's
+`--provider` flag was fixed so a dead key cannot masquerade as a capability
+failure. The regression is pinned in `tests/test_eval_tasks.py`.
+
 > **Historical numbers below:** the table was produced with the original
 > five-task set (four tasks per run). It is kept for provenance, but it is **not
-> comparable** to scores from the expanded 67-task set. A new snapshot with the
-> expanded set and named baselines is the next measurement to publish here.
+> comparable** to scores from the expanded 67-task set.
 
 ## The measurement
 
