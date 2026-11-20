@@ -185,5 +185,10 @@ def test_skills_pin_cli(tmp_path):
 
 
 def test_install_help_has_allow_unpinned():
+    import re
+
     result = CliRunner().invoke(app, ["skills-install", "--help"])
-    assert "--allow-unpinned" in result.output
+    # Rich wraps option names at the terminal width (80 in CI), so compare
+    # after stripping ANSI codes and whitespace rather than raw text.
+    plain = re.sub(r"\s+", "", re.sub(r"\x1b\[[0-9;]*m", "", result.output))
+    assert "--allow-unpinned" in plain
