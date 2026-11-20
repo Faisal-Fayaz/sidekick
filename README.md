@@ -595,6 +595,7 @@ current non-secret settings — keys stay in keyring/env).
 - [The local enterprise surface](docs/enterprise.md)
 - [Crash telemetry (opt-in)](docs/telemetry.md)
 - [Taint-aware content policy](docs/taint.md)
+- [Platform support (Windows decision)](docs/platforms.md)
 - [Skill registry trust](docs/registry.md)
 - [Browser verification](docs/browser.md)
 - [Docs co-change guard](CONTRIBUTING.md#docs-co-change-guard)
