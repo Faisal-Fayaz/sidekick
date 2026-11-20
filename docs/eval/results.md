@@ -61,28 +61,50 @@ pass@1 table; a single overall number hides where an agent is weak.
 python3 docs/probe-evals.py --compare --repeat 3 --score
 ```
 
-## First snapshot on the expanded set (2026-11-20)
+## First snapshots on the expanded set (2026-11-20)
+
+### Full local run
 
 | | |
 |---|---|
 | when | 2026-11-20 |
-| sidekick | 0.45.0 |
+| sidekick | 0.45.0 (+ benchmark work on `main`) |
 | target | `ollama/llama3.2:3b` (local fast tier), 1 sample per task |
-| scope | chat + reasoning only: 22 prompts, network excluded |
+| scope | all 64 non-network prompts |
 
 | category | pass@1 | tasks |
 |---|---:|---:|
-| chat | 0.667 | 12 |
+| chat | 0.750 | 12 |
 | reasoning | 0.400 | 10 |
-| **score on this slice** | **45.3** | 22 |
+| grounding | 0.000 | 11 |
+| tool | 0.000 | 16 |
+| code | 0.000 | 15 |
+| **capability score** | **12.4** | 64 |
 
-12 obeyed, 0 paraphrased, 10 failed · 166.6 s total · 1,594 estimated tokens.
+13 obeyed, 0 paraphrased, 51 failed · 1,573.5 s total · 3,362 estimated tokens.
 
-The score is renormalized over the two categories actually run, so it is
-**not** comparable to a full-set score. This is a local 3B model on two
-categories; it says nothing about frontier parity and no metered baseline was
-run alongside it. The missing categories (grounding, tool, code, network) are
-the next measurement.
+**What the zeros mean.** Every failure in grounding, tool and code recorded
+`tools: []`: the model answered from prose, claimed an action without taking
+it, or ran out of its step budget. The harness's `tool_ran` rule marks those
+FAILED even when the prose looks right — an answer without grounding is a
+guess, and a claim without a tool call is not an action. This is a measurement
+of a 3B local model's tool-calling reliability, not a Sidekick regression. A
+second local model (`qwen2.5-coder:7b`) showed the same pattern on the seed
+tool tasks; `qwen3:4b` spent its step budget without answering. Raising the
+step budget or disabling reasoning mode is a separate experiment, not a
+reason to change the verdict rule.
+
+**Limits.** One sample per task, one machine, one weak local tier, no metered
+baseline, and no network tasks. The score is relative to this fixed set and is
+not a frontier-parity claim. The next measurement is a repeat≥3 run with a
+named metered baseline so the comparison is meaningful.
+
+### Earlier chat + reasoning slice
+
+The same model over 22 prompts (12 chat, 10 reasoning), one sample each:
+chat 0.667, reasoning 0.400, slice score 45.3, 166.6 s, 1,594 tokens. The
+score was renormalized over two categories, so it is **not** comparable to the
+full-set 12.4 — it is kept only to show that the two runs agree on reasoning.
 
 A first attempt at this run silently used the saved OpenRouter config, whose
 key returns HTTP 401; those results were discarded, and the harness's
