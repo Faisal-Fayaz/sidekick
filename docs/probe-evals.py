@@ -490,7 +490,14 @@ def main(argv: list[str] | None = None) -> int:
             0 if all(all(r.get("pass_at_1") == 1.0 for r in run["results"]) for run in runs) else 1
         )
 
-    results = run_target({"provider": "", "model": "", "price": 0.0}, tasks, args)
+    # Pass the CLI target through: previously --provider/--model were parsed
+    # but ignored here, so a run silently used the saved config (and a dead
+    # key looked like a capability failure).
+    results = run_target(
+        {"provider": args.provider, "model": args.model, "price": args.price_per_mtok},
+        tasks,
+        args,
+    )
 
     if args.json:
         payload = {"results": results} if args.score else results

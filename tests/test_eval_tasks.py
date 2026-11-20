@@ -228,3 +228,20 @@ def test_scoring_is_weighted_and_explained():
 def test_list_flag_shows_every_task():
     result = _harness().main(["--list"])
     assert result == 0
+
+
+def test_cli_provider_is_not_ignored(monkeypatch, capsys):
+    """A dead --provider made a 401 look like a capability failure (#534)."""
+    module = _harness()
+    seen = {}
+
+    def fake_run_target(target, tasks, args):
+        seen["provider"] = target["provider"]
+        seen["model"] = target["model"]
+        return []
+
+    monkeypatch.setattr(module, "run_target", fake_run_target)
+    assert module.main(["--provider", "ollama", "--model", "qwen3:4b"]) == 0
+    assert seen["provider"] == "ollama"
+    assert seen["model"] == "qwen3:4b"
+    capsys.readouterr()
