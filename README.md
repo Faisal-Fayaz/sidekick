@@ -309,6 +309,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 | `sk fix "<problem>" [--json] [--yes] [--allow LIST] [--deny LIST] [--trust-project-checks] [--verify-full] [--session S]` | Investigate and fix a problem, then prove it: the agent works under the approval gate, its edits are checkpointed, and the changed files are verified (syntax + the project's lint/typecheck checks). Reports the verdict — pass, fail, or unknown — and exits `1` when the change did not verify |
 | `sk bundle build --out DIR` / `sk bundle verify --in DIR` / `sk bundle install --in DIR --into DIR` | Build a verified air-gapped bundle and install it offline (`--no-index` from the bundled wheels only). Built for this machine's OS, arch and Python version |
 | `sk verify-browser URL [--snapshot F] [--screenshot F] [--emit-test F] [--json]` | Optional local browser verification using an existing Chromium/Playwright install; target passes egress + SSRF first ([docs](docs/browser.md)) |
+| `sk docs check [--since REF] [--paths P] [--json]` | Propose docs updates when a change removes a documented API, config key or CLI command; never edits ([docs](CONTRIBUTING.md#docs-co-change-guard)) |
 | `sk serve [--host 127.0.0.1] [--port 8787] [--read-only] | A localhost HTTP surface over the same agent loop, tools, and audit trail. Loopback only — never `0.0.0.0` — and always behind a token |
 | `sk explain "<question>" [--json] [--session S] | Explain the code, grounded in it: the agent reads the repository and answers with `file:line` citations, saying plainly when the code does not answer the question. Read-only — no write and no shell is reachable from it |
 | `sk pr [--base REF] [--title T] [--body B] [--remote NAME] [--push] [--yes] [--json] | Prepare a pull request from the working tree. The title and body are derived from the branch's commits and the diff — they cannot claim work that did not happen. With `--push` the branch is pushed and the pull request opened through `gh`, both after a confirmation; protected branches are never pushed |
@@ -595,6 +596,7 @@ current non-secret settings — keys stay in keyring/env).
 - [Crash telemetry (opt-in)](docs/telemetry.md)
 - [Taint-aware content policy](docs/taint.md)
 - [Browser verification](docs/browser.md)
+- [Docs co-change guard](CONTRIBUTING.md#docs-co-change-guard)
 - [Threat model and audit plan](docs/threat-model.md)
 - [Performance budgets](docs/perf.md)
 - [Memory: ranking, merging and proposals](docs/memory.md)
