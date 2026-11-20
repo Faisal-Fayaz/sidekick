@@ -17,7 +17,7 @@ export default function Roadmap() {
 
       <div className="grid-2">
         <div className="card">
-          <span className="tag">next — v0.44.0 · verification and docs</span>
+          <span className="tag">next — v0.45.0 · trust and platform boundaries</span>
           {ROADMAP_NEXT.map((r) => (
             <div key={r.v}>
               <h3>{r.v}</h3>
