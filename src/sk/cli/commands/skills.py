@@ -23,12 +23,15 @@ def skills():
 def skills_install(
     name: str = typer.Argument("superpowers", help="Install a preset, registry name, or git URL"),
     force: bool = typer.Option(False, "--force", help="Re-clone if present"),
+    allow_unpinned: bool = typer.Option(
+        False, "--allow-unpinned", help="Permit a source with no checksum pin"
+    ),
 ):
     """Install skill packs: sk skills-install superpowers"""
     from sk.skills import install_pack
 
     console.print(f"[dim]installing {name}...[/dim]")
-    out = install_pack(name, force=force)
+    out = install_pack(name, force=force, allow_unpinned=allow_unpinned)
     if out.startswith("Installed"):
         console.print(f"[green]{out}[/green]")
     else:
@@ -79,6 +82,7 @@ def skills_registry(
     query: str = typer.Argument("", help="Search by keywords (empty = list the whole registry)"),
 ):
     """Browse installable packs beyond superpowers: sk skills-registry agents"""
+    from sk.registry_trust import PINS
     from sk.skills import REGISTRY, search_registry
 
     rows = search_registry(query)
@@ -90,5 +94,19 @@ def skills_registry(
         console.print("[yellow]no matches — try different words[/yellow]")
         return
     for entry in rows:
-        console.print(f"• [cyan]{entry['name']}[/cyan] — {entry['description'][:120]}")
+        pin = PINS.get(entry["name"])
+        state = f"[green]pinned {pin['commit'][:8]}[/green]" if pin else "[yellow]unpinned[/yellow]"
+        console.print(f"• [cyan]{entry['name']}[/cyan] — {entry['description'][:120]} ({state})")
     console.print(f"[dim]install: sk skills-install <name> ({len(REGISTRY)} in registry)[/dim]")
+
+
+@app.command(name="skills-pin")
+def skills_pin(
+    path: str = typer.Argument(..., help="Local checkout to compute a pin for"),
+):
+    """Print the commit and manifest hash for a pack checkout (#527)."""
+    import json
+
+    from sk.registry_trust import pin_for_local
+
+    console.print(json.dumps(pin_for_local(path), indent=2))

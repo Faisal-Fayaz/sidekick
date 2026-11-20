@@ -45,15 +45,23 @@ def test_install_pack_registry_mocked_clone(monkeypatch, tmp_path):
     _iso(tmp_path, monkeypatch)
     monkeypatch.setattr("shutil.which", lambda b: "/usr/bin/git")
 
+    from pathlib import Path
+
+    import sk.registry_trust as trust
+
     def fake_run(cmd, **k):
         assert "--depth" in cmd and "1" in cmd  # shallow clone
-        dest = skills.SKILLS_DIR / "anthropic-skills"
+        # The verified installer clones into a temp dir first.
+        dest = Path(cmd[-1])
         (dest / "pdf").mkdir(parents=True)
         (dest / "pdf" / "SKILL.md").write_text(
             '---\nname: pdf\ndescription: "PDF docs."\n---\n\n# PDF\n\nFill forms.'
         )
         return type("R", (), {})()
 
+    # This test exercises the install flow; the pin checks themselves are in
+    # tests/test_registry_trust.py.
+    monkeypatch.setattr(trust, "verify", lambda root, pin, **kw: "")
     monkeypatch.setattr(subprocess, "run", fake_run)
     out = skills.install_pack("anthropic-skills")
     assert "Installed anthropic-skills (1 skills)" in out
@@ -101,7 +109,7 @@ def test_install_pack_local_git_repo_offline(tmp_path, monkeypatch):
         "REGISTRY",
         [{"name": "localpack", "description": "Scratch pack.", "url": f"file://{src}"}],
     )
-    out = skills.install_pack("localpack")
+    out = skills.install_pack("localpack", allow_unpinned=True)
     assert "Installed localpack (1 skills)" in out
     assert "Do things" in skills.show_skill("my-skill")
 
