@@ -68,7 +68,25 @@ Optional local gates (mirrored in CI):
 ```bash
 pipx install pre-commit && pre-commit install   # ruff + mypy + fast subset on commit
 uv run --with pytest pytest tests -q --cov=sk --cov-report=term-missing  # coverage report (informational)
+sk docs check --since HEAD                       # propose docs updates for removed names
+sk docs check --paths src/sk/config.py --json    # same check without git (best effort)
 ```
+
+### Docs co-change guard
+
+If a change removes a public function/class, a config key from `DEFAULTS`, or a
+CLI command, the docs that name it go stale. `sk docs check` compares the
+previous version of changed Python files (from git) with the current one and
+reports each removed name still mentioned in `README.md`, `CONTRIBUTING.md` or
+`docs/*.md`, with the file and line. Exit `1` means at least one stale
+reference; `--json` is machine-readable.
+
+Use it to **propose** a same-PR docs update. The guard never edits files and
+never writes a generated replacement — a removed name may be intentional, and
+the human decides the right wording. Under a plain-file checkout with no usable
+git baseline, `--paths` compares documented identifiers against the whole
+current source tree as a best-effort fallback. Untracked or unreadable files
+are reported as `unavailable`, not guessed at.
 
 ### Security and supply-chain scans (CI `scan` job)
 

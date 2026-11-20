@@ -19,6 +19,7 @@ from .commands import (  # noqa: F401
     chat,
     check,
     daemon,
+    docs,
     explain,
     fix,
     mcp,
@@ -43,6 +44,7 @@ from .resolve import _resolve_model
 app.add_typer(bundle.bundle_app, name="bundle")
 app.add_typer(team.team_app, name="team")
 app.add_typer(audit_app, name="audit")
+app.add_typer(docs.docs_app, name="docs")
 app.add_typer(review_app, name="review")
 
 __all__ = [
