@@ -25,6 +25,10 @@ CONTROLS: dict[str, tuple[str, str]] = {
     "Proposals never write": ("src/sk/memory_rank.py", "tests/test_memory_rank.py"),
     "Crash telemetry is off by default": ("src/sk/telemetry.py", "tests/test_telemetry.py"),
     "self-contained offline dashboard": ("src/sk/enterprise.py", "tests/test_enterprise.py"),
+    "removes the temp directory on a mismatch": (
+        "src/sk/registry_trust.py",
+        "tests/test_registry_trust.py",
+    ),
     "The IDE client": ("ide/vscode/src/client.ts", "ide/vscode/src/test/client.test.ts"),
 }
 
@@ -41,6 +45,7 @@ def test_the_document_exists_with_its_required_sections():
         "### A5",
         "### A6",
         "## Local enterprise controls",
+        "## Registry supply chain",
         "## Optional data egress",
         "## Audit probes",
         "## Out of scope",

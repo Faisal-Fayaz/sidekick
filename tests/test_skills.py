@@ -57,6 +57,9 @@ def test_install_mocked_clone(monkeypatch, tmp_path):
         (tmp_path / "skills" / "superpowers" / "x" / "SKILL.md").write_text("# x")
         return type("R", (), {})()
 
+    import sk.registry_trust as trust
+
+    monkeypatch.setattr(trust, "verify", lambda root, pin, **kw: "")
     monkeypatch.setattr(subprocess, "run", fake_run)
     out = skills.install_preset("superpowers")
     assert "Installed superpowers" in out

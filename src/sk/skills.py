@@ -283,9 +283,11 @@ def _clone(url: str, dest: Path) -> str | None:
     return None
 
 
-def install_preset(name: str, force: bool = False) -> str:
-    """Shallow-clone a preset repo (e.g. superpowers) into SKILLS_DIR."""
+def install_preset(name: str, force: bool = False, allow_unpinned: bool = False) -> str:
+    """Shallow-clone a preset repo, verifying its pin when the index has one."""
     import shutil
+
+    from .registry_trust import PINS, clone_verified
 
     key = (name or "").strip().lower()
     url = PRESET_REPOS.get(key, "")
@@ -295,41 +297,59 @@ def install_preset(name: str, force: bool = False) -> str:
         return f"Unknown preset '{name}'. Known: {', '.join(PRESET_REPOS)} — or pass a git URL."
     if shutil.which("git") is None:
         return "Error: git not found."
+    pin = PINS.get(key)
+    if not pin and not allow_unpinned:
+        return (
+            f"Refused: {key} has no checksum pin. Pass --allow-unpinned to install "
+            "an unverified source you trust."
+        )
     dest = SKILLS_DIR / key
     if dest.exists():
         if not force:
             return f"{key} already at {dest} — pass --force to re-clone."
         shutil.rmtree(dest, ignore_errors=True)
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-    err = _clone(url, dest)
+    err = clone_verified(url, dest, pin, clone=_clone) if pin else _clone(url, dest)
     if err:
         return err
     n = len([p for p in dest.glob("**/SKILL.md") if p.is_file()])
     return f"Installed {key} ({n} skills) to {dest}."
 
 
-def install_pack(name: str, force: bool = False) -> str:
+def install_pack(name: str, force: bool = False, allow_unpinned: bool = False) -> str:
     """Install by preset name, registry name, or git URL into SKILLS_DIR.
 
-    Registry entries clone under their registry name; raw URLs under
-    'custom' (preset behavior preserved).
+    Pinned packs are cloned to a temp dir and verified before being moved into
+    place. Unpinned sources require an explicit opt-in (#527).
     """
     import shutil
 
+    from .registry_trust import PINS, clone_verified
+
     key = (name or "").strip().lower()
     if key in PRESET_REPOS or "://" in (name or ""):
-        return install_preset(name, force=force)
+        return install_preset(name, force=force, allow_unpinned=allow_unpinned)
     entry = registry_entry(name)
     if entry is None:
         known = sorted(set(PRESET_REPOS) | {e["name"] for e in REGISTRY})
         return f"Unknown pack '{name}'. Known: {', '.join(known)} — or pass a git URL."
+    if shutil.which("git") is None:
+        return "Error: git not found."
+    pin = PINS.get(entry["name"])
+    if not pin and not allow_unpinned:
+        return (
+            f"Refused: {entry['name']} has no checksum pin. Pass --allow-unpinned to "
+            "install an unverified source you trust."
+        )
     dest = SKILLS_DIR / entry["name"]
     if dest.exists():
         if not force:
             return f"{entry['name']} already at {dest} — pass --force to re-clone."
         shutil.rmtree(dest, ignore_errors=True)
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-    err = _clone(entry["url"], dest)
+    err = (
+        clone_verified(entry["url"], dest, pin, clone=_clone) if pin else _clone(entry["url"], dest)
+    )
     if err:
         return err
     n = len([p for p in dest.glob("**/SKILL.md") if p.is_file()])

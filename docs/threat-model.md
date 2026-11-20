@@ -190,6 +190,15 @@ stamped into audit rows; there is **no built-in IdP** in the open core.
 URLs redacted from targets. `src/sk/enterprise.py`, `src/sk/store.py`;
 `tests/test_enterprise.py`; [enterprise.md](enterprise.md).
 
+## Registry supply chain
+
+Vendored skill packs are pinned by commit and by a deterministic sha256
+manifest over their `SKILL.md` files. Installation clones to a temporary
+directory, verifies **before** moving it into the skills directory, and
+removes the temp directory on a mismatch. A raw URL or unpinned entry is
+refused unless the operator passes `--allow-unpinned`. `src/sk/registry_trust.py`;
+`tests/test_registry_trust.py`; [registry.md](registry.md).
+
 ## Optional data egress
 
 **Crash telemetry is off by default.** With no flag and no global config key,

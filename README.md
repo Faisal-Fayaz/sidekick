@@ -345,7 +345,7 @@ a free OpenCode account key first: `OPENCODE_API_KEY` or
 
 | Command | What |
 |---|---|
-| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME` | Skill packs: registry + superpowers |
+| `sk skills` / `sk skills-search` / `sk skills-registry [QUERY]` / `sk skills-install NAME [--force] [--allow-unpinned]` / `sk skills-pin PATH` | Skill packs: checksum-pinned registry entries verified before install; raw sources need `--allow-unpinned` ([docs](docs/registry.md)) |
 | `sk plugins` | User-defined tools (`TOOLS.md`, see [`docs/plugins.md`](docs/plugins.md)) |
 | `sk team check [--json]` | Inspect team memory and shared skill packs: trust state, sources, skills and permission refusals ([docs](docs/team.md)) |
 | VS Code extension | Thin client over `sk serve` — review, explain and check from a buffer or selection, with no keys or agent loop ([docs](ide/vscode/README.md)) |
@@ -595,6 +595,7 @@ current non-secret settings — keys stay in keyring/env).
 - [The local enterprise surface](docs/enterprise.md)
 - [Crash telemetry (opt-in)](docs/telemetry.md)
 - [Taint-aware content policy](docs/taint.md)
+- [Skill registry trust](docs/registry.md)
 - [Browser verification](docs/browser.md)
 - [Docs co-change guard](CONTRIBUTING.md#docs-co-change-guard)
 - [Threat model and audit plan](docs/threat-model.md)
