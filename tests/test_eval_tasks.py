@@ -196,3 +196,35 @@ def test_the_task_set_is_not_in_pytest_collection():
 @pytest.mark.parametrize("path", [TASKS_PATH, HARNESS_PATH, ROOT / "docs" / "eval" / "README.md"])
 def test_the_eval_files_exist(path):
     assert path.is_file(), f"{path} is missing"
+
+
+def test_the_task_set_is_substantial_and_categorised():
+    """A five-prompt set cannot distinguish an agent from a lucky guess (#534)."""
+    tasks = _tasks()
+    assert len(tasks) >= 60, f"only {len(tasks)} tasks in the benchmark"
+    categories = {t.get("category") for t in tasks}
+    assert {"chat", "grounding", "tool", "code", "reasoning", "network"} <= categories
+    for task in tasks:
+        assert task.get("category"), f"{task['id']} has no category"
+        assert task.get("difficulty") in ("easy", "medium", "hard"), task["id"]
+
+
+def test_scoring_is_weighted_and_explained():
+    module = _harness()
+    results = [
+        {"id": "p1_greeting", "pass_at_1": 1.0},
+        {"id": "c_code_01", "pass_at_1": 0.5},
+        {"id": "c_reason_01", "pass_at_1": 0.0},
+    ]
+    data = module.score(results, _tasks())
+    assert data["tasks"] == 3
+    assert data["per_category"]["chat"] == 1.0
+    assert data["per_category"]["code"] == 0.5
+    assert 0 < data["capability_score"] < 100
+    text = module.render_score(data)
+    assert "capability score" in text and "head-to-head baselines" in text
+
+
+def test_list_flag_shows_every_task():
+    result = _harness().main(["--list"])
+    assert result == 0

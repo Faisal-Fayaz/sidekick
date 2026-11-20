@@ -6,11 +6,15 @@ the fixed task set in `docs/eval/tasks.json`.
 
 ## Methodology
 
-**The task set is fixed.** Five prompts that do not change between runs
-(`tasks.json`): a greeting, a short-answer instruction, a grounding one-liner,
-a tool turn, and a network task. The network task is excluded unless
-`--allow-network` is passed, so a default run touches no network. Four tasks
-run by default.
+**The task set is fixed.** The five original seed prompts are still there, and
+the set now has **67 prompts** across six categories (chat, grounding, tool,
+code, reasoning, network). Each task carries `category` and `difficulty` for
+scoring; `kind` still drives execution, so network tasks remain isolated. The
+network tasks are excluded unless `--allow-network` is passed, so a default
+run touches no network. 64 tasks run by default.
+
+Inspect the set without a model: `python3 docs/probe-evals.py --list`.
+Run one category: `--category code`. Filter by id: `--task c_code_01`.
 
 **The verdict is per task**: `OBEYED` / `PARAPHRASED` / `FAILED`, the style of
 `docs/probe-routing.py`. A task that needed a tool and never called it is
@@ -31,12 +35,36 @@ machine with one set of models; a different machine, a different quantisation,
 or a different provider version moves them. The point is the *shape*: what a
 local model does against a metered one, at what latency, for what money.
 
+**Capability score.** `--score` adds per-category pass@1 and a weighted
+0–100 score: grounding 20%, tool 25%, code 25%, reasoning 20%, chat 5%,
+network 5%. The weights favour the categories that predict real engineering
+work; network is low because it is isolated by default. The score is
+**relative to this fixed set** — it is not a claim of frontier parity without
+head-to-head baselines, and the harness prints that caveat.
+
+**Baselines.** Compare targets in one run with the same tasks and repeat count:
+
+```bash
+python3 docs/probe-evals.py --compare --repeat 3 --score
+python3 docs/probe-evals.py --compare --target ollama:qwen3:4b \
+  --target openrouter:openai/gpt-4o-mini@0.15 --repeat 3 --score
+```
+
+`--target` is `provider:model[:price_per_mtok]` and is repeatable. The
+comparison table keeps the cost column so a metered baseline is honest about
+what the local tier does not bill. Publish the per-category scores beside the
+pass@1 table; a single overall number hides where an agent is weak.
+
 **Re-running per release.** The command is the same every time:
 
 ```bash
-python3 docs/probe-evals.py --compare --repeat 3
-python3 docs/probe-evals.py --compare --target openrouter:openai/gpt-4o-mini@0.15
+python3 docs/probe-evals.py --compare --repeat 3 --score
 ```
+
+> **Historical numbers below:** the table was produced with the original
+> five-task set (four tasks per run). It is kept for provenance, but it is **not
+> comparable** to scores from the expanded 67-task set. A new snapshot with the
+> expanded set and named baselines is the next measurement to publish here.
 
 ## The measurement
 
